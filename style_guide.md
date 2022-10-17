@@ -38,9 +38,11 @@
   - Load all packages at top of script, followed by functions to load
 - Provide section breaks and headers
   - Control+Shift+R makes sections / section labels
-  - Four dashes# after comment defines headers
-    - # header 1 ----
-    - ## header 2 ----
+  - Four dashes (-) after comment defines headers
+    ```
+    # header 1 ----
+    ## header 2 ----
+    ```
 - Naming conventions:
   - lowercase and underscore (get_data)
   - Files - 
