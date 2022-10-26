@@ -52,7 +52,9 @@
     - Must be action words/verbs; 
     - More descriptive verbs are better (e.g. transform_input, better than transform)
   - Objects
-    - ..._df for dataframe and datatable
+    - ..._df for dataframe
+    - ..._dt for datatable
+    - ..._tbl for tibble
     - ..._lst for lists
     - ..._mat for matrices
     - ..._vec for vectors
