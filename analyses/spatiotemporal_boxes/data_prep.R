@@ -165,4 +165,4 @@ if( nrow(val_2018_2021_dt[, .SD[uniqueN(STRATA) > 1], by = .(TRIP_ID)]) ) {
 # Re-assign TRIP_ID as an integer an reorder the dataset
 val_2018_2021_dt[, TRIP_ID := .GRP, by = TRIP_ID][, TRIP_ID := as.integer(TRIP_ID)]
 setorder(val_2018_2021_dt, ADP, STRATA, TRIP_START, NMFS_AREA)
-save(val_2018_2021_dt, file = "analyses/spatiotemporal_boxes/spatiotemporal_boxes.Rdata")
+save(val_2018_2021_dt, file = "analyses/spatiotemporal_boxes/spatiotemporal_boxes.RData")
