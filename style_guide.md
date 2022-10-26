@@ -52,9 +52,11 @@
     - Must be action words/verbs; 
     - More descriptive verbs are better (e.g. transform_input, better than transform)
   - Objects
-    - ..._df for dataframe
+    - ..._df for dataframe and datatable
     - ..._lst for lists
     - ..._mat for matrices
+    - ..._vec for vectors
+    - ..._sf for spatial objects, etc for other unique classes
 - Comment often
   - Each action should be commented
     - Keep actions to as few lines of code as practicable
