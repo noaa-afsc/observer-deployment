@@ -218,10 +218,7 @@ fpc_scaling_plt <- (ggplot(base_popul[which(base_popul$sample_rate < 0.35),],
 					aes(sample_rate, fpc))
 			+ geom_line(aes(sample_rate, fpc,color = factor(N), linetype = factor(N)),
 					position = position_dodge(width = 0.005))
-			+ labs(x='Sampling Rate', y='Finite Population Correction\n(N-n)/N',
-					title = 'Effect of Sampling Rate on Finite Population Correction Factor', 
-					subtitle = "Based on 2017data: Hook & Line (N=2300 trips), Pot (N=950 trips), Trawl (N=2090 trips), EM (N=700 trips)",
-					caption = 'Lines have been adjusted to avoid overlap\nUnadjusted lines overlap completely.')
+			+ labs(x='Sampling Rate', y='Finite Population Correction\n(N-n)/N')
 			+ scale_color_hue('Number trips in cell')
 			+ scale_linetype('Number trips in cell')
 			+ geom_vline(xintercept = 0.15)
@@ -229,20 +226,27 @@ fpc_scaling_plt <- (ggplot(base_popul[which(base_popul$sample_rate < 0.35),],
 			+ theme(legend.position = "bottom")
 			)
 
-totl_scaling_plt <- (ggplot(base_popul[which(base_popul$sample_rate < 0.35),], 
-					aes(n, CV_scaler))
-			+ geom_line(aes(sample_rate, CV_scaler, color = factor(N), linetype = factor(N)))
-			+ labs(x = 'Sampling Rate', y = 'CV Scaling\n(SqRt(FPC*(1/n))',
-					title = 'Effect of Sampling Rate on Estimated CV', 
-					subtitle = "Based on 2017data: Hook & Line (N=2300 trips), Pot (N=950 trips), Trawl (N=2090 trips), EM (N=700 trips)",
-					caption = '')
+totl_scaling_n_plt <- (ggplot(base_popul[which(base_popul$sample_rate < 0.35),], 
+					aes(n_sample, CV_scaler))
+			+ geom_line(aes(n_sample, CV_scaler, color = factor(N), linetype = factor(N)))
+			+ labs(x = 'Number Samples', y = 'CV Scaling\n(SqRt(FPC*(1/n))')
 			+ scale_color_hue('Number trips in cell')
 			+ scale_linetype('Number trips in cell')
-			+ geom_vline(xintercept = aes(sample_15_pct))
+			+ geom_vline(data = reference_lines_dat, aes(xintercept = sample_15_pct), color = 'grey80')
 			+ theme_grey()
 			+ theme(legend.position = "bottom")
 			)
-	
+
+totl_scaling_rate_plt <- (ggplot(base_popul[which(base_popul$sample_rate < 0.35),], 
+					aes(sample_rate, CV_scaler))
+			+ geom_line(aes(sample_rate, CV_scaler, color = factor(N), linetype = factor(N)))
+			+ labs(x = 'Sampling Rate', y = 'CV Scaling\n(SqRt(FPC*(1/n))')
+			+ scale_color_hue('Number trips in cell')
+			+ scale_linetype('Number trips in cell')
+			+ geom_vline(xintercept = 0.15, color = 'grey80')
+			+ theme_grey()
+			+ theme(legend.position = "bottom")
+			)
 ```
 
 The variance in estimates from a population is a function of both the sample
@@ -281,27 +285,22 @@ $$\begin{equation}
 \end{equation}$$
 
 We can see the impact of sample size on variance by plotting $\frac{1}{n}$
-against the sample rate, $\frac{n}{N}$, Fig. \@ref(fig:gg-n-scaling-plt).
+against the sample rate, $\frac{n}{N}$, Fig. \@ref(fig:gg-n-fpc-scaling-plt).
 
-```{r gg-n-scaling-plt, dpi = 600, fig.cap ="something", fig.width = 3.5, fig.height = 3.5, echo = FALSE}
-     n_scaling_plt
+```{r gg-n-fpc-scaling-plt, dpi = 600, fig.cap ="something", fig.width = 7, fig.height = 3.5, echo = FALSE}
+shared_legend(n_scaling_plt, fpc_scaling_plt, ncol = 2, nrow = 1, position = "bottom")
 ```
 In addition, as we sample a larger and larger portion of the population, our
 uncertainty about the estimate decereases. HERE BE THE FPC discussion, Fig.
-\@ref(fig:gg-fpc-scaling-plt).
-
-
-```{r gg-fpc-scaling-plt, dpi = 600, fig.cap ="something", fig.width = 3.5, fig.height = 3.5, echo = FALSE}
-     fpc_scaling_plt
-```
+\@ref(fig:gg-n-fpc-scaling-plt).
 
 some things to note -
 generally don't apply FPC when sample rates below 5%, doesn't make a difference
 don't know actual variance - makes sample size analysis challenging, Fig.
 \@ref(fig:gg-totl-scaling-plt).
 
-```{r gg-totl-scaling-plt, dpi = 600, fig.cap ="something", fig.width = 3.5, fig.height = 3.5, echo = FALSE}
-     totl_scaling_plt
+```{r gg-totl-scaling-plt, dpi = 600, fig.cap ="something", fig.width = 7, fig.height = 3.5, echo = FALSE}
+     shared_legend(totl_scaling_n_plt, totl_scaling_rate_plt, ncol = 2, nrow = 1, position = "bottom")
 ```
 
 # Cost-weighted boxes
@@ -430,11 +429,11 @@ c\right)}{\sum_{h}B_h}
   (\#eq:proport-ALL-cells-no-data-stratum) 
 \end{equation}$$
 
-If our goal is to minimize the total number of cells without
+*If our goal is to minimize the total number of cells without
 data(across strata), Eq. \@ref(eq:proport-ALL-cells-no-data-stratum), weighted
 mean proportion is the more appropriate metric. If we want to ensure that we
 minimize the proprtion of cells without data in each stratum, the mean of the
-proportions metric is more appropriate.
+proportions metric is more appropriate.*
 
 ### Two-stage deployment
 
