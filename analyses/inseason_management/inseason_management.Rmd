@@ -1,0 +1,106 @@
+---
+title: "Evaluating fisheries data quality for inseason management"
+author: "Phil Ganz"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, echo = FALSE, message = FALSE}
+# Get packages ----
+library(data.table)
+library(lubridate)
+library(pals)
+library(ROracle)
+library(scales)
+library(tidyverse)
+
+# Load data ----
+load("valhalla_accounts.RData")  
+
+# Most recent full year ----
+year <- year(Sys.Date()) - 1
+
+# Figure theme ----
+fig_theme <- list(theme_classic(), scale_y_continuous(labels = comma), scale_fill_manual(values = kelly()[2:22]))
+
+# Do not print code chunks by default ----
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Introduction
+
+One of the purposes for which fishery-dependent data are used is inseason management, broadly defined as the opening and closing of fisheries throughout the year based on the proportion of total allowable catch (TAC) that has been harvested or the proportion of prohibited species catch (PSC) that has been caught, relative to PSC limits. Catch that accrues toward TAC or PSC limits has either been retained by the vessel or discarded. Retained catch is known, whereas discarded catch is estimated. Discard estimates are made using data from fisheries observers or electronic monitoring (EM). Looking at the most recent five years of data, between 4.1 and 4.7% of catch has been discarded in Alaska:
+
+```{r}
+dat <- valhalla %>% 
+       mutate(DISCARD = recode(SOURCE_TABLE, 'N' = 'Yes', 'Y' = 'No')) %>% 
+       group_by(ADP, DISCARD) %>%
+       summarise(WEIGHT  = sum(WEIGHT_POSTED, na.rm = TRUE), .groups = 'drop') %>% 
+       arrange(ADP, desc(DISCARD)) %>% 
+       group_by(ADP) %>% 
+       mutate(TOTAL_WEIGHT = sum(WEIGHT),
+              PROPORTION = WEIGHT / TOTAL_WEIGHT,
+              LABEL = percent(PROPORTION, accuracy = 0.1),
+              LABEL_POSITION = cumsum(WEIGHT) - WEIGHT/2)
+      
+ggplot(dat, aes(x = ADP, y = WEIGHT, fill = DISCARD, label = LABEL)) +
+  geom_col() + 
+  geom_label(aes(y = LABEL_POSITION), fill = "white", size = 2) +
+  labs(x = "Year", y = "Catch weight (mt)", fill = "Discard") +
+  fig_theme
+       
+```
+
+With higher discard rates seen in the GOA, although with less catch:
+```{r}
+dat <- valhalla %>% 
+       mutate(DISCARD = recode(SOURCE_TABLE, 'N' = 'Yes', 'Y' = 'No')) %>% 
+       group_by(ADP, FMP, DISCARD) %>%
+       summarise(WEIGHT  = sum(WEIGHT_POSTED, na.rm = TRUE), .groups = 'drop') %>% 
+       arrange(ADP, FMP, desc(DISCARD)) %>% 
+       group_by(ADP, FMP) %>% 
+       mutate(TOTAL_WEIGHT = sum(WEIGHT),
+              PROPORTION = WEIGHT / TOTAL_WEIGHT,
+              LABEL = percent(PROPORTION, accuracy = 0.1),
+              LABEL_POSITION = cumsum(WEIGHT) - WEIGHT/2)
+      
+ggplot(dat, aes(x = ADP, y = WEIGHT, fill = DISCARD, label = LABEL)) +
+  geom_col() + 
+  geom_label(aes(y = LABEL_POSITION), fill = "white", size = 2) +
+  facet_grid(. ~ FMP) +
+  labs(x = "Year", y = "Catch weight (mt)", fill = "Discard") +
+  fig_theme
+       
+```
+
+The quality of fishery-dependent data for the purposes of inseason management is therefore driven largely by 1) the variability of discards that occur in a fishery and 2) the amount of sampling that occurs in that fishery. In order to measure the quality of data for inseason management, we therefore need to define what we mean by 1) fishery, 2) variability, and 3) sampling.
+
+# Defining fishery
+The catch accounting system (CAS) estimates discard differently depending on whether the discards were PSC or groundfish. When estimating groundfish discards for an unmonitored haul, CAS first looks for a monitored haul within the same NMFS area as the unmonitored haul. If no monitored trips are found within the same NMFS area, CAS uses data from monitored hauls within the same FMP area. Regardless of whether the data used are from the same NMFS area or FMP area, the monitored haul must be within the same stratum, gear type, trip target, and 5-week period as the unmonitored haul for which estimates are being generated.
+
+When estimating PSC discards, CAS uses more combinations of matching criteria to group monitored hauls with unmonitored hauls. When estimating PSC discards for an unmonitored haul, CAS will first look for a monitored haul with the same trip target date and vessel ID. If no monitored hauls are found with the same trip target date and vessel ID, CAS will then look for monitored hauls within the same NMFS area, processing sector, and 3-week period, followed by the same NMFS area and 3-week period, followed by the same FMP and 3-month period, followed by the same FMP for the entire year. Regardless, monitored hauls must be within the same stratum, gear type, and trip target (with some exceptions) as the unmonitored hauls for which PSC estimates are being generated.
+
+Given that the CAS methodology for estimating both discards and PSC includes a grouping by stratum, gear type, NMFS area, and trip target, this is how we will define "fishery" for this analysis. Because this analysis is being used to compare different designs, it's not a requirement that the definition used be absolutely precise to how the resources are managed. The definition of fishery only needs to be precise enough to rank different designs in their ability to collect data for inseason management.  
+
+# Defining variability
+The next question we'll consider is how to define variability. Given that multiple species may be discarded on any given haul, what should we compute the variance of? For a simplified example, if we were to look only at the three species with the most variable discards (skate, Pacific cod, and sablefish) and define fishery as the combination of stratum and NMFS Area, how would we give one overall score to each of these "fisheries" in the GOA?
+```{r}
+dat <- valhalla %>% 
+       filter(ADP == 2021 & COVERAGE_TYPE != "FULL" & STRATA != "ZERO" & SOURCE_TABLE == "N" & GROUNDFISH_FLAG == "Y") %>% 
+       group_by(TRIP_ID, STRATA, AGENCY_GEAR_CODE, REPORTING_AREA_CODE, TRIP_TARGET_CODE, SPECIES_GROUP_CODE) %>% 
+       summarise(DISCARD = sum(WEIGHT_POSTED, na.rm = TRUE), .groups = 'drop') %>% 
+       group_by(SPECIES_GROUP_CODE) %>% 
+       mutate(DISCARD_VARIANCE = var(DISCARD)) %>% 
+       ungroup() %>% 
+       mutate(SPECIES_GROUP_CODE = fct_reorder(SPECIES_GROUP_CODE, -DISCARD_VARIANCE))
+
+ggplot(filter(dat, REPORTING_AREA_CODE %in% c("610", "620", "630", "640", "650") & DISCARD_VARIANCE %in% head(sort(unique(dat$DISCARD_VARIANCE), decreasing = TRUE), 3)), aes(x = SPECIES_GROUP_CODE, y = DISCARD)) +
+  geom_boxplot(outlier.shape = NA, fill = NA) +
+  geom_point(position = position_jitter(width = 0.1), alpha = 1/10) + 
+  coord_cartesian(ylim = c(0, 1)) +
+  facet_grid(REPORTING_AREA_CODE ~ STRATA)
+```
+
+It's tempting to just take the variance of all species combined, that could lead to a situation in which a fishery has catch of two (or more) species that are negatively correlated with each other, and therefore could be highly variable at the species level, but produce an overall discard variance that is very low. We therefore need some way of taking into account the variability of each species discarded in a fishery, but summarizing those individual variances into one score. In the end, we want to get into fisheries that have more variable discards of species that have the most variable discards across all fisheries. So if skates, Pacific cod, and sablefish were the only species we were dealing with, highly variable discards of skates would contribute most to a weighting, followed by highly variable discards of Pacific cod, and then highly variable discards of sablefish. The two thinks of importance are 1) the overall variability of that species and 2) the variability of that species within the fishery.  
