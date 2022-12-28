@@ -17,7 +17,7 @@ library(scales)
 library(tidyverse)
 
 # Load data ----
-load("valhalla_accounts.RData")  
+load("analyses/inseason_management/valhalla_accounts.RData")  
 
 # Most recent full year ----
 year <- year(Sys.Date()) - 1
@@ -85,7 +85,7 @@ When estimating PSC discards, CAS uses more combinations of matching criteria to
 Given that the CAS methodology for estimating both discards and PSC includes a grouping by stratum, gear type, NMFS area, and trip target, this is how we will define "fishery" for this analysis. Because this analysis is being used to compare different designs, it's not a requirement that the definition used be absolutely precise to how the resources are managed. The definition of fishery only needs to be precise enough to rank different designs in their ability to collect data for inseason management.  
 
 # Defining variability
-The next question we'll consider is how to define variability. Given that multiple species may be discarded on any given haul, what should we compute the variance of? For a simplified example, if we were to look only at the three species with the most variable discards (skate, Pacific cod, and sablefish) and define fishery as the combination of stratum and NMFS Area, how would we give one overall score to each of these "fisheries" in the GOA?
+The next question we'll consider is how to define variability. Given that multiple species may be discarded on any given haul, what should we compute the variance of? For a simplified example, if we were to look only at the three species with the most variable discards (skates, Pacific cod, and sablefish) and define fishery as the combination of stratum and NMFS Area, how would we give one overall score to each of these "fisheries" in the GOA?
 ```{r}
 dat <- valhalla %>% 
        filter(ADP == 2021 & COVERAGE_TYPE != "FULL" & STRATA != "ZERO" & SOURCE_TABLE == "N" & GROUNDFISH_FLAG == "Y") %>% 
@@ -103,4 +103,196 @@ ggplot(filter(dat, REPORTING_AREA_CODE %in% c("610", "620", "630", "640", "650")
   facet_grid(REPORTING_AREA_CODE ~ STRATA)
 ```
 
-It's tempting to just take the variance of all species combined, that could lead to a situation in which a fishery has catch of two (or more) species that are negatively correlated with each other, and therefore could be highly variable at the species level, but produce an overall discard variance that is very low. We therefore need some way of taking into account the variability of each species discarded in a fishery, but summarizing those individual variances into one score. In the end, we want to get into fisheries that have more variable discards of species that have the most variable discards across all fisheries. So if skates, Pacific cod, and sablefish were the only species we were dealing with, highly variable discards of skates would contribute most to a weighting, followed by highly variable discards of Pacific cod, and then highly variable discards of sablefish. The two thinks of importance are 1) the overall variability of that species and 2) the variability of that species within the fishery.  
+It's tempting to just take the variance of all species combined, but that could lead to a situation in which a fishery has catch of two (or more) species that are negatively correlated with each other, and therefore could be highly variable at the species level, but produce an overall discard variance that is very low. An alternative could be to sum across individual species variances, but that would lead to the inverse problem in which a fishery with discards of two (or more) species that are positively correlated with one another would receive a very high variance score. A compromise is to take the mean variance across species. Let's look at how the mean variance performs with our subset of data:   
+
+<!-- We therefore need some way of taking into account the variability of each species discarded in a fishery and then summarizing those individual variances into one score. We want to prioritize sampling fisheries that have highly variable discards of the species with the most highly variable discards across all fisheries. So if skates, Pacific cod, and sablefish were the only species we were dealing with, highly variable discards of skates (the species with the most variable discards across all fisheries) would contribute most to a high score (high variance), followed by highly variable discards of Pacific cod, and then highly variable discards of sablefish. The two things of importance are 1) the overall variability of discards of that species and 2) the variability of discards of that species within the fishery. Let's look at these two values in table form in order to begin thinking of how we might summarize the information into one score. -->
+
+```{r}
+sub <- valhalla %>% 
+       filter(ADP == 2021 & COVERAGE_TYPE != "FULL" & STRATA != "ZERO" & SOURCE_TABLE == "N" & GROUNDFISH_FLAG == "Y") %>% 
+       filter(SPECIES_GROUP_CODE %in% c("USKT", "PCOD", "SABL") & REPORTING_AREA_CODE %in% c("610", "620", "630", "640", "650")) %>% 
+       group_by(TRIP_ID, STRATA, REPORTING_AREA_CODE, SPECIES_GROUP_CODE) %>% 
+       summarise(DISCARD = sum(WEIGHT_POSTED, na.rm = TRUE), .groups = 'drop') %>%
+       group_by(STRATA, REPORTING_AREA_CODE, SPECIES_GROUP_CODE) %>%
+       summarise(VARIANCE = var(DISCARD), .groups = 'drop') %>% 
+       group_by(STRATA, REPORTING_AREA_CODE) %>% 
+       summarise(MEAN_VARIANCE = mean(VARIANCE, na.rm = TRUE), .groups = 'drop') %>% 
+       mutate(FISHERY_SCORE_RANK = rank(MEAN_VARIANCE, ties.method = "min", na.last = FALSE))
+
+ggplot(
+  dat %>%
+  filter(REPORTING_AREA_CODE %in% c("610", "620", "630", "640", "650") &
+         DISCARD_VARIANCE %in% head(sort(unique(dat$DISCARD_VARIANCE), decreasing = TRUE), 3)) %>%
+    left_join(distinct(sub, STRATA, REPORTING_AREA_CODE, FISHERY_SCORE_RANK)),
+  aes(x = SPECIES_GROUP_CODE, y = DISCARD)) +
+  geom_boxplot(outlier.shape = NA, fill = NA) +
+  geom_point(position = position_jitter(width = 0.1), alpha = 1/10) +
+  coord_cartesian(ylim = c(0, 1)) +
+  facet_wrap(FISHERY_SCORE_RANK ~ STRATA + REPORTING_AREA_CODE)
+```
+
+This appears to be a reasonable ranking, with more variable fisheries receiving higher ranks. The precision of estimates improves as proportionally more sampling is directed toward more variable phenomena, so now it's time to define what we mean by sampling. In doing this, we will move from our simplified example to defining fishery by stratum, gear type, NMFS area, and trip target and considering all groundfish species rather than just skates, Pacfic cod, and sablefish.
+
+# Defining sampling
+The equation for standard error is $place holder$, which shows that standard error decreases as sample size ($n$) increases (not sampling *rate*). This means that our metric for how well a fishery is sampled should be related to sample size. It also worth noting that fisheries with fewer trips will require a higher sampling rate to achieve a given sample size compared to fisheries with many trips. This creates a quadrant of fisheries, with variance being correlated with the impact of sampling, and number of trips being negatively correlated with the sampling effort required to attain a given sample size:
+```{r}
+sub <- valhalla %>% 
+       filter(ADP == 2021 & COVERAGE_TYPE != "FULL" & STRATA != "ZERO" & SOURCE_TABLE == "N" & GROUNDFISH_FLAG == "Y") %>% 
+       group_by(TRIP_ID, OBSERVED_FLAG, STRATA, AGENCY_GEAR_CODE, REPORTING_AREA_CODE, TRIP_TARGET_CODE, SPECIES_GROUP_CODE) %>% 
+       summarise(DISCARD = sum(WEIGHT_POSTED, na.rm = TRUE), .groups = 'drop') %>%
+       group_by(STRATA, AGENCY_GEAR_CODE, REPORTING_AREA_CODE, TRIP_TARGET_CODE, SPECIES_GROUP_CODE) %>%
+       mutate(VARIANCE = var(DISCARD)) %>% 
+       group_by(STRATA, AGENCY_GEAR_CODE, REPORTING_AREA_CODE, TRIP_TARGET_CODE) %>% 
+       mutate(MEAN_VARIANCE = mean(VARIANCE, na.rm = TRUE),
+              N_FISHERY = n_distinct(TRIP_ID),
+              n_FISHERY = n_distinct(TRIP_ID[OBSERVED_FLAG == "Y"])) %>% 
+       filter(N_FISHERY > 1) %>% 
+       group_by(STRATA) %>% 
+       mutate(N_STRATUM = n_distinct(TRIP_ID),
+              n_STRATUM = n_distinct(TRIP_ID[OBSERVED_FLAG == "Y"])) %>% 
+       ungroup() %>% 
+       mutate(P0 = round(phyper(q = 0, 
+                                m = N_FISHERY, #trips in a cell by stratum
+                                n = N_STRATUM - N_FISHERY, #total trips by stratum - trips in a cell by stratum
+                                # k = monitored_trips_in_stratum, #total observed trips by stratum
+                                k = n_STRATUM, #total observed trips by stratum
+                                # k = round(N_stratum * 0.15), #total observed trips by stratum
+                                lower.tail = TRUE, log.p = FALSE), 6),
+              P1_PLUS = 1 - P0) %>% 
+       distinct(STRATA, AGENCY_GEAR_CODE, REPORTING_AREA_CODE, TRIP_TARGET_CODE, N_STRATUM, n_STRATUM, N_FISHERY, n_FISHERY, P1_PLUS, MEAN_VARIANCE) %>% 
+       mutate(P1_PLUS_RANK = rank(P1_PLUS, ties.method = "average", na.last = FALSE),
+              MEAN_VARIANCE_RANK = rank(MEAN_VARIANCE, ties.method = "average", na.last = FALSE)) %>% 
+       select(STRATA, AGENCY_GEAR_CODE, REPORTING_AREA_CODE, TRIP_TARGET_CODE, N_STRATUM, n_STRATUM, N_FISHERY, n_FISHERY, P1_PLUS_RANK, MEAN_VARIANCE_RANK)
+
+ggplot(sub, aes(x = P1_PLUS_RANK, y = MEAN_VARIANCE_RANK)) +
+  geom_point(aes(color = STRATA)) +
+  geom_smooth(method = "lm")
+
+# Ended with this @ 11:33 on 12/23/22 ----
+ggplot(sub, aes(x = P1_PLUS_RANK, y = MEAN_VARIANCE_RANK)) +
+  geom_point(aes(color = STRATA)) +
+  geom_vline(xintercept = median(sub$P1_PLUS_RANK, na.rm = TRUE), lty = 2, color = "red") +
+  geom_hline(yintercept = median(sub$MEAN_VARIANCE_RANK, na.rm = TRUE), lty = 2, color = "red") +
+  annotate("text", x = 80, y = 100, label = "High variance,\nLikely to be sampled", hjust = 0) +
+  annotate("text", x = 15, y = 100, label = "High variance,\nUnlikely to be sampled", hjust = 0) +
+  annotate("text", x = 15, y = 30, label = "Low variance,\nUnlikely to be sampled", hjust = 0) +
+  annotate("text", x = 80, y = 30, label = "Low variance,\nLikely to be sampled", hjust = 0)
+# ---
+
+ggplot(
+  dat %>%
+    left_join(distinct(sub, STRATA, REPORTING_AREA_CODE, MEAN_VARIANCE_RANK, P1_PLUS_RANK)),
+  aes(x = SPECIES_GROUP_CODE, y = DISCARD, label = P1_PLUS_RANK)) +
+  geom_boxplot(outlier.shape = NA, fill = NA) +
+  geom_point(position = position_jitter(width = 0.1), alpha = 1/10) +
+  geom_label(aes(x=-Inf, y=Inf, hjust=-.1, vjust=1.2), fill = "white") +
+  coord_cartesian(ylim = c(0, 1)) +
+  facet_wrap(MEAN_VARIANCE_RANK ~ STRATA + REPORTING_AREA_CODE)
+
+sub %>% summarise(SCORE = sum(abs(P1_PLUS_RANK - MEAN_VARIANCE_RANK)))
+```
+
+Beyond a minimum baseline of coverage, which may be covered in a separate metric for bias, the winning design from an inseason management perspective will be one that devotes sampling effort to these quadrants in the following priority: 1) high impact / low effort, 2) high impact / high effort, 3) low impact / low effort, and 4) low impact / high effort.
+
+We want fisheries with high variance to have a high probability of containing a given sample size, but what sample size should we choose?
+```{r}
+sub <- valhalla %>% 
+       filter(ADP == 2021 & COVERAGE_TYPE != "FULL" & STRATA != "ZERO" & SOURCE_TABLE == "N" & GROUNDFISH_FLAG == "Y") %>% 
+       filter(SPECIES_GROUP_CODE %in% c("USKT", "PCOD", "SABL") & REPORTING_AREA_CODE %in% c("610", "620", "630", "640", "650")) %>% 
+       group_by(TRIP_ID, OBSERVED_FLAG, STRATA, REPORTING_AREA_CODE, SPECIES_GROUP_CODE) %>% 
+       summarise(DISCARD = sum(WEIGHT_POSTED, na.rm = TRUE), .groups = 'drop') %>%
+       group_by(STRATA, REPORTING_AREA_CODE, SPECIES_GROUP_CODE) %>%
+       mutate(VARIANCE = var(DISCARD)) %>% 
+       group_by(STRATA, REPORTING_AREA_CODE) %>% 
+       mutate(MEAN_VARIANCE = mean(VARIANCE, na.rm = TRUE),
+              N_FISHERY = n_distinct(TRIP_ID)) %>% 
+       group_by(STRATA) %>% 
+       mutate(N_STRATUM = n_distinct(TRIP_ID),
+              n_STRATUM = n_distinct(TRIP_ID[OBSERVED_FLAG == "Y"])) %>% 
+       ungroup() %>% 
+       mutate(P0 = round(phyper(q = 0, 
+                                m = N_FISHERY, #trips in a cell by stratum
+                                n = N_STRATUM - N_FISHERY, #total trips by stratum - trips in a cell by stratum
+                                # k = monitored_trips_in_stratum, #total observed trips by stratum
+                                k = n_STRATUM, #total observed trips by stratum
+                                # k = round(N_stratum * 0.15), #total observed trips by stratum
+                                lower.tail = TRUE, log.p = FALSE), 6),
+              P1_PLUS = 1 - P0) %>% 
+       distinct(STRATA, REPORTING_AREA_CODE, N_STRATUM, n_STRATUM, N_FISHERY, P1_PLUS, MEAN_VARIANCE) %>% 
+       mutate(P1_PLUS_RANK = rank(P1_PLUS, ties.method = "min", na.last = FALSE),
+              MEAN_VARIANCE_RANK = rank(MEAN_VARIANCE, ties.method = "min", na.last = FALSE)) %>% 
+       select(STRATA, REPORTING_AREA_CODE, N_STRATUM, n_STRATUM, N_FISHERY, P1_PLUS_RANK, MEAN_VARIANCE_RANK)
+
+ggplot(sub, aes(x = P1_PLUS_RANK, y = MEAN_VARIANCE_RANK)) +
+  geom_point(aes(color = STRATA)) +
+  geom_smooth(method = "lm")
+
+ggplot(
+  dat %>%
+  filter(REPORTING_AREA_CODE %in% c("610", "620", "630", "640", "650") &
+         DISCARD_VARIANCE %in% head(sort(unique(dat$DISCARD_VARIANCE), decreasing = TRUE), 3)) %>%
+    left_join(distinct(sub, STRATA, REPORTING_AREA_CODE, MEAN_VARIANCE_RANK, P1_PLUS_RANK)),
+  aes(x = SPECIES_GROUP_CODE, y = DISCARD, label = P1_PLUS_RANK)) +
+  geom_boxplot(outlier.shape = NA, fill = NA) +
+  geom_point(position = position_jitter(width = 0.1), alpha = 1/10) +
+  geom_label(aes(x=-Inf, y=Inf, hjust=-.1, vjust=1.2), fill = "white") +
+  coord_cartesian(ylim = c(0, 1)) +
+  facet_wrap(MEAN_VARIANCE_RANK ~ STRATA + REPORTING_AREA_CODE)
+
+sub %>% summarise(SCORE = sum(abs(P1_PLUS_RANK - MEAN_VARIANCE_RANK)))
+```
+
+
+
+```{r}
+dat <- valhalla %>% 
+       filter(ADP == 2021 & COVERAGE_TYPE != "FULL" & STRATA != "ZERO" & SOURCE_TABLE == "N" & GROUNDFISH_FLAG == "Y") %>% 
+       group_by(STRATA, AGENCY_GEAR_CODE, REPORTING_AREA_CODE, TRIP_TARGET_CODE) %>% 
+       mutate(N = n_distinct(TRIP_ID),
+              n = n_distinct(TRIP_ID[OBSERVED_FLAG == "Y"]),
+              r = n / N) %>% 
+       group_by(TRIP_ID, STRATA, AGENCY_GEAR_CODE, REPORTING_AREA_CODE, TRIP_TARGET_CODE, SPECIES_GROUP_CODE) %>% 
+       mutate(DISCARD = sum(WEIGHT_POSTED, na.rm = TRUE)) %>%
+       group_by(SPECIES_GROUP_CODE) %>% 
+       mutate(ACCROSS_FISHERY_VARIANCE = var(DISCARD)) %>% 
+       group_by(STRATA, AGENCY_GEAR_CODE, REPORTING_AREA_CODE, TRIP_TARGET_CODE, SPECIES_GROUP_CODE) %>%
+       mutate(WITHIN_FISHERY_VARIANCE = var(DISCARD)) %>% 
+       group_by(STRATA, AGENCY_GEAR_CODE, REPORTING_AREA_CODE, TRIP_TARGET_CODE) %>% 
+       mutate(ACCROSS_FISHERY_VARIANCE_PROPORTION = ACCROSS_FISHERY_VARIANCE / sum(ACCROSS_FISHERY_VARIANCE, na.rm = TRUE)) %>% 
+       group_by(STRATA) %>% 
+       mutate(N_stratum = n_distinct(TRIP_ID),
+              n_stratum = n_distinct(TRIP_ID[OBSERVED_FLAG == "Y"])) %>% 
+       group_by(STRATA, AGENCY_GEAR_CODE, REPORTING_AREA_CODE, TRIP_TARGET_CODE) %>% 
+       mutate(N_fishery = n_distinct(TRIP_ID)) %>% 
+       ungroup() %>% 
+       mutate(P0 = round(phyper(q = 0, 
+                            m = N_fishery, #trips in a cell by stratum
+                            n = N_stratum - N_fishery, #total trips by stratum - trips in a cell by stratum
+                            # k = monitored_trips_in_stratum, #total observed trips by stratum
+                            k = n_stratum, #total observed trips by stratum
+                            # k = round(N_stratum * 0.15), #total observed trips by stratum
+                            lower.tail = TRUE, log.p = FALSE), 6),
+         P1_PLUS = 1 - P0) %>% 
+       select(STRATA, AGENCY_GEAR_CODE, REPORTING_AREA_CODE, TRIP_TARGET_CODE, N_stratum, n_stratum, N_fishery, P0, P1_PLUS, SPECIES_GROUP_CODE, ACCROSS_FISHERY_VARIANCE, WITHIN_FISHERY_VARIANCE, ACCROSS_FISHERY_VARIANCE_PROPORTION) %>% 
+       distinct() %>% 
+       mutate(WITHIN_FISHERY_VARIANCE_PROPORTION = WITHIN_FISHERY_VARIANCE / sum(WITHIN_FISHERY_VARIANCE, na.rm = TRUE)) %>% 
+       group_by(STRATA, AGENCY_GEAR_CODE, REPORTING_AREA_CODE, TRIP_TARGET_CODE) %>% 
+       mutate(SPECIES_SCORE = ACCROSS_FISHERY_VARIANCE_PROPORTION * WITHIN_FISHERY_VARIANCE_PROPORTION,
+              FISHERY_SCORE = sum(SPECIES_SCORE, na.rm = TRUE)) %>% 
+       ungroup() %>% 
+       filter(N_fishery > 1) %>% 
+       mutate(P1_PLUS_RANK = rank(P1_PLUS, ties.method = "min"),
+              FISHERY_SCORE_RANK = rank(FISHERY_SCORE, ties.method = "min")) %>% 
+       distinct(STRATA, AGENCY_GEAR_CODE, REPORTING_AREA_CODE, TRIP_TARGET_CODE, P1_PLUS, P1_PLUS_RANK, FISHERY_SCORE, FISHERY_SCORE_RANK) %>% 
+       arrange(P1_PLUS_RANK, FISHERY_SCORE_RANK)
+
+dat %>% summarise(score = sum(abs(FISHERY_SCORE_RANK - P1_PLUS_RANK)))
+
+ggplot(dat, aes(x = P1_PLUS_RANK, y = FISHERY_SCORE_RANK)) +
+  geom_point(aes(color = STRATA)) +
+  #ylim(c(0, 0.00015)) +
+  geom_smooth(method = "lm")
+
+
+```
+
