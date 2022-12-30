@@ -1,13 +1,13 @@
 ---
-title: "Evaluating fisheries data quality for inseason management"
-author: "Phil Ganz"
+title: "Evaluating Fisheries Data Quality for Inseason Management"
+author: ""
 date: "`r Sys.Date()`"
 output: html_document
 editor_options: 
   chunk_output_type: console
 ---
 
-```{r setup, echo = FALSE, message = FALSE}
+```{r setup, echo = FALSE, message = FALSE, warning = FALSE}
 # Get packages ----
 library(data.table)
 library(flextable)
@@ -39,17 +39,26 @@ knitr::opts_chunk$set(echo = FALSE)
 ```
 
 # Introduction
-One of the purposes for which fishery-dependent data are used is inseason management, broadly defined as the opening and closing of fisheries throughout the year based on the proportion of total allowable catch (TAC) that has been harvested or the proportion of prohibited species catch (PSC) that has been caught, relative to PSC limits. Catch that accrues toward TAC or PSC limits is tracked by the Catch Accounting System (CAS) within different accounts that are typically defined by area, species caught, and gear type (e.g. ). Account definitions sometimes also include management program or processing sector (e.g. ). Regardless, these are the units within which catch is tracked by inseason management.
+One of the purposes for which fishery-dependent data are used is inseason management, broadly defined as the opening and closing of fisheries throughout the year based on the proportion of total allowable catch (TAC) that has been harvested or the proportion of prohibited species catch (PSC) that has been caught, relative to PSC limits. Catch that accrues toward TAC or PSC limits is assigned by the Catch Accounting System (CAS) to different accounts. These accounts are the units within which catch is tracked by inseason management, and so they will form the basis of this analysis. This is a table of all the accounts used in 2021 for catch contained within the Valhalla data set: 
+```{r}
+matrix(sort(unique(valhalla_2021$ACCOUNT_NAME)), ncol = 5) %>% 
+data.frame() %>% 
+flextable() %>% 
+fontsize(size = 7) %>% 
+delete_part(part = "header") %>% 
+width(width = 4) %>% 
+padding(padding = 1)
+```
 
 # The Goal of This Analysis
-The goal of this analysis is to identify a metric that can be used to differentiate the performance of different sampling designs with regards to providing data for inseason management. It's important to note that the goal is *not* to identify the absolute best metric for measuring design performance for inseason management; the metric only needs to be accurate enough to differentiate between the performance of different sampling designs. The goal is also *not* to quantify how much data is needed for inseason management.
+The goal of this analysis is to identify a metric that can be used to differentiate the performance of different sampling designs with regards to how well they provide data for inseason management. It's important to note that the goal is *not* to identify the absolute best metric for measuring design performance for inseason management; the metric only needs to be accurate enough to differentiate between the performance of different sampling designs. The goal is also *not* to quantify how much data is needed for inseason management.
 
 # What's a Good Sampling Design for Inseason Mangement?
-Catch is either retained or discarded. Retained catch is known, whereas discarded catch is estimated. More sampling won't benefit inseason management if it's directed toward a fishery that retains all catch. Discard estimates are made using data from fisheries observers or electronic monitoring (EM). With more precise estimates, an inseason manager is able to close a fishery closer to its TAC or PSC limit. Therefore, a sampling design that dedicates more sampling toward fisheries with a lot of highly variable discards will outperform a design that puts more sampling toward fisheries with small amounts of discards with little variance.
+Catch is either retained or discarded. Retained catch is known, whereas discarded catch is estimated. With more precise estimates, an inseason manager is able to close a fishery closer to its TAC or PSC limit. Discard estimates are made using data from fisheries observers or electronic monitoring (EM). More monitoring data (from observers or EM) won't benefit inseason management if it's directed toward a fishery that retains all catch. Therefore, a sampling design that dedicates more sampling toward fisheries with a lot of highly variable discards will outperform a design that puts more sampling toward fisheries with small amounts of discards with little variance.
 
 It's therefore helpful to visualize how much of the catch in each account is made up of discards:  
 ```{r accounts_discard}
-accounts_discard <- valhalla_2021
+accounts_discard <- valhalla_2021 %>% 
                     mutate(DISCARD_FLAG = recode(SOURCE_TABLE, 'Y' = 'N', 'N' = 'Y')) %>% 
                     group_by(ACCOUNT_NAME, DISCARD_FLAG) %>%
                     summarise(weight = sum(WEIGHT_POSTED, na.rm = TRUE),
@@ -68,7 +77,7 @@ f1 <- ggplot(accounts_discard, aes(x = ACCOUNT_NAME, y = percentage, fill = DISC
       labs(x = "Account Name", y = "Percentage of Catch", fill = "Discard") +
       coord_flip() +
       theme_classic() +
-      theme(axis.text.y = element_text(size = 4))
+      theme(axis.text.y = element_text(size = 4), legend.position = "bottom")
 
 f1
 ```
@@ -90,37 +99,30 @@ f2 <- ggplot(accounts_coverage, aes(x = ACCOUNT_NAME, y = percentage, fill = COV
       geom_col() +
       scale_x_discrete(limits = unique(accounts_coverage$ACCOUNT_NAME[order(desc(accounts_coverage$COVERAGE_TYPE), desc(accounts_coverage$percentage))])) +
       scale_fill_manual(values = kelly()[2:22], labels = c("Full", "Partial")) +
-      labs(x = "Account Name", y = "Percentage of Catch", fill = "Coverage Type") +
+      labs(x = "Account Name", y = "Percentage of Catch", fill = "Coverage") +
       coord_flip() +
       theme_classic() +
-      theme(axis.text.y = element_text(size = 4))
+      theme(axis.text.y = element_text(size = 4), legend.position = "bottom")
 
 f2
 ```
 
-The account names on the y-axes of these plots are not in the same order, however, so it's not necessarily the case that fisheries with high retention fall into full coverage. Let's look at the graphs side by side with the same account order:  
+Although the patterns in these plots are very similar, the account names on the y-axes are not in the same order. Let's look at the graphs side by side with the same account order:  
 ```{r accounts_discard_coverage}
-f3 <- ggplot(arrange(accounts_discard, ACCOUNT_NAME), aes(x = ACCOUNT_NAME, y = percentage, fill = DISCARD_FLAG)) +
+f3 <- ggplot(accounts_coverage, aes(x = ACCOUNT_NAME, y = percentage, fill = COVERAGE_TYPE)) +
       geom_col() +
-      scale_fill_manual(values = kelly()[2:22]) +
-      labs(x = "Account Name", y = "Percentage of Catch", fill = "Discard") +
-      coord_flip() +
-      theme_classic() +
-      theme(axis.text.y = element_text(size = 4), legend.position = "bottom")
-
-f4 <- ggplot(arrange(accounts_coverage, ACCOUNT_NAME), aes(x = ACCOUNT_NAME, y = percentage, fill = COVERAGE_TYPE)) +
-      geom_col() +
+      scale_x_discrete(limits = unique(accounts_discard$ACCOUNT_NAME[order(desc(accounts_discard$DISCARD_FLAG), desc(accounts_discard$percentage))])) +
       scale_fill_manual(values = kelly()[2:22], labels = c("Full", "Partial")) +
-      labs(x = "Account Name", y = "Percentage of Catch", fill = "Coverage Type") +
+      labs(x = "Account Name", y = "Percentage of Catch", fill = "Coverage") +
       coord_flip() +
       theme_classic() +
-      theme(axis.text.y = element_text(size = 4), legend.position = "bottom")
+      theme(axis.text.y = element_text(size = 4), legend.position = "bottom", legend.title = element_text(size=8), legend.text = element_text(size=6))
 
-grid.arrange(f3, f4, ncol = 2)
+grid.arrange(f1, f3, ncol = 2)
 ```
 
-Figure X shows that accounts with a high proportion of discards aren't necessarily in full coverage. There are several accounts in which all catch was discarded and fell within partial coverage. But we aren't interested in discard *amount*, we are interested in discard variability, so let's look at the variability of discards that occurred on observed trips relative to realized coverage rates:
-```{r}
+This shows that accounts with a high proportion of discards aren't necessarily in full coverage. There are several accounts in which all catch was discarded and fell within partial coverage. But we aren't interested in discard *amount*, we are interested in discard *variability*, so let's look at the variability of discards that occurred on observed trips relative to realized coverage rates within each account:
+```{r, warning=FALSE}
 accounts_se <- valhalla_2021 %>% 
                group_by(ACCOUNT_NAME, TRIP_ID, OBSERVED_FLAG) %>% 
                summarise(discard = sum(WEIGHT_POSTED[SOURCE_TABLE == "N"], na.rm = TRUE), .groups = 'drop') %>% 
@@ -131,23 +133,33 @@ accounts_se <- valhalla_2021 %>%
                          se_trip = sqrt((N-n)/N) * sqrt(1/n) * sd_trip,
                          se_account = se_trip * N)
 
-f5 <- ggplot(accounts_se, aes(x = n / N * 100, y = sd_trip, label = ACCOUNT_NAME)) +
+f4 <- ggplot(accounts_se, aes(x = n / N * 100, y = sd_trip, label = ACCOUNT_NAME)) +
       geom_label(size = 2.5) +
       labs(x = "Monitoring Rate (%)", y = "Standard Deviation of Trip-Level Discards") +
       lims(y = c(0, 70)) +
-      fig_theme
+      theme_classic()
 
-f5
+f4
 ```
 
-While informative, standard deviation isn't quite what we're after either, because highly variable discards at the trip level would still be precisely estimated if monitoring rates are high. We're interested in the standard deviation of the *estimate*. In this case, the estimate is the amount of discards that occurred within the account. The simple mean estimator for this is:
+There's clearly an outlier in BS Pollock Incidental Catch Allowance (ICA), but standard deviation isn't quite what we're after anyway, because highly variable discards at the trip level would still be precisely estimated if monitoring rates are high. We're interested in the standard deviation of the *estimate*. In this case, the estimate of the amount of discards that occurred within the account. The standard deviation of an estimate is called standard error, and we can begin by first calculating the standard error of the mean amount of discards that occurred on each trip within an account by using the following equation:
 
-Where X is the mean amount of discards that occurred on each trip, and N is the number of trips that occurred in that account. Similarly the standard error for this estimate is:
+<center>
 
-Where X is the standard error of the estimate of the mean amount of discards that occurred on each trip within that account. The equation for trip-level standard error is:
+$SE_{t} = \sqrt{\frac{N - n}{N} \frac{1}{n} \frac{\sum_{i=1}^{n} (d_{i}-\bar{d})^2}{n-1}}$
 
-Where n is the number of monitored trips that occurred within that account. We use the finite population correction () because we know how many total trips occurred within each account. Now we can plot account-level standard error against monitoring rate for each account:
-```{r}
+</center>
+
+Where $N$ is the total number of trips that occurred within an account, $n$ is the total number of monitored trips that occurred within an account, each $d_{i}$ is the amount of discards that occurred on a monitored trip, and $\bar{d}$ is the mean amount of discards that occurred on monitored trips within that account. We use the finite population correction factor ($\frac{N - n}{N}$) to account for the proportion of the population being sampled. The standard error of the estimate of the total amount of catch that occurred with in an account is this trip-level standard error multiplied by the total number of trips in that account:  
+
+<center>
+
+$SE_{a} = SE_{t}N$
+
+</center>
+
+This plot shows the account-level standard error against monitoring rate for each account:
+```{r, warning=FALSE}
 f6 <- ggplot(accounts_se, aes(x = n / N * 100, y = se_account, label = ACCOUNT_NAME)) +
       geom_label(size = 2.5) +
       labs(x = "Monitoring Rate (%)", y = "Standard Error of Account-Level Discard Estimate") +
@@ -157,19 +169,19 @@ f6
 ```
 
 It might be more useful to look at the distribution of standard errors: 
-```{r}
+```{r, warning=FALSE}
 f7 <- ggplot(accounts_se, aes(x = se_account)) +
-      geom_histogram() +
+      geom_histogram(bins = 30) +
       geom_vline(xintercept = median(accounts_se$se_account, na.rm = TRUE), lty = 2, color = "red") +
-      labs(title = "Original Data", x = "Standard Error of Account-Level Discard Estimate", y = "Number of Accounts") +
+      labs(x = "Standard Error of Account-Level Discard Estimate", y = "Number of Accounts") +
       fig_theme +
       theme(plot.title = element_text(hjust = 0.5))
 
 f7
 ```
 
-The dashed red line represents the mean standard error across accounts. A sampling design with a lower median standard error would be better for inseason management since it would mean that on average, the amount of discards that occurred within any given account were estimated with more precision. So far this analysis has been using 2021 data and the actual sampling that occurred in that year. All monitored trips were counted, regardless of whether they were monitored by an observer or EM. However, when the 2024 analytic team met with inseason managers, a consistent message from them was that fixed-gear EM isn't currently very useful for inseason managment, since data often come in weeks or months after the trip occurred. As a test of median standard error as a metric for differentiating between sample design performance for inseason management, we could compare what actually occurred in 2021 with a mock data set that only counts 25% of fixed-gear trips monitored with EM as having been monitored. This number was chosen based on inseason manager's assessment that 1 week is about the maximum turnaround time EM data could have to still be useful for inseason managemnt and the fact that the 2020 annual report showed that even the 25th percentile of review times from hard drive received to data exported was X and X for hook-and-line and pot gear, respectively. Comparing the mock design that only counts 25% of the monitored fixed-gear EM trips against what actually occurred in 2021, we get this:
-```{r}
+The dashed red line represents the median standard error across accounts. A sampling design with a lower median standard error would be better for inseason management since it would mean that on average, the amount of discards that occurred within any given account were estimated with more precision. So far this analysis has been using 2021 data and the actual sampling that occurred in that year. All monitored trips were counted, regardless of whether they were monitored by an observer or EM. However, when the 2024 analytic team met with inseason managers, a consistent message from them was that fixed-gear EM isn't currently very useful for inseason management, since data often come in weeks or months after the trip occurred. As a test of median standard error as a metric for differentiating between sample design performance for inseason management, we could compare what actually occurred in 2021 with a mock data set that only counts 25% of fixed-gear trips monitored with EM as having been monitored. This number was chosen based on inseason manager's assessment that 1 week is about the maximum turnaround time EM data could have to still be useful for inseason management and the fact that the 2020 Annual Report (AFSC and AKRO 2021) showed that even the 25th percentile of review times (from hard drive received to data exported) was 9 days and 16 days for hook-and-line and pot gear, respectively. Comparing the mock design that only counts 25% of the monitored fixed-gear EM trips against what actually occurred in 2021, we get this:
+```{r, warning=FALSE}
 monitored_fgem_trips <- valhalla_2021 %>% 
                         filter(STRATA %in% c("EM_HAL", "EM_POT") & OBSERVED_FLAG == "Y") %>% 
                         distinct(TRIP_ID) %>% 
@@ -188,16 +200,17 @@ accounts_se_mock <- valhalla_2021 %>%
                               n = n_distinct(TRIP_ID[OBSERVED_FLAG == "Y"]),
                               sd_trip = sd(discard[OBSERVED_FLAG == "Y"]),
                               se_trip = sqrt((N-n)/N) * sqrt(1/n) * sd_trip,
-                              se_account = se_trip * N)
+                              se_account = se_trip * N, 
+                              .groups = 'drop')
 
 f8 <- ggplot(accounts_se_mock %>% filter(rep == 1), aes(x = se_account)) +
-      geom_histogram() +
+      geom_histogram(bins = 30) +
       geom_vline(xintercept = median(accounts_se_mock$se_account, na.rm = TRUE), lty = 2, color = "red") +
       labs(title = "Fixed-Gear EM Monitoring Reduced by 75%", x = "Standard Error of Account-Level Discard Estimate", y = "Number of Accounts") +
       fig_theme +
       theme(plot.title = element_text(hjust = 0.5))
 
-grid.arrange(f7, f8, ncol = 1)
+grid.arrange(f7 + labs(title = "Original Data"), f8, ncol = 1)
 ```
 
 It's hard to see a difference in medians from the graph, so here they are in table form:
@@ -206,10 +219,11 @@ rbind(accounts_se %>% mutate(Design = "Original"),
       accounts_se_mock %>% filter(rep == 1) %>% select(-rep) %>% mutate(Design = "Reduced EM")) %>% 
 group_by(Design) %>% 
 summarise(`Median Standard Error` = round(median(se_account, na.rm = TRUE), 2)) %>% 
-flextable()
+flextable() %>% 
+autofit()
 ```
 
-The mock design used a random draw of monitored fixed-gear EM trips, and we can see that repeating that process consistently results in median standard errors that are lower than what actually occurred in 2021:
+The mock design used a random draw of monitored fixed-gear EM trips, and we can see that repeating that process consistently results in median standard errors that are higher than what actually occurred in 2021:
 ```{r}
 rbind(accounts_se %>% mutate(Design = "Original"),
       accounts_se_mock %>% filter(rep == 1) %>% select(-rep) %>% mutate(Design = "Reduced EM 1"),
@@ -219,7 +233,22 @@ rbind(accounts_se %>% mutate(Design = "Original"),
       accounts_se_mock %>% filter(rep == 5) %>% select(-rep) %>% mutate(Design = "Reduced EM 5")) %>% 
 group_by(Design) %>% 
 summarise(`Median Standard Error` = round(median(se_account, na.rm = TRUE), 2)) %>% 
-flextable()
+flextable() %>% 
+autofit()
 ```
 
-This tells us that if all fixed-gear EM data were usable for inseason managment, that design would perform better than one in which only 25% of fixed-gear EM data are usable for inseason management. Median standard error is the metric being proposed for differentiating the performance of different sampling designs with regards to providing data for inseason management.  
+This tells us that if all fixed-gear EM data were usable for inseason management, that design would perform better than one in which only 25% of fixed-gear EM data are usable for inseason management. Median standard error is the metric being proposed for differentiating the performance of different sampling designs with regards to providing data for inseason management.  
+
+# Potential Criticisms of This Approach  
+1. The standard error estimates are wrong because they assume that catch is known with perfect accuracy at the trip-level.    
+2. Trip counts are wrong because estimates were included when counting the number of trips that contributed catch to an account, and those estimates were made based on current CAS post-stratification rules.    
+
+# Responses to Potential Criticisms  
+1. Assuming catch is known at the trip-level is an intentional simplification. That simplification prevents the standard error estimates from being published as accurate, but it does not prevent this approach from being used to differentiate between the performance of designs.  
+2. Total catch estimates are our best approximation of what catch occurred on each trip. If post-stratification methods provide more precise total catch estimates in the future, it will only benefit the approach used here.  
+
+# Open Questions
+1. Should accounts with PSC limits be treated differently than accounts without PSC limits?    
+
+# References  
+AFSC (Alaska Fisheries Science Center) and AKRO (Alaska Regional Office). 2021. North Pacific Observer Program 2020 Annual Report. AFSC Processed Rep. 2021-03, 143 p. Alaska Fish. Sci. Cent., NOAA, Natl. Mar. Fish. Serv., 7600 Sand Point Way NE, Seattle WA 98115.Available at https://repository.library.noaa.gov/view/noaa/30732.
