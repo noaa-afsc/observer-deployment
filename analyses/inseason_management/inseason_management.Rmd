@@ -10,6 +10,7 @@ editor_options:
 ```{r setup, echo = FALSE, message = FALSE}
 # Get packages ----
 library(data.table)
+library(flextable)
 library(gridExtra)
 library(lubridate)
 library(pals)
@@ -17,8 +18,15 @@ library(ROracle)
 library(scales)
 library(tidyverse)
 
+# Set random number seed ----
+set.seed(49)
+
 # Load data ----
 load("analyses/inseason_management/valhalla_accounts.RData")  
+
+# Isolate the data used for most of the analysis ----
+valhalla_2021 <- valhalla %>% 
+                 filter(ADP == 2021 & ACCOUNT_NAME != "No Account")
 
 # Most recent full year ----
 year <- year(Sys.Date()) - 1
@@ -41,8 +49,7 @@ Catch is either retained or discarded. Retained catch is known, whereas discarde
 
 It's therefore helpful to visualize how much of the catch in each account is made up of discards:  
 ```{r accounts_discard}
-accounts_discard <- valhalla %>% 
-                    filter(ADP == 2021 & ACCOUNT_NAME != "No Account") %>% 
+accounts_discard <- valhalla_2021
                     mutate(DISCARD_FLAG = recode(SOURCE_TABLE, 'Y' = 'N', 'N' = 'Y')) %>% 
                     group_by(ACCOUNT_NAME, DISCARD_FLAG) %>%
                     summarise(weight = sum(WEIGHT_POSTED, na.rm = TRUE),
@@ -51,7 +58,8 @@ accounts_discard <- valhalla %>%
                     mutate(catch = ifelse(weight > 0, weight, count)) %>% 
                     group_by(ACCOUNT_NAME) %>% 
                     mutate(percentage = catch / sum(catch) * 100) %>% 
-                    arrange(DISCARD_FLAG, desc(percentage))
+                    arrange(DISCARD_FLAG, desc(percentage)) %>% 
+                    ungroup()
 
 f1 <- ggplot(accounts_discard, aes(x = ACCOUNT_NAME, y = percentage, fill = DISCARD_FLAG)) +
       geom_col() +
@@ -67,8 +75,7 @@ f1
 
 It's also helpful to visualize how much catch occurs in partial coverage within each account:  
 ```{r accounts_coverage}
-accounts_coverage <- valhalla %>% 
-                     filter(ADP == 2021 & ACCOUNT_NAME != "No Account") %>% 
+accounts_coverage <- valhalla_2021 %>% 
                      group_by(ACCOUNT_NAME, COVERAGE_TYPE) %>%
                      summarise(weight = sum(WEIGHT_POSTED, na.rm = TRUE),
                                count  = sum(SPECIES_COUNT, na.rm = TRUE),
@@ -76,7 +83,8 @@ accounts_coverage <- valhalla %>%
                      mutate(catch = ifelse(weight > 0, weight, count)) %>% 
                      group_by(ACCOUNT_NAME) %>% 
                      mutate(percentage = catch / sum(catch) * 100) %>% 
-                     arrange(COVERAGE_TYPE, desc(percentage))
+                     arrange(COVERAGE_TYPE, desc(percentage)) %>% 
+                     ungroup()
 
 f2 <- ggplot(accounts_coverage, aes(x = ACCOUNT_NAME, y = percentage, fill = COVERAGE_TYPE)) +
       geom_col() +
@@ -111,3 +119,107 @@ f4 <- ggplot(arrange(accounts_coverage, ACCOUNT_NAME), aes(x = ACCOUNT_NAME, y =
 grid.arrange(f3, f4, ncol = 2)
 ```
 
+Figure X shows that accounts with a high proportion of discards aren't necessarily in full coverage. There are several accounts in which all catch was discarded and fell within partial coverage. But we aren't interested in discard *amount*, we are interested in discard variability, so let's look at the variability of discards that occurred on observed trips relative to realized coverage rates:
+```{r}
+accounts_se <- valhalla_2021 %>% 
+               group_by(ACCOUNT_NAME, TRIP_ID, OBSERVED_FLAG) %>% 
+               summarise(discard = sum(WEIGHT_POSTED[SOURCE_TABLE == "N"], na.rm = TRUE), .groups = 'drop') %>% 
+               group_by(ACCOUNT_NAME) %>% 
+               summarise(N = n_distinct(TRIP_ID),
+                         n = n_distinct(TRIP_ID[OBSERVED_FLAG == "Y"]),
+                         sd_trip = sd(discard[OBSERVED_FLAG == "Y"]),
+                         se_trip = sqrt((N-n)/N) * sqrt(1/n) * sd_trip,
+                         se_account = se_trip * N)
+
+f5 <- ggplot(accounts_se, aes(x = n / N * 100, y = sd_trip, label = ACCOUNT_NAME)) +
+      geom_label(size = 2.5) +
+      labs(x = "Monitoring Rate (%)", y = "Standard Deviation of Trip-Level Discards") +
+      lims(y = c(0, 70)) +
+      fig_theme
+
+f5
+```
+
+While informative, standard deviation isn't quite what we're after either, because highly variable discards at the trip level would still be precisely estimated if monitoring rates are high. We're interested in the standard deviation of the *estimate*. In this case, the estimate is the amount of discards that occurred within the account. The simple mean estimator for this is:
+
+Where X is the mean amount of discards that occurred on each trip, and N is the number of trips that occurred in that account. Similarly the standard error for this estimate is:
+
+Where X is the standard error of the estimate of the mean amount of discards that occurred on each trip within that account. The equation for trip-level standard error is:
+
+Where n is the number of monitored trips that occurred within that account. We use the finite population correction () because we know how many total trips occurred within each account. Now we can plot account-level standard error against monitoring rate for each account:
+```{r}
+f6 <- ggplot(accounts_se, aes(x = n / N * 100, y = se_account, label = ACCOUNT_NAME)) +
+      geom_label(size = 2.5) +
+      labs(x = "Monitoring Rate (%)", y = "Standard Error of Account-Level Discard Estimate") +
+      fig_theme
+
+f6
+```
+
+It might be more useful to look at the distribution of standard errors: 
+```{r}
+f7 <- ggplot(accounts_se, aes(x = se_account)) +
+      geom_histogram() +
+      geom_vline(xintercept = median(accounts_se$se_account, na.rm = TRUE), lty = 2, color = "red") +
+      labs(title = "Original Data", x = "Standard Error of Account-Level Discard Estimate", y = "Number of Accounts") +
+      fig_theme +
+      theme(plot.title = element_text(hjust = 0.5))
+
+f7
+```
+
+The dashed red line represents the mean standard error across accounts. A sampling design with a lower median standard error would be better for inseason management since it would mean that on average, the amount of discards that occurred within any given account were estimated with more precision. So far this analysis has been using 2021 data and the actual sampling that occurred in that year. All monitored trips were counted, regardless of whether they were monitored by an observer or EM. However, when the 2024 analytic team met with inseason managers, a consistent message from them was that fixed-gear EM isn't currently very useful for inseason managment, since data often come in weeks or months after the trip occurred. As a test of median standard error as a metric for differentiating between sample design performance for inseason management, we could compare what actually occurred in 2021 with a mock data set that only counts 25% of fixed-gear trips monitored with EM as having been monitored. This number was chosen based on inseason manager's assessment that 1 week is about the maximum turnaround time EM data could have to still be useful for inseason managemnt and the fact that the 2020 annual report showed that even the 25th percentile of review times from hard drive received to data exported was X and X for hook-and-line and pot gear, respectively. Comparing the mock design that only counts 25% of the monitored fixed-gear EM trips against what actually occurred in 2021, we get this:
+```{r}
+monitored_fgem_trips <- valhalla_2021 %>% 
+                        filter(STRATA %in% c("EM_HAL", "EM_POT") & OBSERVED_FLAG == "Y") %>% 
+                        distinct(TRIP_ID) %>% 
+                        unlist() %>% 
+                        as.vector()
+  
+accounts_se_mock <- valhalla_2021 %>% 
+                    mutate(OBSERVED_FLAG = ifelse(STRATA %in% c("EM_HAL", "EM_POT"), "N", OBSERVED_FLAG)) %>% 
+                    full_join(data.frame(rep = c(1:5)), by = character()) %>% 
+                    group_by(rep) %>% 
+                    mutate(OBSERVED_FLAG = ifelse(STRATA %in% c("EM_HAL", "EM_POT") & TRIP_ID %in% sample(monitored_fgem_trips, round(length(monitored_fgem_trips) * 0.25)), "Y", OBSERVED_FLAG)) %>%
+                    group_by(ACCOUNT_NAME, TRIP_ID, OBSERVED_FLAG, rep) %>% 
+                    summarise(discard = sum(WEIGHT_POSTED[SOURCE_TABLE == "N"], na.rm = TRUE), .groups = 'drop') %>% 
+                    group_by(ACCOUNT_NAME, rep) %>% 
+                    summarise(N = n_distinct(TRIP_ID),
+                              n = n_distinct(TRIP_ID[OBSERVED_FLAG == "Y"]),
+                              sd_trip = sd(discard[OBSERVED_FLAG == "Y"]),
+                              se_trip = sqrt((N-n)/N) * sqrt(1/n) * sd_trip,
+                              se_account = se_trip * N)
+
+f8 <- ggplot(accounts_se_mock %>% filter(rep == 1), aes(x = se_account)) +
+      geom_histogram() +
+      geom_vline(xintercept = median(accounts_se_mock$se_account, na.rm = TRUE), lty = 2, color = "red") +
+      labs(title = "Fixed-Gear EM Monitoring Reduced by 75%", x = "Standard Error of Account-Level Discard Estimate", y = "Number of Accounts") +
+      fig_theme +
+      theme(plot.title = element_text(hjust = 0.5))
+
+grid.arrange(f7, f8, ncol = 1)
+```
+
+It's hard to see a difference in medians from the graph, so here they are in table form:
+```{r}
+rbind(accounts_se %>% mutate(Design = "Original"),
+      accounts_se_mock %>% filter(rep == 1) %>% select(-rep) %>% mutate(Design = "Reduced EM")) %>% 
+group_by(Design) %>% 
+summarise(`Median Standard Error` = round(median(se_account, na.rm = TRUE), 2)) %>% 
+flextable()
+```
+
+The mock design used a random draw of monitored fixed-gear EM trips, and we can see that repeating that process consistently results in median standard errors that are lower than what actually occurred in 2021:
+```{r}
+rbind(accounts_se %>% mutate(Design = "Original"),
+      accounts_se_mock %>% filter(rep == 1) %>% select(-rep) %>% mutate(Design = "Reduced EM 1"),
+      accounts_se_mock %>% filter(rep == 2) %>% select(-rep) %>% mutate(Design = "Reduced EM 2"),
+      accounts_se_mock %>% filter(rep == 3) %>% select(-rep) %>% mutate(Design = "Reduced EM 3"),
+      accounts_se_mock %>% filter(rep == 4) %>% select(-rep) %>% mutate(Design = "Reduced EM 4"),
+      accounts_se_mock %>% filter(rep == 5) %>% select(-rep) %>% mutate(Design = "Reduced EM 5")) %>% 
+group_by(Design) %>% 
+summarise(`Median Standard Error` = round(median(se_account, na.rm = TRUE), 2)) %>% 
+flextable()
+```
+
+This tells us that if all fixed-gear EM data were usable for inseason managment, that design would perform better than one in which only 25% of fixed-gear EM data are usable for inseason management. Median standard error is the metric being proposed for differentiating the performance of different sampling designs with regards to providing data for inseason management.  
