@@ -140,8 +140,8 @@ flextable(dcast(box_4_prop_1_dt, ADP ~ STRATA, value.var = "PROP_1")) %>% colfor
 ggplot(
   data = rbind(
     cbind(box_3_prop_1_dt, Box = "[NMFS Area] + [2 week bins]"),
-    cbind(box_4_prop_1_dt, Box = "[NMFS Area] + [2 month bins]")
-  )[STRATA != "ZERO"][, Box := factor(Box, levels = c("[NMFS Area] + [2 week bins]", "[NMFS Area] + [2 month bins]"))],
+    cbind(box_4_prop_1_dt, Box = "[NMFS Area] + [1 month bins]")
+  )[STRATA != "ZERO"][, Box := factor(Box, levels = c("[NMFS Area] + [2 week bins]", "[NMFS Area] + [1 month bins]"))],
   aes(fill = Box, x = ADP, y = PROP_1, label = NUM_OF_PS)
 ) + geom_col(position = "dodge") + geom_text(size=3, position = position_dodge2(width = 1), hjust = 0.5) + 
   facet_wrap(~STRATA) + 
