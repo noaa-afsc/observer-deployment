@@ -6,7 +6,6 @@
 
 library(data.table)         # Data wrangling
 library(ggplot2)            # Plotting
-library(flextable)          # Cleaner tables for Rmarkdown
 library(sf)                 # Spatial analyses
 library(dplyr)              # Data wrangling sf objects
 library(flextable)          # Print-ready tables
@@ -18,53 +17,9 @@ library(ggrepel)            # For repelled text labels in plots
 # Load Functions ####
 #===================#
 
-source("analyses/spatiotemporal_boxes/stat_area_to_hex_fun.R")         # Creates hex grids
-source("analyses/spatiotemporal_boxes/define_post_stratum_fun.R")      # Applies box definitions
+source("analyses/spatiotemporal_boxes/functions.R")
 
-# New functions
-
-# TODO should be able to use this in mean_prop_n as well?
-# Quickly counts the number of trips per box
-count_trips_per_cell <- function(x) {
-  rbindlist(
-    lapply(x, function(y) as.data.table(y)[, .(CELL_N = uniqueN(TRIP_ID)), by = PS_ID]), 
-    idcol = "ADP.STRATA")
-}
-
-# Calculates the expected proportion of trips sampled or near a sampled neighbor in a stratum x year
-calculate_mean_prop_n <- function(ps_res, sample_rate_vec) {
-  # Collapse PS total weights into a dt.
-  # FIXME relies on adp_strata_N_dt being in the global environment!
-
-  ps_w_dt <- rbindlist(
-    lapply(ps_res$W, as.data.table),
-    idcol = "ADP.STRATA"
-  )[, c("ADP", "STRATA") := tstrsplit(ADP.STRATA, split = "[.]")
-  ][, ADP := as.integer(ADP)
-  ][, ADP.STRATA := NULL]
-  
-  # Count trips in post-strata, combine with weights and STRATA N
-  ps_smry_dt <- ps_res$dt[, .(n = length(unique(TRIP_ID))), keyby=.(ADP, STRATA, PS_ID)]
-  ps_smry_dt[, N := adp_strata_N_dt[ps_smry_dt, N, on = .(ADP, STRATA)]]
-  ps_smry_dt[, W := ps_w_dt[ps_smry_dt, W, on = .(ADP, STRATA, PS_ID)]]
-  
-  # For for a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
-  # (0-1), and then multiply it by that post-stratum's total weight of component trips centered on the post-stratum.
-  
-  ps_prop_n <- lapply(
-    sample_rate_vec,
-    # For each sample rate 'x'...
-    ps_prop_n_lst <- function(x) {
-      x1 <- copy(ps_smry_dt)
-      x1[, p := 1 - ((1 - x)^n)]   # Calculate the probability that the post-stratum will be near a sampled neighbor
-      x1[, .(sum_W_p = sum(W * p)), by = .(ADP, STRATA, N)][   # Multiply the probability by the weight (number of component trips centered in the box)
-      ][, MEAN_PROP_N_IN_SAMPLED_PS := sum_W_p / N][]
-    }
-  )
-  names(ps_prop_n) <- sample_rate_vec
-  ps_prop_n <- rbindlist(ps_prop_n, idcol = "SAMPLE_RATE")[, SAMPLE_RATE := as.numeric(SAMPLE_RATE)][]
-  ps_prop_n
-}
+# New Functions ####
 
 # Creates a table of summary statistics for a given box definition
 box_smry_flex <- function(x) {
@@ -108,10 +63,6 @@ week_to_month_dt <- data.table(WEEK = 1:53)[
 ][, MONTH := cut(WEEK, breaks = round((.N/12) * 0:12), labels = F)]
 effort_month[, MONTH := week_to_month_dt[effort_month, MONTH, on = .(WEEK)]]
 
-# Count number of trips per stratum per year
-adp_strata_N_dt <- effort[, .(N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)]
-
-
 #===================================#
 # SPECIFY RANGES OF BOX DEFINITIONS #
 #===================================#
@@ -126,6 +77,10 @@ sample_rate_vec <- seq(from = 0.005, to = 0.800, by = 0.0025)
 # Quick-load the results below
 if(F) {
   # For each spatial definition, combine with a temporal definition
+  
+  # First, define the stratum columns
+  stratum_cols <- c("ADP", "STRATA")
+  
   time_space_check_lst <- lapply(
     space_lst,
     function(x) {
@@ -133,23 +88,23 @@ if(F) {
       cat(x, "\n")
       
       # Week
-      week_0 <- define_poststrata_fun(effort, space = c(x[[1]], x[[1]] * x[[2]]), time = c("WEEK", 0), year_strata = c("ADP", "STRATA"))
-      week_1 <- define_poststrata_fun(effort, space = c(x[[1]], x[[1]] * x[[2]]), time = c("WEEK", 1), year_strata = c("ADP", "STRATA"))
-      week_2 <- define_poststrata_fun(effort, space = c(x[[1]], x[[1]] * x[[2]]), time = c("WEEK", 2), year_strata = c("ADP", "STRATA"))
+      week_0 <- define_poststrata(effort, space = c(x[[1]], x[[1]] * x[[2]]), time = c("WEEK", 0), stratum_cols = stratum_cols)
+      week_1 <- define_poststrata(effort, space = c(x[[1]], x[[1]] * x[[2]]), time = c("WEEK", 1), stratum_cols = stratum_cols)
+      week_2 <- define_poststrata(effort, space = c(x[[1]], x[[1]] * x[[2]]), time = c("WEEK", 2), stratum_cols = stratum_cols)
       
       # Month
-      month_0 <- define_poststrata_fun(effort_month, space = c(x[[1]], x[[1]] * x[[2]]), time = c("MONTH", 0), year_strata = c("ADP", "STRATA"))
-      month_1 <- define_poststrata_fun(effort_month, space = c(x[[1]], x[[1]] * x[[2]]), time = c("MONTH", 1), year_strata = c("ADP", "STRATA"))
-      month_2 <- define_poststrata_fun(effort_month, space = c(x[[1]], x[[1]] * x[[2]]), time = c("MONTH", 2), year_strata = c("ADP", "STRATA"))
+      month_0 <- define_poststrata(effort_month, space = c(x[[1]], x[[1]] * x[[2]]), time = c("MONTH", 0), stratum_cols = stratum_cols)
+      month_1 <- define_poststrata(effort_month, space = c(x[[1]], x[[1]] * x[[2]]), time = c("MONTH", 1), stratum_cols = stratum_cols)
+      month_2 <- define_poststrata(effort_month, space = c(x[[1]], x[[1]] * x[[2]]), time = c("MONTH", 2), stratum_cols = stratum_cols)
       
       # Combine the trip per cell counts
       trips_per_cell_dt <- rbind(
-        cbind(TIME = "WEEK", TIME_OVER = 0, count_trips_per_cell(week_0$ps_trip_id)),
-        cbind(TIME = "WEEK", TIME_OVER = 1, count_trips_per_cell(week_1$ps_trip_id)),
-        cbind(TIME = "WEEK", TIME_OVER = 2, count_trips_per_cell(week_2$ps_trip_id)),
-        cbind(TIME = "MONTH", TIME_OVER = 0, count_trips_per_cell(month_0$ps_trip_id)),
-        cbind(TIME = "MONTH", TIME_OVER = 1, count_trips_per_cell(month_1$ps_trip_id)),
-        cbind(TIME = "MONTH", TIME_OVER = 2, count_trips_per_cell(month_2$ps_trip_id))
+        cbind(TIME = "WEEK", TIME_OVER = 0, count_trips_per_cell(week_0)),
+        cbind(TIME = "WEEK", TIME_OVER = 1, count_trips_per_cell(week_1)),
+        cbind(TIME = "WEEK", TIME_OVER = 2, count_trips_per_cell(week_2)),
+        cbind(TIME = "MONTH", TIME_OVER = 0, count_trips_per_cell(month_0)),
+        cbind(TIME = "MONTH", TIME_OVER = 1, count_trips_per_cell(month_1)),
+        cbind(TIME = "MONTH", TIME_OVER = 2, count_trips_per_cell(month_2))
       )
       
       # For each definition, also apply a range of monitoring rates to calculate the MEAN_PROP_N index,
@@ -177,17 +132,15 @@ if(F) {
   )
   
   time_space_check_TPC_dt <- rbindlist(Map(function(m1, m2) cbind(m1, cell_size = m2[1], radius = m2[2]), m1 = lapply(time_space_check_lst, "[[", "TRIPS_PER_CELL"), m2 = space_lst))
+  time_space_check_TPC_dt[
+  ][, (stratum_cols) := tstrsplit(stratum_cols, split = "[.]")     # Expand stratum_cols back to separate columns
+  ][, PS_DEF := .GRP, by = .(TIME, TIME_OVER, cell_size, radius)   # Given an integer identifier for each box definition
+  ][, stratum_cols := NULL]                                        # Remove stratum identifier column
   # save(time_space_check_TPC_dt, file = "analyses/spatiotemporal_boxes/sea_design_exploration_2.RData")
-  
-  #time_space_check_MPN_dt <- rbindlist(Map(function(m1, m2) cbind(m1, cell_size = m2[1], radius = m2[2]), m1 = lapply(time_space_check_lst, "[[", "MEAN_PROP_N"), m2 = space_lst))
-  #  save(time_space_check_TPC_dt, time_space_check_MPN_dt, file = "analyses/spatiotemporal_boxes/sea_design_exploration_2.RData")
   
 }
 
 load("analyses/spatiotemporal_boxes/sea_design_exploration_2.RData")
-
-time_space_check_TPC_dt[, c("ADP", "STRATA") := tstrsplit(ADP.STRATA, split = "[.]")]
-time_space_check_TPC_dt[, PS_DEF := .GRP, by = .(TIME, TIME_OVER, cell_size, radius)]
 
 #================================#
 # MAP OF NMFS AREAS AND GRIDS ####
@@ -271,7 +224,10 @@ keep_ps_def <- setdiff(keep_ps_def, c(319, 263, 367, 405))
 # Relating space and time ####
 #============================#
 
-# Calcaalte extent of space and time in units of area and days, respectively.
+# Count number of trips per stratum per year
+adp_strata_N_dt <- effort[, .(N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)]
+
+# Calculate extent of space and time in units of area and days, respectively.
 st_compare <- copy(time_space_check_TPC_dt)
 st_compare[, CELL_AREA_km2 := (3 * sqrt(3) / 2) * (cell_size/sqrt(3))^2 / 1e6]                       # area of cell_size alone
 st_compare[, CELL_EXTENT_km2 := CELL_AREA_km2 * fcase(radius==0, 1, radius==1, 7, radius==2, 19)]     # area of extent including neighbors (using radius)
@@ -286,6 +242,7 @@ st_compare[, DAYS := fcase(
   TIME == "MONTH" & TIME_OVER == 1, 90,
   TIME == "MONTH" & TIME_OVER == 2, 150
 )]
+rm(adp_strata_N_dt)
 
 # Calculate MEAN_PROP_N_IN_CELL for each PS_DEF, STRATA, and ADP
 st_compare_smry <- st_compare[, .(MEAN_PROP_N_IN_CELL = mean(PROP_N_IN_CELL)), by = .(ADP, STRATA, PS_DEF, cell_size, radius, TIME, TIME_OVER, CELL_EXTENT_km2, DAYS)]
@@ -491,259 +448,195 @@ ps_def_p_3[
 
 ps_def_p_3[PS_DEF %in% c(182, 188, 345, 351)][order(cell_size, TIME_OVER)]  # MEAN_P3 for the small boxes is around 0.13, so more harsh on gaps. The other are extremely similar at P_3 around 0.03
 
+best_defs <- ts_mod_p3_dt[PS_DEF %in% c(182, 188, 345, 351)][ps_def_p_3[PS_DEF %in% c(182, 188, 345, 351)], on = .(PS_DEF)]
+
 # Where are these on the plot?
 ggplot(ts_mod_dt, aes(x = DAYS, y = AREA)) + geom_line(size = 2) + labs(x = "Days", y = "Area in km2", color = "P_3 in Range?") + 
   geom_line(data = ts_mod_dt2, size = 2, color = "red") +
   #geom_hline(data = space_bins, aes(yintercept = CELL_EXTENT_km2), linetype = 2) + 
   #geom_text_repel(data = space_bins, aes(x = 15, y = CELL_EXTENT_km2, label = SPACE_LABEL), size = 3, max.overlaps = 50) + 
   geom_text_repel(
-    data = ts_mod_p3_dt[PS_DEF %in% c(182, 188, 345, 351)], aes(label = PS_DEF), size = 3, max.overlaps = 50) + 
+    data = best_defs, aes(label = paste0(cell_size/1e3, "km+", radius, "; ", TIME, "+/-", TIME_OVER)), size = 3, max.overlaps = 50) + 
   geom_point(data = ts_mod_p3_dt[PS_DEF %in% c(182, 188, 345, 351)], aes(color = P_3_IN_RANGE, shape = OVER), position = position_jitter(width = 0.5), size = 2, stroke = 1) + 
   theme(legend.position = "bottom") + scale_y_continuous(limits = c(2.5e4, 1e6)) + 
   xlim(c(15, 40)) 
 
-#==================================================#
-# How do these compare with a specified budget? ####
-#==================================================#
+# FIXME Put the distributions here for 175 cell sizes
 
-sample_rate_vec <- seq(from = 0.005, to = 0.800, by = 0.0001)          
+#================================#
+# Trip per cell distributions ####
+#================================#
 
-s175_1_tW_1 <- calculate_mean_prop_n(
-  define_poststrata_fun(effort, space = c(1.75e5, 1.75e5*1), time = c("WEEK", 1), year_strata = c("ADP", "STRATA")),
-  sample_rate_vec)
-s175_1_tW_2 <- calculate_mean_prop_n(
-  define_poststrata_fun(effort, space = c(1.75e5, 1.75e5*2), time = c("WEEK", 2), year_strata = c("ADP", "STRATA")),
-  sample_rate_vec)
+stratum_cols <- c("ADP", "STRATA")
+ps1 <- define_poststrata(effort, space = c(1.75e5, 1.75e5*1), time = c("WEEK", 1), stratum_cols = stratum_cols)
+ps2 <- define_poststrata(effort, space = c(1.75e5, 1.75e5*2), time = c("WEEK", 2), stratum_cols = stratum_cols)
+q_probs <- c(0.1, 0.25, 0.5)
 
-# For now, let's assume we have a $4.5 budget for monitoring, that OB trips on average cost 
-# Use average values from the 2022 Final ADP for now
-ob_cpd <- 4118880 / 2844         # $1447.27/day
-fgem_cpd <- 1e6 / (632 + 255)    # $1127.40/day
-trwem_cpd <- 600                 # $600/day according to JF estimates used in set_budget.R in 2022 Final ADP repo
-# Get average trip length for all strata, using TRIP_END - TRIP_START + 1
-trip_cost_dt <- unique(val_2018_2021_dt[STRATA != "ZERO", .(ADP, STRATA, TRIP_ID, TRIP_START, TRIP_END)])[
-][, .(MEAN_TRIP_DAYS = mean(as.numeric(TRIP_END - TRIP_START, units = "days") + 1)), by = .(ADP, STRATA)]
-# Merge in day costs
-trip_cost_dt[, CPD := fcase(
-  STRATA == "EM_TRW", trwem_cpd,
-  STRATA %in% c("EM_POT", "EM_HAL"), fgem_cpd,
-  STRATA %in% c("HAL", "POT", "TRW"), ob_cpd)]
-# Calculate cost per trip
-trip_cost_dt[, CPT := MEAN_TRIP_DAYS * CPD]
+ps1_n <- ps1$dt[, .(N_NEAR_PS = uniqueN(TRIP_ID)), keyby = c(stratum_cols,  "PS_ID")][, PS_COUNT := .N, by = stratum_cols][]
+ps1_n[, STRATA_N := ps1$strata_N_dt[ps1_n, N, on = stratum_cols]]
+ggplot(ps1_n, aes(x = as.factor(ADP), y = N_NEAR_PS)) + facet_grid(STRATA ~ ., scales = "free_y") + geom_violin(draw_quantiles = q_probs) + labs(subtitle = "Box definition: 1.75km cells + 1, Week +/- 1", x = "Year")
+ps1_n[, as.list(quantile(N_NEAR_PS, probs = c(q_probs))), by = c(stratum_cols, "STRATA_N", "PS_COUNT")]
 
-# TODO For each design, find range of MEAN_PROP_N that is common to all ADP and STRATA
-
-get_ready_to_allocate <- function(x, costs){
-  # x <- copy(s175_1_tW_1); costs <- copy(trip_cost_dt)
-  # x <- copy(s175_2_tW_2); costs <- copy(trip_cost_dt)
-  
-
-  x1 <- copy(x)
-  
-  # View 'allocation-background.html' document in 2024_ADP/analyses/allocation_background
-  x1[, n := SAMPLE_RATE * N]
-  x1[, FPC := (N - n) / N]
-  x1[, CV_SCALING := sqrt(FPC * (1/n))]  # As long as n > 1 then CV_scaling should be between 0 and 1
-  x1[, INDEX := MEAN_PROP_N_IN_SAMPLED_PS / CV_SCALING]
-  
-  # Find range of INDEX that is similar to all strata x ADP
-  x2 <- x1[
-  ][, .(MIN = min(INDEX), MAX = max(INDEX)), by = .(ADP, STRATA)
-  ][, .(MIN = max(MIN), MAX = min(MAX)), by = .(ADP)]
-  # Subset each year by the index range
-  x1 <- do.call(rbind, apply(x2, MARGIN = 1, function(y) {
-    x1[ADP == y[["ADP"]]][data.table::between(INDEX, y[["MIN"]], y[["MAX"]])]
-  }))
-  
-  # TODO Make a huge vector of indices (like 1000 cuts?) put it in a table with all strata and ADP, rolling join, get unique values, total the costs.
-  
-  # TEST What would it cost to get an index of 12 in year 2021?
-  index_val <- 11.48
-  x3 <- unique(x1[, .(STRATA)])
-  x3[, INDEX := index_val]
-  x4 <- x1[ADP == 2021][x3, on = .(STRATA, INDEX), roll = "nearest"]
-  x4[, TPC := costs[x4, CPT, on = .(STRATA, ADP)]]
-  x4[, STRATUM_COST := n * TPC]
-  sum(x4$STRATUM_COST)  # Would cost 2.54M  #   # 
-  
-  # TODO plot the relative rates for the strata as index/budget increases. Do they track uniformly? 
-  
-  # In 2021, For t1s1, $4M affords index of 10.27, t2s2 affords index of 11.48
-  # In 2021, For t1s1, $5M affords index of 12.3, t2s2 affords index of 13.35
-  
-  
-  # t1s1_rates <- copy(x4)
-  # t2s2_rates <- copy(x4)
-  # t1s1_rates[order(STRATA)]; t2s2_rates[order(STRATA)]
-  # ggplot(rbind(cbind(BOX = "t1s1", t1s1_rates), cbind(BOX = "t2s2", t2s2_rates)), aes(x = STRATA, y= SAMPLE_RATE, fill = BOX)) + geom_col(position = "dodge")
-  # The rates are pretty similar! With a larger sample rate vector, could get better resolution!
-  # The larger boxes results in higher rates for EM_TRW and TRW?
-  # 
-
-  
-  
-}
-
-
-
-
-
+ps2_n <- ps2$dt[, .(N_NEAR_PS = uniqueN(TRIP_ID)), keyby = c(stratum_cols, "PS_ID")][, PS_COUNT := .N, by = stratum_cols][]
+ps2_n[, STRATA_N := ps2$strata_N_dt[ps2_n, N, on = stratum_cols]]
+ggplot(ps2_n, aes(x = as.factor(ADP), y = N_NEAR_PS)) + facet_grid(STRATA ~ ., scales = "free_y") + geom_violin(draw_quantiles = q_probs) + labs(subtitle = "Box definition: 1.75km cells + 2, Week +/- 2", x =  "Year")
+ps2_n[, as.list(quantile(N_NEAR_PS, probs = c(q_probs))), by = c(stratum_cols, "STRATA_N", "PS_COUNT")]
 
 #=============================#
 # EXPLORING OTHER METHODS? ####
 
+#=============================#
+# NOTE : Below was an effort to employ one model to relate both space and time to the mean number of trips per box simultaneously,
+# rather than separately, to account for the interaction that time and space likely have. However, I could not simplify 
+# the output function to solely relate time and space to one another. I've kept it below commented out for posterity in 
+# case we feel the need to pick this up again. 
+#=============================#
 
-library(car)
-scatter3d(x = dat_sub$CELL_EXTENT_km2, y = dat_sub$DAYS, z = dat_sub$MEAN_PROP_N_IN_CELL, formula = y~ log(x) * log(y), surface = F, point.col = "black")
-
-
-
-# Using just one model?
-st_compare_smry
-what <- copy(st_compare_smry)
-what[, CELL_F := factor(CELL_EXTENT_km2, ordered = T)]
-what[, CELL_1e3 := CELL_EXTENT_km2 / 1e3]
-what[, DAYS_F := factor(DAYS, ordered = T)]
-
-mm_ss <- lmer(MEAN_PROP_N_IN_CELL ~ sqrt(CELL_1e3) + (CELL_1e3|DAYS_F) + (1|STRATA) + (1|ADP), data = what) 
-
-mm_st <- lmer(MEAN_PROP_N_IN_CELL ~ sqrt(DAYS) + (DAYS|CELL_F) + (1|STRATA) + (1|ADP), data = what) 
-scoef <- fixef(mm_ss)
-tcoef <- fixef(mm_st)
-
-AIC(
-  lmer(MEAN_PROP_N_IN_CELL ~ sqrt(CELL_1e3) + (CELL_1e3|DAYS_F) + (1|STRATA) + (1|ADP), data = what),
-  lmer(MEAN_PROP_N_IN_CELL ~ sqrt(CELL_1e3) + (sqrt(CELL_1e3)|DAYS_F) + (1|STRATA) + (1|ADP), data = what)  # AIC is lower?
-)
-
-
-what <- copy(st_compare_smry)
-what[, Space := sqrt(CELL_EXTENT_km2)]
-what[, Time := sqrt(DAYS)]
-what[, Space_F := factor(Space, ordered = T)]
-what[, Time_F := factor(Time, ordered = T)]
-what[, ADP := factor(ADP, ordered = T)]
-library(optimx)
-
-t1 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (Space|Time_F) + (1|STRATA) + (1|ADP), data = what)
-t2 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (Space|Time_F) + (1|STRATA) + (1|ADP), data = what, control = lmerControl(optimizer = 'optimx', optCtrl = list(method = 'nlminb')))
-AIC(t1, t2) # changing optimizer changed the AIC a little bit, fewer warnings?
-
-
-f1 <- lm(MEAN_PROP_N_IN_CELL ~ Space, data = what)
-m1 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (1|STRATA), data = what)
-coef(f1)
-fixef(m1)    # mixed model doesn't change fixed effects at all...
-AIC(f1, m1)  # Excluding ADP is actually better, but including STRATA is an improvement.
-f1_r <- as.data.table(coef(m1)$STRATA, keep.rownames = "STRATA")
-ggplot(f1_r, aes(x = Space, y=`(Intercept)`, label = STRATA)) + geom_point() + geom_text()
-summary(m1)
-
-m3 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (1|DAYS), data = what)
-m4 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (1|Time), data = what)
-m5 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (1|Time_F), data = what)
-AIC(m3, m4, m5)  # All are identical, just treated as a factor
-fixef(m3); fixef(m4); fixef(m5)  #Identical
-
-f2 <- lm(MEAN_PROP_N_IN_CELL ~ Space * Time, data = what)
-ggplot(what, aes(x = Space, y = MEAN_PROP_N_IN_CELL)) + geom_point(position = position_jitter(width = 2), alpha=0.5)
-ggplot(what, aes(x = Space, y = MEAN_PROP_N_IN_CELL/Time, color = as.factor(Time))) + geom_point(position = position_jitter(width = 2), alpha=0.5) + scale_color_viridis_d() + facet_grid(STRATA~., scales = "free_y")
-
-m6 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (STRATA|Time), data = what)
-
-
-
-f1 <- lm(MEAN_PROP_N_IN_CELL ~ Time, data = what)
-m1 <- lmer(MEAN_PROP_N_IN_CELL ~ Time + (1|STRATA), data = what)
-coef(f1)
-fixef(m1)    # mixed model doesn't change fixed effects at all...
-AIC(f1, m1)  # Excluding ADP is actually better, but including STRATA is an improvement.
-f1_r <- as.data.table(coef(m1)$STRATA, keep.rownames = "STRATA")
-ggplot(f1_r, aes(x = Time, y=`(Intercept)`, label = STRATA)) + geom_point() + geom_text()
-summary(m1)  # compared with space, the intercepts for the strata are relatively identical, just scaled differently
-
-
-test <- copy(what)
-test <- test[-sample(nrow(test), size=2000)]
-f1 <- lm(MEAN_PROP_N_IN_CELL ~ Time, data = test)
-m1 <- lmer(MEAN_PROP_N_IN_CELL ~ Time + (1|STRATA), data = test)
-coef(f1)
-fixef(m1)  # Not identical, but virtually the same
-
-# Average across strata and ADP?
-
-test <- what[, .(MEAN_PROP_N_IN_CELL = mean(MEAN_PROP_N_IN_CELL)), by = .(PS_DEF, cell_size, radius, TIME, TIME_OVER, CELL_EXTENT_km2, DAYS, Space, Time)]
-f2 <- lm(MEAN_PROP_N_IN_CELL ~ Space, data = test)
-m2 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (1|Time), data = test)
-coef(f2)
-fixef(m2)  # Not identical, but virtually the same
-f1  # Model coefficients are basically the same! Just averages across strata! Including time as a random effect is still not useful
-f2
-m2
-# If I used the random intercepts, adjusted these values, and then re-modeled, would I get the same answers?
-
-
-
-what[, Space_1e3_sqrt := sqrt(CELL_EXTENT_km2/1e3)]
-t3 <- lmer(MEAN_PROP_N_IN_CELL ~ Space_1e3_sqrt + (Space_1e3_sqrt|Time_F) + (1|STRATA) + (1|ADP), data = what)
-t4 <- lmer(MEAN_PROP_N_IN_CELL ~ Space_1e3_sqrt + (1|Time_F) + (1|STRATA) + (1|ADP), data = what)
-t5 <- lmer(MEAN_PROP_N_IN_CELL ~ Space_1e3_sqrt + (Space_1e3_sqrt|Time_F) + (1|STRATA) + (1|ADP), data = what, control = lmerControl(optimizer = 'optimx', optCtrl = list(method = 'nlminb')))
-AIC(t3, t4, t5)  # Not having time as a random slope greatly worsens AIC
-fixef(t3); fixef(t4); fixef(t5)  # But he coefficients are literally not any different...
-plot(residuals(t3))
-plot(residuals(t4))  # Residuals are worse
-plot(residuals(t5))  # Same as t3, just don't get warnings by chaning the control....
-
-ranef(t5)$Time_F
-
-# How do different random effects have no differece on the fixed effects?
-
-fixef(lmer(MEAN_PROP_N_IN_CELL ~ Space_1e3_sqrt + (1|ADP), data = what))  # Deleted or adding random effects doesn't change coefficients!
-
-fixef(lmer(MEAN_PROP_N_IN_CELL ~ Space_1e3_sqrt + (1|ADP), data = what)) # Is it because I'm not treating the variable as a category like it probably is?
-
-
-
-a <- lm(MEAN_PROP_N_IN_CELL ~ log(CELL_EXTENT_km2) * log(DAYS), data = what)
-summary(a)
-
-# TODO EXCLUDE the super large box definitions, restrict to the box in the final figure.
-a
-
-
-# does a mixed model actually do anything with my coefficients?
-fm_s <- lm(MEAN_PROP_N_IN_CELL ~ log(CELL_EXTENT_km2), data = what)
-mm_s <- lmer(MEAN_PROP_N_IN_CELL ~ log(CELL_EXTENT_km2) + (1|STRATA) + (1|ADP) , data = what) 
-coef(fm_s)
-t1
-
-
-t6 <- lmer(MEAN_PROP_N_IN_CELL ~ Time + (Time|Space_F) + (1|STRATA) + (1|ADP), data = what, control = lmerControl(optimizer = 'optimx', optCtrl = list(method = 'nlminb')))
-summary(t6)  # boundary fit means one of the random variables is not useful?
-
-
-t7 <-   lmer(MEAN_PROP_N_IN_CELL ~ Time + (Time|Space_F) + (1|STRATA) + (1|ADP), data = what, control = lmerControl(optimizer = 'optimx', optCtrl = list(method = 'nlminb')))
-t8 <-   lmer(MEAN_PROP_N_IN_CELL ~ Time + (1|Space_F) + (1|STRATA) + (1|ADP), data = what, control = lmerControl(optimizer = 'optimx', optCtrl = list(method = 'nlminb')))
-fixef(t7); fixef(t8)  # coefficients are the same regardless of if Space_F has a random slope or not. Just causes errors?
-
-
-# got rid of scaling issues, still failed to converge
-
-
-space_from_time <- function(x) {
-  ((((tcoef[[1]] - scoef[[1]]) + (tcoef[[2]] * sqrt(x)))) / tcoef[[2]]) ^2
-}
-time_dt <- data.table(DAYS = 7:150)
-time_dt[, CELL_EXTENT_km2 := space_from_time(DAYS) * 1e3]
-ggplot(time_dt, aes(x = DAYS, y = CELL_EXTENT_km2)) + geom_point()  # why does this only go up to 60K?
-
-((tcoef[[1]] - scoef[[1]]) / tcoef[[2]])^2
-(scoef[[2]] / tcoef[[2]])^2
-# 16.08381 + 0.05484533*d
-space_from_time2 <- function(x) {16.08381 + 0.05484533*x}
-time_dt[, CELL_EXTENT2 := space_from_time2(DAYS) * 1e3]
-time_dt
-# My other plot only goes up to 1.2e7, not 2.5M, so being a little low probably isn't bad? But this is too LOW
-
-mm_ss
-mm_st
+# library(car)
+# scatter3d(x = dat_sub$CELL_EXTENT_km2, y = dat_sub$DAYS, z = dat_sub$MEAN_PROP_N_IN_CELL, formula = y~ log(x) * log(y), surface = F, point.col = "black")
+# 
+# # Using just one model?
+# st_compare_smry
+# what <- copy(st_compare_smry)
+# what[, CELL_F := factor(CELL_EXTENT_km2, ordered = T)]
+# what[, CELL_1e3 := CELL_EXTENT_km2 / 1e3]
+# what[, DAYS_F := factor(DAYS, ordered = T)]
+# 
+# mm_ss <- lmer(MEAN_PROP_N_IN_CELL ~ sqrt(CELL_1e3) + (CELL_1e3|DAYS_F) + (1|STRATA) + (1|ADP), data = what) 
+# 
+# mm_st <- lmer(MEAN_PROP_N_IN_CELL ~ sqrt(DAYS) + (DAYS|CELL_F) + (1|STRATA) + (1|ADP), data = what) 
+# scoef <- fixef(mm_ss)
+# tcoef <- fixef(mm_st)
+# 
+# AIC(
+#   lmer(MEAN_PROP_N_IN_CELL ~ sqrt(CELL_1e3) + (CELL_1e3|DAYS_F) + (1|STRATA) + (1|ADP), data = what),
+#   lmer(MEAN_PROP_N_IN_CELL ~ sqrt(CELL_1e3) + (sqrt(CELL_1e3)|DAYS_F) + (1|STRATA) + (1|ADP), data = what)  # AIC is lower?
+# )
+# 
+# 
+# what <- copy(st_compare_smry)
+# what[, Space := sqrt(CELL_EXTENT_km2)]
+# what[, Time := sqrt(DAYS)]
+# what[, Space_F := factor(Space, ordered = T)]
+# what[, Time_F := factor(Time, ordered = T)]
+# what[, ADP := factor(ADP, ordered = T)]
+# library(optimx)
+# 
+# t1 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (Space|Time_F) + (1|STRATA) + (1|ADP), data = what)
+# t2 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (Space|Time_F) + (1|STRATA) + (1|ADP), data = what, control = lmerControl(optimizer = 'optimx', optCtrl = list(method = 'nlminb')))
+# AIC(t1, t2) # changing optimizer changed the AIC a little bit, fewer warnings?
+# 
+# 
+# f1 <- lm(MEAN_PROP_N_IN_CELL ~ Space, data = what)
+# m1 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (1|STRATA), data = what)
+# coef(f1)
+# fixef(m1)    # mixed model doesn't change fixed effects at all...
+# AIC(f1, m1)  # Excluding ADP is actually better, but including STRATA is an improvement.
+# f1_r <- as.data.table(coef(m1)$STRATA, keep.rownames = "STRATA")
+# ggplot(f1_r, aes(x = Space, y=`(Intercept)`, label = STRATA)) + geom_point() + geom_text()
+# summary(m1)
+# 
+# m3 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (1|DAYS), data = what)
+# m4 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (1|Time), data = what)
+# m5 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (1|Time_F), data = what)
+# AIC(m3, m4, m5)  # All are identical, just treated as a factor
+# fixef(m3); fixef(m4); fixef(m5)  #Identical
+# 
+# f2 <- lm(MEAN_PROP_N_IN_CELL ~ Space * Time, data = what)
+# ggplot(what, aes(x = Space, y = MEAN_PROP_N_IN_CELL)) + geom_point(position = position_jitter(width = 2), alpha=0.5)
+# ggplot(what, aes(x = Space, y = MEAN_PROP_N_IN_CELL/Time, color = as.factor(Time))) + geom_point(position = position_jitter(width = 2), alpha=0.5) + scale_color_viridis_d() + facet_grid(STRATA~., scales = "free_y")
+# 
+# m6 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (STRATA|Time), data = what)
+# 
+# 
+# 
+# f1 <- lm(MEAN_PROP_N_IN_CELL ~ Time, data = what)
+# m1 <- lmer(MEAN_PROP_N_IN_CELL ~ Time + (1|STRATA), data = what)
+# coef(f1)
+# fixef(m1)    # mixed model doesn't change fixed effects at all...
+# AIC(f1, m1)  # Excluding ADP is actually better, but including STRATA is an improvement.
+# f1_r <- as.data.table(coef(m1)$STRATA, keep.rownames = "STRATA")
+# ggplot(f1_r, aes(x = Time, y=`(Intercept)`, label = STRATA)) + geom_point() + geom_text()
+# summary(m1)  # compared with space, the intercepts for the strata are relatively identical, just scaled differently
+# 
+# 
+# test <- copy(what)
+# test <- test[-sample(nrow(test), size=2000)]
+# f1 <- lm(MEAN_PROP_N_IN_CELL ~ Time, data = test)
+# m1 <- lmer(MEAN_PROP_N_IN_CELL ~ Time + (1|STRATA), data = test)
+# coef(f1)
+# fixef(m1)  # Not identical, but virtually the same
+# 
+# # Average across strata and ADP?
+# 
+# test <- what[, .(MEAN_PROP_N_IN_CELL = mean(MEAN_PROP_N_IN_CELL)), by = .(PS_DEF, cell_size, radius, TIME, TIME_OVER, CELL_EXTENT_km2, DAYS, Space, Time)]
+# f2 <- lm(MEAN_PROP_N_IN_CELL ~ Space, data = test)
+# m2 <- lmer(MEAN_PROP_N_IN_CELL ~ Space + (1|Time), data = test)
+# coef(f2)
+# fixef(m2)  # Not identical, but virtually the same
+# f1  # Model coefficients are basically the same! Just averages across strata! Including time as a random effect is still not useful
+# f2
+# m2
+# # If I used the random intercepts, adjusted these values, and then re-modeled, would I get the same answers?
+# 
+# 
+# 
+# what[, Space_1e3_sqrt := sqrt(CELL_EXTENT_km2/1e3)]
+# t3 <- lmer(MEAN_PROP_N_IN_CELL ~ Space_1e3_sqrt + (Space_1e3_sqrt|Time_F) + (1|STRATA) + (1|ADP), data = what)
+# t4 <- lmer(MEAN_PROP_N_IN_CELL ~ Space_1e3_sqrt + (1|Time_F) + (1|STRATA) + (1|ADP), data = what)
+# t5 <- lmer(MEAN_PROP_N_IN_CELL ~ Space_1e3_sqrt + (Space_1e3_sqrt|Time_F) + (1|STRATA) + (1|ADP), data = what, control = lmerControl(optimizer = 'optimx', optCtrl = list(method = 'nlminb')))
+# AIC(t3, t4, t5)  # Not having time as a random slope greatly worsens AIC
+# fixef(t3); fixef(t4); fixef(t5)  # But he coefficients are literally not any different...
+# plot(residuals(t3))
+# plot(residuals(t4))  # Residuals are worse
+# plot(residuals(t5))  # Same as t3, just don't get warnings by chaning the control....
+# 
+# ranef(t5)$Time_F
+# 
+# # How do different random effects have no differece on the fixed effects?
+# 
+# fixef(lmer(MEAN_PROP_N_IN_CELL ~ Space_1e3_sqrt + (1|ADP), data = what))  # Deleted or adding random effects doesn't change coefficients!
+# 
+# fixef(lmer(MEAN_PROP_N_IN_CELL ~ Space_1e3_sqrt + (1|ADP), data = what)) # Is it because I'm not treating the variable as a category like it probably is?
+# 
+# 
+# 
+# a <- lm(MEAN_PROP_N_IN_CELL ~ log(CELL_EXTENT_km2) * log(DAYS), data = what)
+# summary(a)
+# 
+# # TODO EXCLUDE the super large box definitions, restrict to the box in the final figure.
+# a
+# 
+# 
+# # does a mixed model actually do anything with my coefficients?
+# fm_s <- lm(MEAN_PROP_N_IN_CELL ~ log(CELL_EXTENT_km2), data = what)
+# mm_s <- lmer(MEAN_PROP_N_IN_CELL ~ log(CELL_EXTENT_km2) + (1|STRATA) + (1|ADP) , data = what) 
+# coef(fm_s)
+# t1
+# 
+# 
+# t6 <- lmer(MEAN_PROP_N_IN_CELL ~ Time + (Time|Space_F) + (1|STRATA) + (1|ADP), data = what, control = lmerControl(optimizer = 'optimx', optCtrl = list(method = 'nlminb')))
+# summary(t6)  # boundary fit means one of the random variables is not useful?
+# 
+# 
+# t7 <-   lmer(MEAN_PROP_N_IN_CELL ~ Time + (Time|Space_F) + (1|STRATA) + (1|ADP), data = what, control = lmerControl(optimizer = 'optimx', optCtrl = list(method = 'nlminb')))
+# t8 <-   lmer(MEAN_PROP_N_IN_CELL ~ Time + (1|Space_F) + (1|STRATA) + (1|ADP), data = what, control = lmerControl(optimizer = 'optimx', optCtrl = list(method = 'nlminb')))
+# fixef(t7); fixef(t8)  # coefficients are the same regardless of if Space_F has a random slope or not. Just causes errors?
+# 
+# # got rid of scaling issues, still failed to converge
+# space_from_time <- function(x) {
+#   ((((tcoef[[1]] - scoef[[1]]) + (tcoef[[2]] * sqrt(x)))) / tcoef[[2]]) ^2
+# }
+# time_dt <- data.table(DAYS = 7:150)
+# time_dt[, CELL_EXTENT_km2 := space_from_time(DAYS) * 1e3]
+# ggplot(time_dt, aes(x = DAYS, y = CELL_EXTENT_km2)) + geom_point()  # why does this only go up to 60K?
+# 
+# ((tcoef[[1]] - scoef[[1]]) / tcoef[[2]])^2
+# (scoef[[2]] / tcoef[[2]])^2
+# # 16.08381 + 0.05484533*d
+# space_from_time2 <- function(x) {16.08381 + 0.05484533*x}
+# time_dt[, CELL_EXTENT2 := space_from_time2(DAYS) * 1e3]
+# time_dt
+# # My other plot only goes up to 1.2e7, not 2.5M, so being a little low probably isn't bad? But this is too LOW
+# mm_ss
+# mm_st
