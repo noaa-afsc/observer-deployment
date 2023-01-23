@@ -13,8 +13,7 @@ library(dplyr)              # Data wrangling sf objects
 # Load Functions ####
 #===================#
 
-source("analyses/spatiotemporal_boxes/stat_area_to_hex_fun.R")         # Creates hex grids
-source("analyses/spatiotemporal_boxes/define_post_stratum_fun.R")      # Applies box definitions
+source("analyses/spatiotemporal_boxes/functions.R")         
 
 #==============#
 # Load Data ####
@@ -42,7 +41,7 @@ effort <- unique(val_2018_2021_dt[
 #=======================#
 
 # Start with a 175km hex cells and radius = 1, with Week overlapping by +/- 1
-dat <- define_poststrata_fun(effort, space = c(1.75e5, 1.75e5*1), time = c("WEEK", 1), year_strata = c("ADP", "STRATA"))
+dat <- define_poststrata(effort, space = c(2e5, 2e5*1), time = c("WEEK", 1), stratum_cols = c("ADP", "STRATA"))
 
 # Combine post-stratum definitions with weights
 ps_w_dt <- rbindlist(
@@ -54,14 +53,14 @@ ps_w_dt <- rbindlist(
 # Count trips in post-strata, combine with weights and STRATA N
 # n = number of TRIP_IDs within or neighboring each post-stratum
 ps_smry_dt <- dat$dt[, .(n = length(unique(TRIP_ID))), keyby=.(ADP, STRATA, PS_ID)]
-ps_smry_dt[, N := adp_strata_N_dt[ps_smry_dt, N, on = .(ADP, STRATA)]]  # Merge in STRATA's N
+ps_smry_dt[, N := dat$strata_N_dt[ps_smry_dt, N, on = .(ADP, STRATA)]]  # Merge in STRATA's N
 ps_smry_dt[, W := ps_w_dt[ps_smry_dt, W, on = .(ADP, STRATA, PS_ID)]]   # Merge in each post-stratum's total weight
 
 #======================#
 # Set Sampling Rate ####
 #======================#
 
-# Sample rate to employ in comparison
+# Sample rate to employ in comparison. Feel free to change this and see the results!
 sample_rate <- 0.005
 
 #==================#
