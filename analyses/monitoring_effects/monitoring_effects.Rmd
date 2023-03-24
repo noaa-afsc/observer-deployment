@@ -1,0 +1,216 @@
+---
+title: "Monitoring Effects and Monitoring Rates 2013 - 2021"
+output: html_document
+date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r start, echo = FALSE, message = FALSE, warning = FALSE}
+# Set random number seed ----
+set.seed(49)
+
+# Get packages ----
+library(data.table)
+library(flextable)
+library(ROracle)
+library(scales)
+library(tidyverse)
+
+# Get custom permutation test function ----
+source("analyses/monitoring_effects/perm_test.R")
+
+# Get data ----
+if(file.exists("source_data/valhalla_2013_2021.RData")){
+load("source_data/valhalla_2013_2021.RData")
+  
+} else {
+  
+# Establish database connection
+channel <- eval(parse(text = Sys.getenv("channel_afsc")))
+
+# Pull data from database
+val <- setDT(dbGetQuery(channel, "select * from loki.akr_valhalla where adp < 2022"))
+
+# Save data
+save(val, file = "source_data/valhalla_2013_2021.RData")
+}
+
+# Don't print code ----
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r wrangle, include = FALSE}
+# Select rows of interest ----
+perm_data <- val[COVERAGE_TYPE != "FULL" & !(STRATA %in% c("FULL", "ZERO", "ZERO_EM_RESEARCH", "EM", "EM Voluntary"))]
+
+# Conform strata to those used in most recent ADP ----
+
+# Split trips from 2013 and 2014 that fished both POT and TRW gear
+perm_data[TRIP_ID %in% perm_data[STRATA == "TRIP" & AGENCY_GEAR_CODE == "POT", TRIP_ID] & TRIP_ID %in% perm_data[STRATA == "TRIP" & AGENCY_GEAR_CODE == "TRW", TRIP_ID], TRIP_ID := ifelse(AGENCY_GEAR_CODE == "POT", paste0(TRIP_ID, ".1"), paste0(TRIP_ID, ".2"))]
+
+# Relabel 2013 and 2014 strata using gear type
+perm_data[STRATA %in% c("TRIP", "VESSEL", "T", "t"), STRATA := AGENCY_GEAR_CODE]
+
+# Recode tender strata
+perm_data[, STRATA := as.character(recode(STRATA, "EM_TenP" = "EM_POT", "TenH" = "HAL", "TenP" = "POT", "TenTR" = "TRW"))]
+
+# View combo strata trips
+unique(perm_data[, N := uniqueN(STRATA), by = .(TRIP_ID)
+          ][N > 1, .(ADP, TRIP_ID, STRATA, AGENCY_GEAR_CODE)])
+
+# For combo strata trips, default to the (non-JIG) stratum with the most landed weight
+perm_data[, N := uniqueN(STRATA), by = .(TRIP_ID)
+          ][N > 1, STRATA_WEIGHT := sum(WEIGHT_POSTED[SOURCE_TABLE == "Y" & STRATA != "JIG"]), by = .(TRIP_ID, STRATA)
+            ][N > 1, ':=' (COVERAGE_TYPE = COVERAGE_TYPE[which.max(STRATA_WEIGHT)], STRATA = STRATA[which.max(STRATA_WEIGHT)]), by = .(TRIP_ID)
+              ][, ':=' (N = NULL, STRATA_WEIGHT = NULL)]
+
+# Calculate permutation test metrics ----
+
+# Number of areas fished
+perm_data[, N_AREAS := as.numeric(length(unique(REPORTING_AREA_CODE))), by=.(TRIP_ID, STRATA)]
+
+# Trip duration in days (removes 6 trips that had landing date before trip start)
+perm_data <- perm_data[, MIN_DATE := min(as.Date(TRIP_TARGET_DATE)), by = .(TRIP_ID, STRATA)
+                       ][, MAX_DATE := max(as.Date(LANDING_DATE)), by = .(TRIP_ID, STRATA)
+                         ][, DAYS := as.numeric(difftime(MAX_DATE, MIN_DATE, units = "days") + 1), by = .(TRIP_ID, STRATA)
+                           ][, c("TRIP_TARGET_DATE", "LANDING_DATE", "MIN_DATE", "MAX_DATE") := NULL
+                             ][DAYS > 0]
+# Length overall  
+perm_data[, LENGTH_OVERALL := as.numeric(LENGTH_OVERALL)]
+
+# Number of species
+perm_data[, N_SPECIES := as.numeric(length(unique(AGENCY_SPECIES_CODE[SOURCE_TABLE == "Y"]))), by = .(TRIP_ID, STRATA)]
+
+# Landed catch
+perm_data[, LANDED_CATCH := sum(as.numeric(WEIGHT_POSTED[SOURCE_TABLE == "Y"])), by = .(TRIP_ID, STRATA)]
+
+# Proportion of catch that is predominant species (pMax)
+perm_data[, SPECIES_WEIGHT := sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = TRUE), by = .(TRIP_ID, STRATA, AGENCY_SPECIES_CODE)
+          ][, PMAX := max(SPECIES_WEIGHT/LANDED_CATCH), by = .(TRIP_ID, STRATA)
+            ][, SPECIES_WEIGHT := NULL]
+
+# Isolate columns of interest and make rows unique
+perm_data <- unique(perm_data[, .(ADP, VESSEL_ID, TRIP_ID, COVERAGE_TYPE, STRATA, TENDER, OBSERVED_FLAG, N_AREAS, DAYS, LENGTH_OVERALL, N_SPECIES, PMAX, LANDED_CATCH)])
+```
+
+```{r perm_test}
+units        <- "TRIP_ID"
+metrics      <- c("N_AREAS", "DAYS", "LENGTH_OVERALL", "N_SPECIES", "PMAX", "LANDED_CATCH")
+groups       <- c("ADP", "STRATA")
+yn_var       <- "OBSERVED_FLAG"
+n_rep        <- 1000
+boxcox       <- FALSE
+
+if(file.exists("results/perm_results.RData")){
+  load("results/perm_results.RData")
+  
+} else {
+
+perm_results <- perm_test(data = perm_data, units, metrics, groups, yn_var, n_rep, boxcox)
+save(perm_results, file = "results/perm_results.RData")
+}
+```
+
+```{r figure_1}
+# Get p-values and monitoring rates from the permutation test results
+dat <- perm_results$N_table[perm_results$`p-value`, on = .(ADP, STRATA)]
+dat <- melt(dat, id.vars = c(groups, "N", "n", "rate"), measure.vars = metrics, variable.name = "metric", value.name = "p_val")
+
+# Construct a linear model of p-value ~ rate for each stratum and metric combination
+mod <- lm(p_val ~ -1 + STRATA:metric + rate:STRATA:metric, data = dat)
+
+# Extract the slope coefficients from the linear model
+mod_df <- data.frame(name = names(mod$coefficients), coefficient = unname(mod$coefficients))
+mod_df <- mod_df %>% 
+filter(grepl("rate", name)) %>% 
+mutate(STRATA = str_match(name, "STRATA\\s*(.*?)\\s*:metric")[,2],
+       metric = str_match(name, "metric\\s*(.*?)\\s*:rate")[,2],
+       # If p-values from the permutation test are correlated with 
+       # monitoring rate, we would expect the correlation to be positive
+       expected = ifelse(coefficient > 0, "Yes", "No")) %>% 
+select(STRATA, metric, slope = coefficient, expected)
+
+# Join the slope coefficients back onto the permutation test results
+dat <- dat[setDT(mod_df), on = .(STRATA, metric)]
+
+# Recode strata and metrics for the figure
+dat[, ':=' (STRATA = str_replace_all(STRATA, "_", " "), 
+            metric = as.character(recode(metric, 
+                     "N_AREAS" = "NMFS areas", 
+                     "DAYS" = "Days fished", 
+                     "LENGTH_OVERALL" = "Vessel length (ft)", 
+                     "N_SPECIES" = "Species landed", 
+                     "PMAX" = "pMax", 
+                     "LANDED_CATCH" = "Landed catch (t)")))]
+
+# Create figure 
+f1 <- ggplot(dat, aes(x = rate, y = p_val, color = expected)) +
+      geom_point() +
+      stat_smooth(method = "lm", formula = 'y ~ x', se = FALSE) +
+      facet_grid(metric ~ STRATA, scales = "free") +
+      scale_x_continuous(labels = number_format(accuracy = 0.01)) +
+      labs(x = "Monitoring rate", y = "p-value", color = "Were monitoring effects reduced (as measured by a linear \nincrease in p-value) as monitoring rate increased?") +
+      theme(legend.position = "bottom")
+
+# Print figure
+f1
+
+# Save figure
+if(!file.exists("output_figures/permutation_p_val.png")){
+ggsave(filename = "output_figures/permutation_p_val.png", width = 11, height = 8.5, units = 'in')
+}
+```
+  
+Figure 1. The *p*-values from permutation tests against realized monitoring rates. Each point represents one year of data on which the permutation test was run. Partial coverage data from 2013 through 2021 were used. Lines represent the linear regression of the points.  
+
+```{r figure_2}
+# Get percent differences and monitoring rates from the permutation test results
+dat <- perm_results$N_table[perm_results$obs[SCALE == "PCT"], on = .(ADP, STRATA)]
+dat <- melt(dat, id.vars = c(groups, "N", "n", "rate"), measure.vars = metrics, variable.name = "metric", value.name = "pct_diff")
+
+# Construct a linear model of percent difference ~ rate for each stratum and metric combination
+mod <- lm(pct_diff ~ -1 + STRATA:metric + rate:STRATA:metric, data = dat)
+
+# Extract the slope coefficients from the linear model
+mod_df <- data.frame(name = names(mod$coefficients), coefficient = unname(mod$coefficients))
+mod_df <- mod_df %>% 
+filter(grepl("rate", name)) %>% 
+mutate(STRATA = str_match(name, "STRATA\\s*(.*?)\\s*:metric")[,2],
+       metric = str_match(name, "metric\\s*(.*?)\\s*:rate")[,2],
+       # If percent differences are correlated with monitoring rate, 
+       # we would expect the correlation to be negative
+       expected = ifelse(coefficient < 0, "Yes", "No")) %>% 
+select(STRATA, metric, slope = coefficient, expected)
+
+# Join the slope coefficients back onto the permutation test results
+dat <- dat[setDT(mod_df), on = .(STRATA, metric)]
+
+# Recode strata and metrics for the figure
+dat[, ':=' (STRATA = str_replace_all(STRATA, "_", " "), 
+            metric = as.character(recode(metric, 
+                     "N_AREAS" = "NMFS areas", 
+                     "DAYS" = "Days fished", 
+                     "LENGTH_OVERALL" = "Vessel length (ft)", 
+                     "N_SPECIES" = "Species landed", 
+                     "PMAX" = "pMax", 
+                     "LANDED_CATCH" = "Landed catch (t)")))]
+
+# Create figure
+f2 <- ggplot(dat, aes(x = rate, y = pct_diff, color = expected)) +
+      geom_point() +
+      stat_smooth(method = "lm", formula = 'y ~ x', se = FALSE) +
+      facet_grid(metric ~ STRATA, scales = "free") +
+      labs(x = "Monitoring rate", y = "% Difference in means (monitored - unmonitored)", color = "Were monitoring effects reduced (as measured by a linear \ndecrease in % difference) as monitoring rate increased?") +
+      theme(legend.position = "bottom")
+
+# Print figure
+f2
+
+# Save figure
+if(!file.exists("output_figures/permutation_pct_diff.png")){
+ggsave(filename = "output_figures/permutation_pct_diff.png", width = 11, height = 8.5, units = 'in')
+}
+```
+  
+Figure 1. The percent differences in means (monitored - unmonitored) against realized monitoring rates. Each point represents one year of data. Partial coverage data from 2013 through 2021 were used. Lines represent the linear regression of the points.    
