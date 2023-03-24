@@ -1,0 +1,133 @@
+---
+title: "Cost-Weighted Boxes Exploration"
+author: "Geoff_Mayhew"
+date: '2023-03-14'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = F, fig.align = 'center')  # echo must be TRUE for code folding to work!
+
+# Load Packages ----
+
+library(data.table)         # Data wrangling
+library(ggplot2)            # Plotting
+library(flextable)          # Cleaner tables for Rmarkdown
+library(officer)            # Better formatting of flextable
+library(dplyr)              # Data wrangling for flextable
+
+load("cost_weighted_boxes_exploration_Rmd.Rdata")
+```
+
+This allocation method intends to allocate sampling to all monitored partial coverage strata (i.e., both observed and electronic monitoring) in consideration of the probability of getting at least one monitored trip in each domain (defined by space and time within each stratum) as well as monitoring costs. It is essentially a spin on Cochran's 'optimal allocation' (chapter 5.5 in Cochran 1977) which can be used to minimize the combined variance of a specified metric given each stratum's sampling costs. Cochran's equation 5.23 shows this as:
+
+\begin{equation}
+\tag{1}
+\frac{n_{h}}{n} \equiv \frac{ N_{h}S_{h}/\sqrt{c_{h}} }{\sum{\left(N_{h}S_{h}/\sqrt{c_{h}}\right) }}
+\end{equation}
+
+where $h$ is each stratum, $N$ is the the total number of trips, $S$ is the standard deviation of a specified metric, and $c$ is the per-unit monitoring cost.
+
+Our idea for this allocation method was to replace the standard deviation ($S_{h}$) terms with each stratum's **proportion of boxes with less than a pre-specified probability of having no monitored trips**. This pre-specified probability of having no monitored trips would be set equal for all strata (50%, for instance), or $P50_{h}$:
+
+\begin{equation}
+\tag{2}
+\frac{n_{h}}{n} \equiv \frac{ N_{h}P50_{h}/\sqrt{c_{h}} }{\sum{\left(N_{h}P50_{h}/\sqrt{c_{h}}\right) }}
+\end{equation}
+
+Here, 'domains' are defined the same way as there were in the 'proximity' allocation scheme: spatial hexagonal cells 250km across and temporal block 1-week in length. Trips are allowed to span multiple boxes in both time and space (based on the landing reports), and trips are considered neighboring if they are in adjacent spatial cells or temporal cells.
+
+Alternatively to calculating $P50_h$, leveraging the machinery that is used in the 'proximity' allocation scheme, we can instead calculate the **expected proportion of boxes that will not be monitored given a sampling rate**, or $\bar{P}_{h}$. This metric does not rely on an arbitrarily chosen cutoff probability and is calculated by averaging the probabilities that each box will be monitored: 
+
+\begin{equation}
+\tag{3}
+\bar{P}_{h} = \frac{\sum_{b = 1}^{B_{h}}(1-r_{h})^{e_{hb}}}{B_{h}}
+\end{equation}
+
+where $b$ is each box within stratum $h$, $B_{h}$ is the total number of boxes in the stratum, $r_h$ is our assumed monitoring rate, and $e_{hb}$ is the number of unique trips either within or adjacent to each box. 
+
+To illustrate how $\bar{P}_h$ scales the monitoring rate for each stratum in each year, see the figure below. 
+
+\
+```{r Ph_scaling_with_rh, fig.width = 7.5, fig.height = 3}
+ggplot(cwb_prop$Ph_dt[STRATA != "ZERO"], aes(x = SAMPLE_RATE, y = Ph, color = STRATA)) + facet_grid(. ~ ADP) + 
+  geom_line(lwd = 1) + theme(legend.position = "bottom") + labs(x = "Monitoring rate (rh)", color = "Strata") + 
+  scale_x_continuous(breaks = seq(0, 1, 0.2))
+```
+**Figure 1.** $\bar{P}_h$, the expected proportion of boxes that will not be sampled as a function of each stratum's sampling rate $r_h$.
+
+\
+$\bar{P}_h$ is dependent on the distribution of fishing trips in space and time as well as the size of the stratum. Both *EM_POT* and *EM_TRW* are small strata in terms of $N_h$, but it is clear that the distribution of fishing effort in *EM_POT* is much more diffuse than for *EM_TRW* because a much higher $r_h$ is required to reduce $\bar{P}_h$. The effect of $N_h$ is apparent in the *OB_POT* stratum, which has increased in recent years, as shown by the lower $\bar{P}_h$ values at any given $r_h$.
+
+\
+Our updated allocation equation is now:
+
+\begin{equation}
+\tag{4}
+\frac{n_{h}}{n} \equiv \frac{ N_{h}\bar{P}_{h}/\sqrt{c_{h}} }{\sum{\left(N_{h}\bar{P}_{h}/\sqrt{c_{h}}\right)}}
+\end{equation}
+
+However, in order to calculate $\bar{P}_{h}$, we have to assume a monitoring rate for our strata beforehand. In other words, the math for this allocation scheme appears to be circular - first assume a monitoring rate to determine what monitoring rate to use! If you arbitrarily assume monitoring rates for your strata in order to calculate $\bar{P}_{h}$, and then include $N$ and $c$ to calculate $n_{h}/n$, you're likely to get a new monitoring rate that differed from that which was used to determine $\bar{P}_{h}$.
+
+One could argue that if you initially assume proportionate allocation (aka equal allocation) for our strata, then $\bar{P}_{h}$ would represent a fair measurement of each stratum's propensity to have unmonitored domains. Making some assumptions about the cost of monitoring each stratum, the equal allocation rate was estimated to be `r round(equal_rate_2022, 4)*100`% for fishing effort in 2022. Using that value of $r$ for all strata to acquire $\bar{P_{h}}$ for all strata, plugging in $N_h$ and $c_h$ to calculate $n_{h}/n$, and using equation Cochran's equation 5.24 to calculate $n$ afforded with a \$`r round(target_budget/1e6, 1)`M monitoring program, we get the following results for $n_{h}$ that leads us to our allocated sampling fractions, $f_{h} = n_{h}/N_{h}$:
+
+\
+**Table 1.** Allocated rates ($f_h$) using the cost-weighted boxes method, assuming a monitoring rate $r_h$ of `r round(equal_rate_2022,4)` to estimate $\bar{P}_h$. Note that the allocated rate $f_h$ is different from $r_h$!
+```{r init_equal_rate}
+equal_rate_Ph %>%
+  select(Year = ADP, Strata = STRATA, Nh = STRATA_N, ch = CPT, `rh` = SAMPLE_RATE, Ph, `NP/c` = `NP/c_h`, `nh/n`, n, nh, fh) %>%
+  flextable() %>% colformat_double(j = c(6, 7, 8, 11), digits = 3)  %>% colformat_double(j = c(4,9, 10), digits = 2) %>% 
+  colformat_int(j = 1, big.mark = "") %>% fontsize(size = 8, part = "all") %>% padding(padding = 2) %>%
+  hline(i = c(6, 12, 18, 24), border = fp_border(style = "dashed")) %>% autofit()
+```
+
+\
+Notice that in all years, The resulting allocation rate $f_h$ is oftentimes vastly different from the monitoring rate $r_h$ that was assumed to estimate $\bar{P}_h$. For instance, it seems unfair that in 2022, we assume a monitoring rate of `r round(equal_rate_2022*100,1)`% for *EM_POT* which corresponds to a fairly high $\bar{P}_h$ value of 0.337 that results in a high allocation of 54.4%. Similarly, *OB_POT* is essentially getting 'credit' for a monitoring rate of `r round(equal_rate_2022*100,1)`% but is only getting allocated half of that at 7.2%. 
+
+As shown previously in Figure 1, for each year and stratum, $\bar{P}_h$ scales different for different monitoring rates, so we cannot directly compute where the assumed monitoring rate $r_h$ is equivalent to the allocated monitoring rate $f_h$ for all strata within a given year. However, because we have already calculated $\bar{P}_h$ for each year and stratum using a wide vector of sampling rates, we've essentially created a look-up table that allows us to make incremental tweaks to the assumed monitoring until the delta between $r_h$ and $f_h$ is minimized. Within each year, for each stratum, I adjusted the assumed monitoring rate $r_h$ to be the midpoint between $r_h$ and $f_h$, used that to look-up the corresponding $\bar{P}_h$, and repeated the allocation algorithm to acquire a new $f_h$. This entire process of halving was repeated several times until $r_h$ and $f_h$ converged. They will never truly be equivalent (the delta will oscillate) but the approximation can be improved by increasing the resolution of the look-up table. 
+
+\
+```{r cwb_steps_plot, fig.width = 7.5, fig.height = 5}
+# ggplot(cwb_results, aes(x = Step, color = STRATA)) + theme(legend.position = "bottom") + 
+#   facet_grid(. ~ ADP) + labs(y = "Rate", color = "Strata") + 
+#   geom_line(aes(y = SAMPLE_RATE), linetype = 2, lwd = 1) + 
+#   geom_line(aes(y = fh), lwd = 1) + labs(subtitle = 'Dashed is assumed rate (rh), solid is allocated rate (fh)') + 
+#   scale_y_continuous(limits = c(0, NA))
+
+ggplot(melt(copy(cwb_results)[, "rh" := SAMPLE_RATE], id.vars = c("ADP", "STRATA", "Step"), measure.vars = c("rh", "fh")), aes(x = Step, color = variable)) + theme(legend.position = "bottom") + 
+  facet_grid(STRATA ~ ADP, scales = "free_y") + labs(y = "Rate", color = "Strata") + 
+  geom_line(aes(y = value), lwd = 1)
+```
+**Figure 2.** Iterative adjustments to $r_h$ (dashed lines) leading to converging with the allocated rate $f_h$ (solid lines), assuming an initial $r_h$ of `r round(equal_rate_2022,4)`.
+
+\
+Generally, this halving method seems to get $r_h$ and $f_h$ to converge after around 5 repetitions, but I did 7. The final outputs are presented below:
+
+\
+**Table 2.** Cost-weighted boxes allocation rates after 7 steps of iterative adjustments to match $r_h$ with $f_h$.  
+```{r cwb_step_table}
+step7 %>%
+  select(Year = ADP, Strata = STRATA, Nh = STRATA_N, ch = CPT, `rh` = SAMPLE_RATE, Ph, `NP/c` = `NP/c_h`, `nh/n`, n, nh, fh) %>%
+  flextable() %>% colformat_double(j = c(6, 7, 8, 11), digits = 3)  %>% colformat_double(j = c(4,9, 10), digits = 2) %>% 
+  colformat_int(j = 1, big.mark = "") %>% fontsize(size = 8, part = "all") %>% padding(padding = 2) %>%
+  hline(i = c(6, 12, 18, 24), border = fp_border(style = "dashed")) %>% autofit()
+
+```
+
+\
+The plot below gives a better look at the yearly variation in the allocated monitoring rates among our strata:
+
+\
+**Figure 3.** Final cost-weighted boxes allocation rates for all strata for fishing effort years 2018-2022.
+```{r cwb_step_7 plot, fig.width = 7.5, fig.height = 4}
+ggplot(step7, aes(x = ADP, y = fh, color = STRATA)) + geom_line(lwd = 1) + theme(legend.position = "bottom") + 
+  labs(x = "Year", y = "Monitoring Rate", color = "Strata")
+```
+
+\
+
+### Additional testing of this allocation method
+
+- **DONE** : This method is not sensitive to the initial starting point (i.e., `r round(equal_rate_2022, 4)`) and converges at essentially the same $f_h$ values. Very minor discrepancies will always result due to the iterative nature of the method.
+
+- **TO DO** : Make a version that weights independent of cost? This modified method would be informative of the influence of monitoring costs in the allocation algorithm. However, would need to calculate $n$ somehow without equation 5.24, so calculating nh/Nh to get fh might be tricky. Equations 5.17 through 5.22 are devoted to figuring out $n$, but I don't understand them well enough to modify them.

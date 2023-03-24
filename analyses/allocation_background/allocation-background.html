@@ -442,6 +442,10 @@ pre code {
 <li><a href="#cost-weighted-boxes"><span class="toc-section-number">2</span> Cost-weighted boxes</a><ul>
 <li><a href="#probability-of-monitoring-as-a-function-of-sample-size"><span class="toc-section-number">2.1</span> Probability of monitoring as a function of sample size</a></li>
 </ul></li>
+<li><a href="#sea-ish-design-awaiting-new-name"><span class="toc-section-number">3</span> SEA-ish design (awaiting new name?)</a><ul>
+<li><a href="#from-teh-analytic-document"><span class="toc-section-number">3.1</span> from teh analytic document</a></li>
+<li><a href="#from-geoffs-description"><span class="toc-section-number">3.2</span> from geoff’s description</a></li>
+</ul></li>
 </ul>
 </div>
 
@@ -454,6 +458,9 @@ getting into a box
 rate (proportion of population sampled)<br />
 3) expansion of trips - how many trips will each sampled trip expand to on
 average</p>
+<p>To consider -
+sample size, not sample rate, is the primary driver of both the probability of
+getting data and the variance.</p>
 <div id="probability-of-selecting-a-cell" class="section level2">
 <h2><span class="header-section-number">1.1</span> Probability of selecting a cell</h2>
 <p>Setting some basic population parameters: <em>N</em> is the population size, <em>K</em>
@@ -698,9 +705,9 @@ W_h V\hat{a}r(\hat{x}_{h})\left(\frac{1}{n_h} - \frac{1}{N_h}\right)
 <p>This can be minimized by setting the strata-specific sample sizes,
 <span class="math inline">\(n_h\)</span>, proportional to the standard deviation in each stratum. In
 otherwords, when <span class="math inline">\(\frac{n_h}{N_h} = kS_h\)</span> where
-<span class="math inline">\(S_h = \sqrt{V\hat{a}r(\hat{x}_{h})}\)</span> and <em>k</em> is a constant such that
-<span class="math inline">\(\sum(n_h) = n\)</span>.
-More specifically, the overall variance will be minimized when</p>
+<span class="math inline">\(S_h = \sqrt{V\hat{a}r(\hat{x}_{h})}\)</span> and <em>k</em> is a constant such
+that<span class="math inline">\(\sum(n_h) = n\)</span>. More specifically, the overall variance will be
+minimized when</p>
 <p><span class="math display" id="eq:Neyman-sample-size">\[\begin{equation}  
   \hat{n}_{h} = n \frac{w_{h} \sigma_{h}}{\sum_{i = 1}^{H} w_{h} \sigma_i}
   \tag{2.2} 
@@ -740,13 +747,13 @@ by <a href="#eq:hypergoem-prob-zero">(2.5)</a>.</p>
 \end{equation}\]</span></p>
 <p>If we know these probabilities for each cell in the stratum, we can define a
 “not monitored cell” as any cell where the probability of no data is greater
-than <em>c</em>, (i.e., <span class="math inline">\(\ge 0.1\)</span>) based on the the number of trips in the cell (<em>K</em>),
-total number of trips in the population (<em>N</em>), and the sample size (<em>n</em>), Eq.
-<a href="#eq:hypergoem-prob-zero">(2.5)</a>.</p>
-<p>Letting <span class="math inline">\(I(P_i(k_i = 0) \gt c)\)</span> be the indicator of no data, for a given
+than <em>a</em>, (i.e., <span class="math inline">\(\geq 0.1\)</span>) based on the the number of trips in the cell
+(<em>K</em>), total number of trips in the population (<em>N</em>), and the sample size (<em>n</em>),
+Eq. <a href="#eq:hypergoem-prob-zero">(2.5)</a>.</p>
+<p>Letting <span class="math inline">\(I\left(P_i\left(k_i = 0\right) \geq a\right)\)</span> be the indicator of no data, for a given
 stratum, we have the proportion of cells with no data as:
 <span class="math display" id="eq:proport-cells-no-data-stratum">\[\begin{equation}
-  T_h = \frac{\sum_{i}^{B_h} I_{ih}\left(P_{ih}(k_{ih} = 0) \gt c\right)}{B_h} 
+  T_h = \frac{\sum_{i}^{B_h} I_{ih}\left(P_{ih}(k_{ih} = 0) &gt; a\right)}{B_h} 
   \tag{2.6} 
 \end{equation}\]</span>
 where <em>i</em> from 1 to <em>B</em> indexes the total number of cells in the stratum.</p>
@@ -754,12 +761,13 @@ where <em>i</em> from 1 to <em>B</em> indexes the total number of cells in the s
 proportion of cells with few trips (<em>i.e.</em>, strata where there are a higher
 number of cells where <em>K</em> is small relative to <em>N</em>, see Figure
 <a href="#fig:gg-prob0-line-plts">1.1</a>).</p>
-<p>Refering back to our original minimization problem and substituting in for <span class="math inline">\(P_i(k_i = 0)\)</span>, we
-could find the set of <span class="math inline">\(n_h\)</span> that minimizes the sum over all strata of having no
-data, *i.e., minimizes <a href="#eq:mean-proport-cells-no-data-stratum">(2.7)</a>.
+<p>Refering back to our original minimization problem and substituting in
+for<span class="math inline">\(P_i(k_i = 0)\)</span>, we could find the set of <span class="math inline">\(n_h\)</span> that minimizes the sum
+over all strata of having no data, *i.e., minimizes
+<a href="#eq:mean-proport-cells-no-data-stratum">(2.7)</a>.
 <span class="math display" id="eq:mean-proport-cells-no-data-stratum">\[\begin{equation}
   \bar{T} = \frac{1}{H} \sum_{h}T_h = \sum_{h}
-\left[\frac{\sum_{i}^{B_h} I_i\left(\frac{(N_{ih} - K_{ih})!}{(N_{ih} - K_{ih} - n_{ih})!} \gt c\right)}{B_h}\right]
+\left[\frac{\sum_{i}^{B_h} I_i\left(\frac{(N_{h} - K_{ih})!}{(N_{h} - K_{ih} - n_{h})!} &gt; a\right)}{B_h}\right]
   \tag{2.7} 
 \end{equation}\]</span></p>
 <p>Intuitively, we want to allocate more sample to strata that have a higher
@@ -769,23 +777,42 @@ number of cells where <em>K</em> is small relative to <em>N</em>, see Figure
 <p>By using the mean of the proportions, <span class="math inline">\(T = \frac{\sum{T_h}}{H}\)</span> (Eq.
 <a href="#eq:mean-proport-cells-no-data-stratum">(2.7)</a>), each stratum would be weighted
 equally while using the sum of the proportions (divided by the total number of
-boxes, i.e., the weighted mean), sampling strata with larger numbers of cells
+boxes, <em>i.e.</em>, the weighted mean), sampling strata with larger numbers of cells
 will contribute more to the overall proportion (metric being minimized).</p>
 <p><span class="math display" id="eq:proport-ALL-cells-no-data-stratum">\[\begin{equation}
   \bar{T} = \frac{\sum_{h}\sum_{i}^{B_h} I_{ih}\left(P_{ih}(k_{ih} = 0)
-\gt c\right)}{\sum_{h}{B_h}} = \frac{\sum_{h}\sum_{i}^{B_h}
-I_{ih}I_i\left(\frac{(N_{ih} - K_{ih})!}{(N_{ih} - K_{ih} - n_{ih})!} \gt
-c\right)}{\sum_{h}B_h} 
+\geq a\right)}{\sum_{h}{B_h}} = \frac{\sum_{h}\sum_{i}^{B_h}
+I_{ih}\left(\frac{(N_{h} - K_{ih})!}{(N_{h} - K_{ih} - n_{h})!} &gt;
+a\right)}{\sum_{h}B_h} 
   \tag{2.8} 
 \end{equation}\]</span></p>
-<p>If our goal is to minimize the total number of cells without
+<p>For a given set of strata, with population sizes for each stratum, <span class="math inline">\(N_h\)</span>, and
+numbers of trips in each box in each stratum, <span class="math inline">\(K_ih\)</span>, we need to estimate the
+sample sizes for each stratum, <span class="math inline">\(n_h\)</span>, that minimizes <span class="math inline">\(\bar{T}\)</span> under either
+<a href="#eq:mean-proport-cells-no-data-stratum">(2.7)</a> or
+<a href="#eq:proport-ALL-cells-no-data-stratum">(2.8)</a>.</p>
+<p><em>If our goal is to minimize the total number of cells without
 data(across strata), Eq. <a href="#eq:proport-ALL-cells-no-data-stratum">(2.8)</a>, weighted
 mean proportion is the more appropriate metric. If we want to ensure that we
 minimize the proprtion of cells without data in each stratum, the mean of the
-proportions metric is more appropriate.</p>
+proportions metric is more appropriate.</em></p>
+<div id="cost-optimized" class="section level4">
+<h4><span class="header-section-number">2.1.1.1</span> Cost optimized</h4>
+<p>If we want to “optimize” this in terms of costs of sampling, then we need to
+incorporate the differential costs associated with each stratum, balancing
+costs with the probability of not getting data.</p>
+<p><span class="math display" id="eq:cost-weighted-boxes">\[\begin{equation}   
+  \bar{T} = \frac{1}{H} \sum_{h}T_hC_h 
+ \tag{2.9} 
+\end{equation}\]</span></p>
+<p>Where <span class="math inline">\(C_h\)</span> is the mean cost per unit of sampling in stratum <em>h</em> and we need
+to minimize <span class="math inline">\(\bar{T}\)</span>.</p>
+<p>It is not obvious how to solve for <span class="math inline">\(n_h\)</span> and so we use simulation.</p>
+</div>
 </div>
 <div id="two-stage-deployment" class="section level3">
 <h3><span class="header-section-number">2.1.2</span> Two-stage deployment</h3>
+<p>In this version,</p>
 <p>is defined as the rate at which the proportion of post-strata that have a
 prespecified probability of having at least one trip (or delivery) monitored.</p>
 <p>Rank areas by the number of trips in each; areas will add into the proportion
@@ -799,9 +826,41 @@ P(X=0) = \frac{(N-K)!(N-n)!}{(N-K-n)!N!}
 <p>In addition, this will vary for each post-strata based on the number of trips
 in the post-strata. However, after a lot of math, we notice that only some
 terms vary with n and that some factorials cancel,leaving only falling products.</p>
-<p>For example, <span class="math inline">\(\frac{(N-K)!}{N!}\)</span> equals the falling product from <em>N</em> to
-<em>N-K+1</em>, <span class="math inline">\(\prod_{x = a}^{b} f(x)\)</span></p>
+<p>For example, <span class="math display">\[frac{(N-K)!}{N!}]\]</span> equals the falling product from <em>N</em> to
+<em>N-K+1</em>, <span class="math display">\[prod_{x = a}^{b} f(x)\]</span></p>
 </div>
+</div>
+</div>
+<div id="sea-ish-design-awaiting-new-name" class="section level1">
+<h1><span class="header-section-number">3</span> SEA-ish design (awaiting new name?)</h1>
+<div id="from-teh-analytic-document" class="section level2">
+<h2><span class="header-section-number">3.1</span> from teh analytic document</h2>
+<p>Sample rates such that we <em>maximize</em> the percentage of trips that occur in those
+boxes that have greater than a predetermined probability of 1 or more trips per
+post-stratum (inspired by SEA methods of Gasper et al. 2017). Final sample rates
+are likely to differ between strata, but an important feature of this design is
+that strata are set to be equal in terms of their data resolution outcome.</p>
+<p>We would change the percentage of trips (currently 75%) contained within
+post-strata with greater than 50% probability of having one trip, not the
+probability of having one trip observed. The different strata are likely to
+“respond” differently as that proportion changes (could plot this). Use
+hypergeometric distribution to estimate the probability of having one trip in a
+post-strata (instead of conducting simulation analysis).</p>
+<p>Post-strata definitions will impact expected gap sizes and data resolution;
+larger post-strata will result in lower data resolution but perhaps fewer gaps.
+Hence, in considering post-strata definition, we can use 2 or 3-weeks temporal
+bins instead of 1 week and/or could drop/bin trip target and compare results to
+assess advantages of different post-stratification definitions or impacts of
+differing sample rates.)</p>
+</div>
+<div id="from-geoffs-description" class="section level2">
+<h2><span class="header-section-number">3.2</span> from geoff’s description</h2>
+<p>define a set of hexagons
+* note that placement of hex centers will impact the numbers of trips in
+each<br />
+* identify the 6 hexagons immediately adjactent to hex-of-interest
+* determine the probability that at least one trip is observed in those 7
+hexes</p>
 </div>
 </div>
 
