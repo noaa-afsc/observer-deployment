@@ -59,7 +59,7 @@ BSAIVoluntary <-
                  JOIN norpac.odds_annual_opt_strata aos
                  ON aos.ELIGIBLE_OPT_SEQ = eos.ELIGIBLE_OPT_SEQ 
                  WHERE ovsp.SAMPLE_PLAN_SEQ = 8
-                 AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 13, "
+                 AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 2, "
                  AND aos.year_eligible = ", ADPyear - 1, "")} else
                    paste(
                      " -- From Andy Kingham
@@ -78,7 +78,7 @@ BSAIVoluntary <-
                      JOIN norpac.odds_annual_opt_strata aos
                      ON aos.ELIGIBLE_OPT_SEQ = eos.ELIGIBLE_OPT_SEQ 
                      WHERE ovsp.SAMPLE_PLAN_SEQ = 8
-                     AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 12, "
+                     AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 1, "
                      AND aos.year_eligible = ", ADPyear, "")
                    )
 
@@ -89,11 +89,12 @@ BSAIVoluntary <-
 #   we treat it like one of these small CPs, so it's on this list.
 #   For more info on this, see Alicia Miller.  
 PartialCPs <- dbGetQuery(channel_akro,
-                         paste("select distinct ev.vessel_id, ev.begin_date, ev.end_date, v.name as vessel_name, e.name as elibibility
+                         paste("select distinct ev.vessel_id, ev.begin_date, v.name as vessel_name, e.name as elibibility
                                from akfish.eligible_vessel ev
                                join akfish.eligibility e on e.id = ev.eligibility_id
                                join akfish_report.vessel v on v.vessel_id = ev.vessel_id
                                where e.name = 'CP PARTIAL COVERAGE'
+                               and ev.end_date is null
                                and v.end_date is null
                                and v.expire_date is null"))
 
@@ -104,7 +105,7 @@ em_research <-
           paste("select distinct adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
                 from loki.em_vessels_by_adp
                 where sample_plan_seq_desc = 'Electronic Monitoring -  research not logged '
-                and adp >=", ADPyear - 12,
+                and adp >=", ADPyear - 1,
                 "order by adp, vessel_id")} else{
           paste("select distinct adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
                 from loki.em_vessels_by_adp
@@ -120,7 +121,7 @@ em_base <-
                # If its the draft, or if approvals for the final have yet to be made, use the prior year's approved vessels
                paste("SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
                       FROM loki.em_vessels_by_adp
-                      WHERE adp >= ", ADPyear - 12,"
+                      WHERE adp >= ", ADPyear - 1,"
                       AND em_request_status = 'A'
                       AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'
                       order by adp, vessel_id")
@@ -176,7 +177,7 @@ up_dates <- setDT(dbGetQuery(channel_akro, paste0("select distinct
                                                   AND tf.PARTITION_KEY_PK = k.partition_key_pk
                                                   JOIN akfish_report.catch_report cr on cr.catch_report_pk= tf.catch_report_pk
                                                   JOIN akfish_report.calendar_date td on td.calendar_date_pk = tf.trip_target_date_pk
-                                                  WHERE k.year >=", ADPyear - 4,"
+                                                  WHERE k.year >=", ADPyear - 11,"
                                                   AND cr.el_report_id is not null")))
 
 up_dates[, ':='(DB_TRIP_TARGET_DATE = as.Date(DB_TRIP_TARGET_DATE), DB_LANDING_DATE = as.Date(DB_LANDING_DATE))]
@@ -238,7 +239,7 @@ arrange(COVERAGE_TYPE, STRATA)
 work.data <- mutate(work.data, CVG_NEW = NA)
 
 # Mandatory full coverage
-work.data <- mutate(work.data, CVG_NEW = ifelse(COVERAGE_TYPE == "FULL" & STRATA %in% c("FULL", "EM_TRW_EFP"), "FULL", CVG_NEW))
+work.data <- mutate(work.data, CVG_NEW = ifelse(COVERAGE_TYPE == "FULL" & STRATA %in% c("FULL", "EM_TRW_EFP", "VOLUNTARY"), "FULL", CVG_NEW))
 
 # Voluntary full coverage
 work.data <- mutate(work.data, CVG_NEW = ifelse(VESSEL_ID %in% BSAIVoluntary$VESSEL_ID &
@@ -262,7 +263,7 @@ distinct(work.data, COVERAGE_TYPE, CVG_NEW, STRATA) %>%
 arrange(COVERAGE_TYPE, CVG_NEW, STRATA)
 
 # Partial coverage strata
-work.data <- mutate(work.data, CVG_NEW = ifelse(is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA %in% c("EM", "EM_HAL", "EM_POT", "EM_TenP", "EM_TRW_EFP", "HAL", "POT", "TenH", "TenP", "TenTR", "TRW", "ZERO", "ZERO_EM_RESEARCH"), "PARTIAL", CVG_NEW))
+work.data <- mutate(work.data, CVG_NEW = ifelse(is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA %in% c("EM", "EM Voluntary", "EM_HAL", "EM_POT", "EM_TenP", "EM_TRW_EFP", "HAL", "POT", "t", "T", "TenH", "TenP", "TenTR", "TRIP", "TRW", "VESSEL", "ZERO", "ZERO_EM_RESEARCH"), "PARTIAL", CVG_NEW))
 
 # Check for remaining NAs in CVG_NEW
 filter(work.data, is.na(CVG_NEW)) %>% 
