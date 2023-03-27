@@ -33,14 +33,14 @@ PSC <-
                             else 0 end) as psc_total_catch,
                    sum(psc_total_mortality_weight) as psc_total_mortality_weight
                    FROM akfish_report.v_cas_psc
-                   WHERE year >=", ADPyear - 4,"
+                   WHERE year >=", ADPyear - 12,"
                    AND el_report_id is not null
                    GROUP BY year, el_report_id, species_group_code"))
 
 # * Voluntary full coverage ----
 #   Requests to join must be made prior to October 15  
 BSAIVoluntary <-
-  dbGetQuery(channel,
+  dbGetQuery(channel_afsc,
              if(ADP_version == "Draft"){
                paste(
                  " -- From Andy Kingham
@@ -59,7 +59,7 @@ BSAIVoluntary <-
                  JOIN norpac.odds_annual_opt_strata aos
                  ON aos.ELIGIBLE_OPT_SEQ = eos.ELIGIBLE_OPT_SEQ 
                  WHERE ovsp.SAMPLE_PLAN_SEQ = 8
-                 AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 2, "
+                 AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 13, "
                  AND aos.year_eligible = ", ADPyear - 1, "")} else
                    paste(
                      " -- From Andy Kingham
@@ -78,7 +78,7 @@ BSAIVoluntary <-
                      JOIN norpac.odds_annual_opt_strata aos
                      ON aos.ELIGIBLE_OPT_SEQ = eos.ELIGIBLE_OPT_SEQ 
                      WHERE ovsp.SAMPLE_PLAN_SEQ = 8
-                     AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 1, "
+                     AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 12, "
                      AND aos.year_eligible = ", ADPyear, "")
                    )
 
@@ -89,52 +89,56 @@ BSAIVoluntary <-
 #   we treat it like one of these small CPs, so it's on this list.
 #   For more info on this, see Alicia Miller.  
 PartialCPs <- dbGetQuery(channel_akro,
-                         paste("select distinct ev.vessel_id, ev.begin_date, v.name as vessel_name, e.name as elibibility
+                         paste("select distinct ev.vessel_id, ev.begin_date, ev.end_date, v.name as vessel_name, e.name as elibibility
                                from akfish.eligible_vessel ev
                                join akfish.eligibility e on e.id = ev.eligibility_id
                                join akfish_report.vessel v on v.vessel_id = ev.vessel_id
                                where e.name = 'CP PARTIAL COVERAGE'
-                               and ev.end_date is null
                                and v.end_date is null
                                and v.expire_date is null"))
 
 # * Fixed-gear EM research ---- 
 em_research <- 
-  dbGetQuery(channel, 
+  dbGetQuery(channel_afsc, 
       if(ADP_version == "Draft"){
           paste("select distinct adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
                 from loki.em_vessels_by_adp
                 where sample_plan_seq_desc = 'Electronic Monitoring -  research not logged '
-                and adp =", ADPyear - 1)} else{
+                and adp >=", ADPyear - 12,
+                "order by adp, vessel_id")} else{
           paste("select distinct adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
                 from loki.em_vessels_by_adp
                 where sample_plan_seq_desc = 'Electronic Monitoring -  research not logged '
-                and adp =", ADPyear)})
+                and adp =", ADPyear,
+                "order by adp, vessel_id")})
 
 
 # * Fixed-gear EM approvals ---- 
 em_base <-
-  dbGetQuery(channel, 
+  dbGetQuery(channel_afsc, 
              if(ADP_version == "Draft" | EM_final == "N"){
                # If its the draft, or if approvals for the final have yet to be made, use the prior year's approved vessels
                paste("SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
                       FROM loki.em_vessels_by_adp
-                      WHERE adp = ", ADPyear - 1,"
+                      WHERE adp >= ", ADPyear - 12,"
                       AND em_request_status = 'A'
-                      AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'")
+                      AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'
+                      order by adp, vessel_id")
              } else{ # Vessels have until November 1st to request. Approvals are typically made shortly thereafter.
                paste("SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
                       FROM loki.em_vessels_by_adp
                       WHERE adp = ", ADPyear,"
                       AND em_request_status = 'A'
-                      AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'")})
+                      AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'
+                      order by vessel_id")})
 
 # Remove EM research vessels from em_base
-em_base <- em_base %>% filter(!(VESSEL_ID %in% em_research$VESSEL_ID))
+em_base <- em_base %>% 
+           anti_join(select(em_research, ADP, VESSEL_ID), by = c("ADP", "VESSEL_ID"))
 
 # * Fixed-gear EM requests ---- 
 em_requests <-
-  dbGetQuery(channel, 
+  dbGetQuery(channel_afsc, 
              # Vessels have until November 1st to request. Approvals are typically made shortly thereafter.
              paste("SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
                    FROM loki.em_vessels_by_adp
@@ -143,15 +147,15 @@ em_requests <-
                    AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'"))
 
 # * Vessel lengths ----
-AKROVL <- dbGetQuery(channel, "select distinct ID as vessel_id, length_overall as akrovl
+AKROVL <- dbGetQuery(channel_afsc, "select distinct ID as vessel_id, length_overall as akrovl
                      FROM norpac_views.akr_v_vessel_mv")
 
-FMAVL <- dbGetQuery(channel, "SELECT DISTINCT PERMIT as vessel_id, length as fmavl 
+FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT as vessel_id, length as fmavl 
                     FROM norpac.atl_lov_vessel")
 
 # * Valhalla ----
 # Pull data from each of the four years prior to ADPyear.
-work.data <- dbGetQuery(channel, paste0("select * from loki.akr_valhalla where adp >= ", ADPyear - 4, ""))
+work.data <- dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla"))
 
 # Convert dates using as.Date to avoid timestamp issues
 work.data <- mutate(work.data, TRIP_TARGET_DATE = as.Date(TRIP_TARGET_DATE), LANDING_DATE = as.Date(LANDING_DATE))
