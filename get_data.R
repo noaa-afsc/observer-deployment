@@ -1,23 +1,23 @@
 # User inputs -------------------------------------------------------------
-ADPyear     <- 2023     # Enter numeric year you are doing the ADP for
-ADP_version <- "Final"  # Enter "Draft" or "Final"
-EM_final    <- "Y"      # Is the final EM list approved? Y/N (caps)
+ADPyear     <- 2024     # Enter numeric year you are doing the ADP for
+ADP_version <- "Draft"  # Enter "Draft" or "Final"
+EM_final    <- "N"      # Is the final EM list approved? Y/N (caps)
 location    <- getPass::getPass('Enter your location: Juneau or Seattle') # Your physical location
 options(scipen = 9999)  # Avoid scientific notation
 
 # Get packages ------------------------------------------------------------
+if(tolower(location) == "seattle") if(!require("odbc")) install.packages("odbc", repos='http://cran.us.r-project.org')
+if(tolower(location) == "juneau") if(!require("ROracle")) install.packages("ROracle", repos='http://cran.us.r-project.org')
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
 if(!require("lubridate"))   install.packages("lubridate", repos='http://cran.us.r-project.org') # For fixing datetimes
 if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.r-project.org') # ggplot2, dplyr, tidyr, readr, purrr, tibble, stringr, forcats  
 
 # Get user-defined functions ----------------------------------------------
-source("functions/open_channel.R")
-source("functions/compare_columns_fun.R")
-source("functions/model_trip_duration.R")    # load in trip duration function 
+source("common_functions/model_trip_duration.R")    # load in trip duration function 
 
 # Establish channels ------------------------------------------------------
-channel <- open_channel(location) # AFSC connection
-channel_akro <- open_channel(location, db="AKRO") # AKRO connection. Hit cancel unless sitting in Juneau and pulling Valhalla.  # Use and if-statement with 'location=="JUNEAU"'?
+channel_afsc <- eval(parse(text = Sys.getenv("channel_afsc")))
+channel_akro <- eval(parse(text = Sys.getenv("channel_cas")))
 
 # Data queries ------------------------------------------------------------
 
