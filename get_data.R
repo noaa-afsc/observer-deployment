@@ -241,12 +241,15 @@ work.data <- mutate(work.data, CVG_NEW = NA)
 # Mandatory full coverage
 work.data <- mutate(work.data, CVG_NEW = ifelse(COVERAGE_TYPE == "FULL" & STRATA %in% c("FULL", "EM_TRW_EFP", "VOLUNTARY"), "FULL", CVG_NEW))
 
-# Voluntary full coverage
+# Voluntary full coverage: opted in for ADPyear
 work.data <- mutate(work.data, CVG_NEW = ifelse(VESSEL_ID %in% BSAIVoluntary$VESSEL_ID &
                                                 FMP %in% c("BS", "AI", "BSAI") &
                                                 AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & 
                                                 PROCESSING_SECTOR == "S",
                                                 "FULL", CVG_NEW))
+
+# Voluntary full coverage: opted in for past years, but not for ADPyear  
+work.data <- mutate(work.data, CVG_NEW = ifelse(is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA == "FULL", "PARTIAL", CVG_NEW))
 
 # Cooperative full coverage
 work.data <- mutate(work.data, CVG_NEW = ifelse(AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") &
