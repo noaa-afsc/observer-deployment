@@ -116,52 +116,98 @@ save(perm_results, file = "results/perm_results.RData")
 # Get percent differences and monitoring rates from the permutation test results
 dat   <- perm_results$N_table[perm_results$obs[SCALE == "PCT"], on = .(ADP, STRATA)]
 dat   <- melt(dat, id.vars = c(groups, "N", "n", "rate"), measure.vars = metrics, variable.name = "metric", value.name = "pct_diff")
-dat[, abs_pct_diff := abs(pct_diff)]
 p_val <- melt(perm_results$`p-value`, id.vars = groups, measure.vars = metrics, variable.name = "metric", value.name = "p_val")
-dat   <- dat[p_val, on = .(ADP, STRATA, metric)][, sig_point := ifelse(p_val < 0.05/length(metrics), "Yes", "No")]
+dat   <- dat[p_val, on = .(ADP, STRATA, metric)][, sig_point := ifelse(p_val <= 0.05/length(metrics), "Yes", "No")]
 
 # Construct a linear model of percent difference ~ rate for each stratum and metric combination
-mod <- lm(abs_pct_diff ~ -1 + STRATA:metric + n:STRATA:metric, data = dat)
+mod <- lm(pct_diff ~ -1 + STRATA:metric + rate:STRATA:metric, data = dat)
 
 # Extract the slope coefficients from the linear model
 mod_df <- data.frame(name = names(mod$coefficients), slope = unname(mod$coefficients), p_val = unname(summary(mod)[["coefficients"]][, "Pr(>|t|)"]))
 mod_df <- mod_df %>%
-filter(grepl("n", name)) %>%
-mutate(STRATA = str_match(name, "STRATA\\s*(.*?)\\s*:metric")[,2],
-       metric = str_match(name, "metric\\s*(.*?)\\s*:n")[,2],
-       sig_slope = ifelse(p_val < 0.05/length(metrics), "Yes", "No")) %>%
+filter(grepl("rate", name)) %>%
+mutate(STRATA = str_match(name, "STRATA\\s*(.*?)\\s*:")[,2],
+       metric = str_match(name, "metric\\s*(.*?)\\s*:")[,2],
+       sig_slope = ifelse(p_val <= 0.05/length(metrics), "Yes", "No")) %>%
 select(STRATA, metric, slope, sig_slope)
 
 # Join the slope coefficients back onto the permutation test results
-dat <- dat[setDT(mod_df), on = .(STRATA, metric)]
+mod_df <- dat[setDT(mod_df), on = .(STRATA, metric)]
 
 # Recode strata and metrics for the figure
-dat[, ':=' (STRATA = str_replace_all(STRATA, "_", " "), 
-            metric = as.character(recode(metric, 
-                     "N_AREAS" = "NMFS areas", 
-                     "DAYS" = "Days fished", 
-                     "LENGTH_OVERALL" = "Vessel length (ft)", 
-                     "N_SPECIES" = "Species landed", 
-                     "PMAX" = "pMax", 
-                     "LANDED_CATCH" = "Landed catch (t)")))]
+mod_df[, ':=' (STRATA = str_replace_all(STRATA, "_", " "), 
+               metric = as.character(recode(metric, 
+                        "N_AREAS" = "NMFS areas", 
+                        "DAYS" = "Days fished", 
+                        "LENGTH_OVERALL" = "Vessel length (ft)", 
+                        "N_SPECIES" = "Species landed", 
+                        "PMAX" = "pMax", 
+                        "LANDED_CATCH" = "Landed catch (t)")))]
 
 # Create figure
-f1 <- ggplot(dat[STRATA != "EM TRW EFP"], aes(x = n, y = abs_pct_diff)) +
+f1 <- ggplot(mod_df[STRATA != "EM TRW EFP"], aes(x = rate, y = pct_diff)) +
       stat_smooth(aes(color = sig_slope), method = "lm", formula = 'y ~ x', se = FALSE) +
       geom_point(aes(color = sig_point)) +
       geom_hline(yintercept = 0, lty = 3) +
       facet_grid(metric ~ STRATA, scales = "free") +
       scale_color_manual(values = c("Yes" = "red", "No" = "black")) +
-      labs(x = "Sample size", y = "Absolute % difference in means (monitored - unmonitored)", color = expression(paste(italic("p"), "-value < 0.05/6?", sep = ""))) +
+      labs(x = "Monitoring rate", y = "Difference in means (%, monitored - unmonitored)", color = "Statistically significant?") +
       theme(legend.position = "bottom")
 
 # Print figure
 f1
 
 # Save figure
-if(!file.exists("output_figures/permutation_pct_diff.png")){
-ggsave(filename = "output_figures/permutation_pct_diff.png", width = 11, height = 8.5, units = 'in')
+if(!file.exists("output_figures/permutation_pct_diff_rate.png")){
+ggsave(filename = "output_figures/permutation_pct_diff_rate.png", width = 11, height = 8.5, units = 'in')
 }
 ```
   
-Figure 1. The absolute percent differences in means (monitored - unmonitored) against sample size for years 2013 through 2021. Each point represents one year of data. Lines represent the linear regression of the points.
+Figure 1. Difference in means (%, monitored - unmonitored) against monitoring rate for years 2013 through 2021. Each point represents one year of data. Lines represent the linear regression of the points. Statistical significance is defined for points as year, stratum, and metric combinations for which the *p*-value from the permutation test was $\le$ 0.05/6 and for lines as stratum and metric combinations for which the *p*-value for the linear model slope coefficient was $\le$ 0.05/6.
+
+```{r figure_2}
+# Construct a linear model of percent difference ~ n for each stratum and metric combination
+mod <- lm(pct_diff ~ -1 + STRATA:metric + n:STRATA:metric, data = dat)
+
+# Extract the slope coefficients from the linear model
+mod_df <- data.frame(name = names(mod$coefficients), slope = unname(mod$coefficients), p_val = unname(summary(mod)[["coefficients"]][, "Pr(>|t|)"]))
+mod_df <- mod_df %>%
+filter(grepl("n", name)) %>%
+mutate(STRATA = str_match(name, "STRATA\\s*(.*?)\\s*:")[,2],
+       metric = str_match(name, "metric\\s*(.*?)\\s*:")[,2],
+       sig_slope = ifelse(p_val <= 0.05/length(metrics), "Yes", "No")) %>%
+select(STRATA, metric, slope, sig_slope)
+
+# Join the slope coefficients back onto the permutation test results
+mod_df <- dat[setDT(mod_df), on = .(STRATA, metric)]
+
+# Recode strata and metrics for the figure
+mod_df[, ':=' (STRATA = str_replace_all(STRATA, "_", " "), 
+               metric = as.character(recode(metric, 
+                        "N_AREAS" = "NMFS areas", 
+                        "DAYS" = "Days fished", 
+                        "LENGTH_OVERALL" = "Vessel length (ft)", 
+                        "N_SPECIES" = "Species landed", 
+                        "PMAX" = "pMax", 
+                        "LANDED_CATCH" = "Landed catch (t)")))]
+
+# Create figure
+f2 <- ggplot(mod_df[STRATA != "EM TRW EFP"], aes(x = n, y = pct_diff)) +
+      stat_smooth(aes(color = sig_slope), method = "lm", formula = 'y ~ x', se = FALSE) +
+      geom_point(aes(color = sig_point)) +
+      geom_hline(yintercept = 0, lty = 3) +
+      facet_grid(metric ~ STRATA, scales = "free") +
+      scale_color_manual(values = c("Yes" = "red", "No" = "black")) +
+      labs(x = "Sample size", y = "Difference in means (%, monitored - unmonitored)", color = "Statistically significant?") +
+      theme(legend.position = "bottom")
+
+# Print figure
+f2
+
+# Save figure
+if(!file.exists("output_figures/permutation_pct_diff_n.png")){
+ggsave(filename = "output_figures/permutation_pct_diff_n.png", width = 11, height = 8.5, units = 'in')
+}
+```
+  
+Figure 2. Difference in means (%, monitored - unmonitored) against sample size for years 2013 through 2021. Each point represents one year of data. Lines represent the linear regression of the points. Statistical significance is defined for points as year, stratum, and metric combinations for which the *p*-value from the permutation test was $\le$ 0.05/6 and for lines as stratum and metric combinations for which the *p*-value for the linear model slope coefficient was $\le$ 0.05/6.
