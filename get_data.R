@@ -147,6 +147,20 @@ em_requests <-
                    AND em_request_status = 'NEW'
                    AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'"))
 
+# * Trawl EM ----
+trawl_em <- setDT(dbGetQuery(channel_akro, paste0(
+            "select distinct
+            ev.vessel_id, v.name as vessel_name, extract(year from ev.begin_date) as begin_year
+            from akfish.eligible_vessel ev
+            join akfish.eligibility e on e.id = ev.eligibility_id
+            join akfish_report.vessel v on v.vessel_id = ev.vessel_id
+            where e.name like '%Trawl EM%'
+            and v.end_date is null
+            and v.expire_date is null
+            and extract(year from ev.begin_date) < ", ADPyear + 1, "
+            and (ev.end_date is null or extract(year from ev.end_date) = ", ADPyear, ")
+            order by v.name")))
+
 # * Vessel lengths ----
 AKROVL <- dbGetQuery(channel_afsc, "select distinct ID as vessel_id, length_overall as akrovl
                      FROM norpac_views.akr_v_vessel_mv")
@@ -275,44 +289,31 @@ arrange(ADP, COVERAGE_TYPE, CVG_NEW, STRATA)
 
 # * STRATA_NEW ----
 
-# Create empty STRATA_NEW column
-work.data <- mutate(work.data, STRATA_NEW = NA)
+# Base STRATA_NEW on AGENCY_GEAR_CODE
+work.data <- mutate(work.data, STRATA_NEW = recode(AGENCY_GEAR_CODE, "PTR" = "TRW", "NPT" = "TRW", "JIG" = "ZERO"))
 
-# Look at the past history of EM vessels to determine their STRATA_NEW
-work.data %>% 
-filter(VESSEL_ID %in% em_base$VESSEL_ID) %>% 
-distinct(STRATA, AGENCY_GEAR_CODE) %>% 
-arrange(STRATA, AGENCY_GEAR_CODE)
+# Full coverage
+work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "FULL", "FULL", STRATA_NEW))
 
-# Designate STRATA_NEW for vessels that have been approved for fixed gear EM
-work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_base$VESSEL_ID & STRATA %in% c("HAL", "TenH", "EM_HAL"), "EM_HAL", STRATA_NEW))
-work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_base$VESSEL_ID & STRATA %in% c("POT", "TenP", "EM_POT", "EM_TenP"), "EM_POT", STRATA_NEW))
-work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_base$VESSEL_ID & STRATA == "ZERO", "ZERO", STRATA_NEW))
+# Zero coverage
+work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "PARTIAL" & STRATA == "ZERO", "ZERO", STRATA_NEW))
 
-# Designate STRATA_NEW for vessels that have opted out or been removed from fixed gear EM
-work.data <- mutate(work.data, STRATA_NEW = ifelse(!(VESSEL_ID %in% em_base$VESSEL_ID) & STRATA %in% c("EM_HAL", "EM_POT"), str_remove(STRATA, "EM_"), STRATA_NEW))
-  
-# Check that STRATA_NEW definitions make sense for all of EM
-filter(work.data, VESSEL_ID %in% em_base$VESSEL_ID) %>%
-distinct(STRATA, AGENCY_GEAR_CODE, STRATA_NEW) %>% 
-arrange(STRATA_NEW, STRATA, AGENCY_GEAR_CODE)
+# Fixed-gear EM
+work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), paste("EM", STRATA_NEW, sep = "_"), STRATA_NEW))
 
-# Move EM Research vessels to ZERO
+# Fixed-gear EM research
 work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_research$VESSEL_ID, "ZERO", STRATA_NEW))
 
-# View remaining NAs in STRATA_NEW
-filter(work.data, is.na(STRATA_NEW)) %>% 
-distinct(CVG_NEW, STRATA, AGENCY_GEAR_CODE, STRATA_NEW) %>% 
-arrange(CVG_NEW, STRATA, AGENCY_GEAR_CODE)
-
-work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "FULL" & STRATA == "EM_TRW_EFP" & is.na(STRATA_NEW), "FULL", STRATA_NEW))
-work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "FULL" & STRATA %in% c("FULL", "TRW") & is.na(STRATA_NEW), "FULL", STRATA_NEW))
-work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "FULL" & VESSEL_ID %in% BSAIVoluntary$VESSEL_ID & is.na(STRATA_NEW), "FULL", STRATA_NEW))
-work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "PARTIAL" & STRATA %in% c("EM", "EM_HAL") & AGENCY_GEAR_CODE == "HAL" & is.na(STRATA_NEW), AGENCY_GEAR_CODE, STRATA_NEW))
-work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "PARTIAL" & STRATA %in% c("HAL", "TenH") & is.na(STRATA_NEW), "HAL", STRATA_NEW))
-work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "PARTIAL" & STRATA %in% c("POT", "TenP") & is.na(STRATA_NEW), "POT", STRATA_NEW))
-work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "PARTIAL" & STRATA %in% c("TRW", "TenTR", "EM_TRW_EFP") & is.na(STRATA_NEW), "TRW", STRATA_NEW))
-work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "PARTIAL" & STRATA == "ZERO" & is.na(STRATA_NEW), "ZERO", STRATA_NEW))
+# Trawl EM ----
+work.data <- work.data %>% 
+             group_by(TRIP_ID) %>% 
+             mutate(STRATA_NEW = ifelse(VESSEL_ID %in% trawl_em$VESSEL_ID & 
+                                        all(AGENCY_GEAR_CODE == "PTR") & 
+                                        all(TRIP_TARGET_CODE %in% c("B", "P")),
+                                        "EM_TRW_EFP",
+                                        STRATA_NEW)) %>% 
+             ungroup() %>% 
+             setDT()
 
 # View all strata conversions
 distinct(work.data, CVG_NEW, STRATA, STRATA_NEW) %>% 
