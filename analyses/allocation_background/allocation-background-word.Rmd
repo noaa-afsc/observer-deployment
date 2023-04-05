@@ -2,21 +2,81 @@
 ---
 title: "Background information related to allocation"
 output:
-    bookdown::html_document2:
-     toc: true
-     toc_depth: 2
-     code_folding: hide
-     keep_md: yes
-    bookdown::pdf_book:
-      default
+  bookdown::word_document2:
+      reference_docx: C:\Users\jennifer.cahalan\Work\JAC Stuff\NPGOP_Sampling\ProjectCode\Good_Code\reference-word-doc.docx
+      page_margins:
+           bottom: 0.75 
+           top: 1
+           right: 0.75
+           left: 0.75
+           header: 0.5 
+           footer: 0.5 
+           gutter: 0.0 
+      keep_md: yes
+   
+    #bookdown::pdf_book:
+     # default
+ #bookdown::html_document2:      
+ #    toc: true
+  #   toc_depth: 2
+#     code_folding: hide
 ---
 
+```{r setup, include = FALSE, echo =FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning=FALSE, message=FALSE)
+```
 
+```{r opts, echo = FALSE}
+knitr::opts_chunk$set(fig.path = "images/")
+options(tinytex.verbose = TRUE)
+```
 
-
-
-
-
+```{r echo = FALSE, results = 'asis'}
+#######################################################
+# Load Packages ----
+library(ggplot2)
+library(JACtools)
+## 
+## This section of comments documents nomenclature for using the hypergeometric distribution
+##      functions in R. Textbooks and other documentation often uses similar but different nomenclature
+##      and this is my attempt to reduce my own, continual confution. These comments can be ignored 
+##      but please do not delete.
+## dhyper(x, m, n, k) for us, 
+##              x= number of successes drawn - e.g., dhyper(x, m, n, k) gives P(X=x)
+##              n= number failures in population
+##              m=number sucesses in population (m+n=N=population size, 
+##              k=number balls drawn from urn (=n=sample size)
+## to be consistent with notes and other texts
+##   phyper(k_lc,N-K,K,n_sample)
+## from https://www.vrcbuzz.com/hypergeometric-distribution-probabilities-using-r/
+## examples
+## number of success
+#      m <- 5
+## number of failures
+#      n <- 11
+## sample size
+#      k <- 4
+#  find the probability P(X=0).
+# Compute Hypergeometric probability
+#dhyper(0,m,n,k) # should be 0.1813187
+#
+# probability P(X<=1).
+## Compute cumulative Hypergeometric probability
+#phyper(1,m,n,k) # should be  0.6346154
+# or sum probs for 0 and 1
+#sum(dhyper(0:1,m,n,k))
+#
+#probability P(X>=2)
+# P(X>=2)=1-P(X<=1) =1-(P(X=0)+P(X=1))
+# compute cumulative Hypergeometric probabilities, with lower.tail False
+#phyper(1,m,n,k,lower.tail=FALSE)
+#
+#The pth quantile is the smallest value of Hypergeometric random variable X such that P(X<=x)>=p.
+# find the value of c such a that P(X<=c)>=0.90
+#qhyper(0.90,m,n,k) # equals 2
+#
+## build data framework
+```
 
 # Background
 
@@ -44,21 +104,21 @@ area of interest), *k_sample* is the number of successes in the sample, and
  
 The probability of getting no monitored trips in the area of interest varies
 with *K* and sample size. We can compute this using base R and the function
-dhyper(x, m, n, k) where (from the R documentation) x = number of successes
-drawn, n= number failures in population, =number sucesses in population
-(m+n=N=population size), and k=number of balls drawn from urn (see Eq.
-\@ref(eq:hypergeom-probability) below).  
+dhyper(*x, m, n, k*) where (from the R documentation) *x* = number of successes
+drawn, *n* = number failures in population, *m* = number sucesses in population
+(m+n=N=population size), and *k* = number of balls drawn from urn (see Eq.
+\@ref(eq:hypergeom-probability) below).
 
 In our application this would be P(*k_sample* = x) = dhyper(x, *K*, *N* - *K*,
 *n_sample*)  = *k_sample*. Note that to be consistent with other texts, this
 is often noted as phyper(k_lc,N-K,K,n_sample),
-see https://www.vrcbuzz.com/hypergeometric-distribution-probabilities-using-r/
-As an example, if the number of success is m <- 5, the number of
-failures is n <- 11, the sample size is k <- 4, then the probability
-P(X=0) should be dhyper(0,m,n,k) =  0.1813187.
+see
+[https://www.vrcbuzz.com/hypergeometric-distribution-probabilities-using-r/](https://www.vrcbuzz.com/hypergeometric-distribution-probabilities-using-r/)
+As an example, if the number of success is *m* = 5, the number of failures is
+*n* = 11, and the sample size is *k* = 4, then the probability *P*(*X*=0) should
+be dhyper(*0,m,n,k*) =  0.1813187.
 
-
-```r
+```{r echo = FALSE, results = 'asis'}
 N <- c(300, 700, 1200) # population size; note three pop sizes could be considered analygous to strata
 K <- c(1,2,5,seq(10, 40, 10)) # vector of the number of successes in the population
 k_sample <- 0 # number of successes in sample
@@ -94,7 +154,7 @@ samplerate_prob0_line_plt <- (ggplot(base_popul, aes(x = n_sample/N, y = 1 - pro
 			+ scale_linetype('Number trips in cell')
 			+ geom_vline(xintercept = 0.15, color = 'grey60')
 			#+ geom_vline(xintercept = 0.10, color = 'grey60')
-			+ labs(y = paste("Probability of getting more than", k_sample,"monitored trips"),
+			+ labs(y = paste("Probability of more than", k_sample,"monitored trips"),
 					x = "Sample rate")
 			+ theme_grey()
 			+ theme(legend.position = "bottom")
@@ -108,7 +168,7 @@ samplesize_prob0_line_plt <- (ggplot(base_popul, aes(x = n_sample, y = 1 - prob_
 			+ scale_linetype('Number trips in cell')
 			+ geom_vline(data = reference_lines_dat, aes(xintercept = sample_15_pct), color = 'grey60')
 			#+ geom_hline(yintercept = 0.10, color = 'grey60')
-			+ labs(y = paste("Probability of getting more than", k_sample,"monitored trips"),
+			+ labs(y = paste("Probability of more than", k_sample,"monitored trips"),
 					x = "Sample size")
 			+ theme_grey()
 			+ theme(legend.position = "bottom")
@@ -121,7 +181,7 @@ samplerate_prob0_contour_plt <- (ggplot(base_popul,
 					aes(x = n_sample/N, z = 1 - prob_k_sample, y=K/N)) 
 			+ geom_contour_filled(breaks = c(0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8))
 			+ facet_wrap(. ~ N, ncol = 5, scales = "free")
-			+ scale_fill_brewer(paste("Probability of getting more than", k_sample,"\nmonitored trips"))
+			+ scale_fill_brewer(paste("Probability of more than", k_sample,"\nmonitored trips"))
 			+ geom_vline(xintercept = 0.15)
 			+ labs(y = "Proportion of trips in cell", x='Sample Rate')
 				+ theme(legend.position = "bottom")
@@ -132,35 +192,34 @@ samplesize_prob0_contour_plt <- (ggplot(base_popul,
 					aes(x = n_sample, z = 1 - prob_k_sample, y=K)) 
 			+ geom_contour_filled(breaks = c(0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8))
 			+ facet_wrap(. ~ N, ncol = 5, scales = "free")
-			+ scale_fill_brewer(paste("Probability of getting more than", k_sample,"\nmonitored trips"))
+			+ scale_fill_brewer(paste("Probability of more than", k_sample,"\nmonitored trips"))
 			+ geom_vline(data = reference_lines_dat, aes(xintercept = sample_15_pct))
 			+ labs(y = "Number of trips in cell", x='Sample Size')
 			+ theme(legend.position = "bottom")
 			)
+
 ```
 If we define a population of 1500 trips where the number of trips in a cell is
-1, 2, 5, 10, 20, 30, 40 and sample sizes range from 15 to 490,
+`r K` and sample sizes range from `r min(n_sample)` to `r max(n_sample)`,
 we can see how the probability of a sample containing no trips from a given
 area changes with sample size (or rate) and the size of the cell
 (Figure \@ref(fig:gg-prob0-line-plts))
 
-<div class="figure">
-<img src="images/gg-prob0-line-plts-1.png" alt="Probability of a sample containing no monitored trips as a function of sample size for a range of cell sizes. Vertical reference line on each plot indicates 15% sample rate."  />
-<p class="caption">(\#fig:gg-prob0-line-plts)Probability of a sample containing no monitored trips as a function of sample size for a range of cell sizes. Vertical reference line on each plot indicates 15% sample rate.</p>
-</div>
+```{r gg-prob0-line-plts, dpi = 600, fig.cap ="Probability of a sample containing no monitored trips as a function of sample size for a range of cell sizes. Vertical reference line on each plot indicates 15% sample rate.", fig.width = 7, fig.height = 7, echo = FALSE}
+        shared_legend(samplerate_prob0_line_plt, samplesize_prob0_line_plt, ncol = 1, nrow = 2, position = "bottom")
+```
+
 Similarly, the probability of a cell containing no data increases with both
 decreasing sample rate and the number of trips in a cell (Figure
 \@ref(fig:gg-prob0-contour-plts)).
 
-<div class="figure">
-<img src="images/gg-prob0-contour-plts-1.png" alt="Probability of a sample containing no monitored trips as a function of sample size for a range of cell sizes. Vertical reference line on each plot indicates 15% sample rate."  />
-<p class="caption">(\#fig:gg-prob0-contour-plts)Probability of a sample containing no monitored trips as a function of sample size for a range of cell sizes. Vertical reference line on each plot indicates 15% sample rate.</p>
-</div>
+```{r gg-prob0-contour-plts, dpi = 600, fig.cap ="Probability of a sample containing no monitored trips as a function of sample size for a range of cell sizes. Vertical reference line on each plot indicates 15% sample rate.", fig.width = 7, fig.height = 7, echo = FALSE}
+        shared_legend(samplerate_prob0_contour_plt, samplesize_prob0_contour_plt, ncol = 1, nrow = 2, position = "bottom")
+```
 
 ## Impacts of sample size on variance
 
-
-```r
+```{r, echo = FALSE, results = 'asis'}
 ## make some plots for use later
 ##  these are based on the same population descibed above and show 1) how 
 n_scaling_plt <- (ggplot(base_popul[which(base_popul$sample_rate < 0.35),], 
@@ -217,11 +276,11 @@ are related quantities, they have different effects on the variance estimate.
 All populations have a base variance, Eq \@ref(eq:base-var); the variability in
 a measured parameter (e.g., length) between sample units. 
 
-\begin{equation} 
+$$\begin{equation} 
   Var(x) = \frac{\sum_{i=1}^{N} (x_i - \bar{x})^2 }{N-1}  
   (\#eq:base-var)
 \end{equation}
-
+$$
 The variance of the mean is the base variance (the
 population variance or variance of the data) divided by the sample size, Eq.
 \@ref(eq:var-of-estimate). As the sample rate increases, variance will
@@ -229,29 +288,29 @@ decrease by \(\frac{1}{n}\). Note that we are not summing only over those sample
 units that were sampled, but all samples in the population (i.e., *i* = 1 to *N*
 rather than *i* = 1 to *n*)
 
-\begin{equation} 
+$$\begin{equation} 
   Var(\bar{x}) = \frac{\sum_{i=1}^{N}{\left(x_i - \bar{x}\right)^2}}{n\left(N-1\right)}  
   (\#eq:var-of-estimate)
 \end{equation}
-
+$$
 Unfortunaly, we rarely know the population variance and must rely variance
 estimates fro previous studies or on the sample data only. In estimating the
 parameter mean based on a sample, we don't have information from every sample
 unit and hence will also need to estimate the variance
 (Eq. \@ref(eq:est-var-of-estimate). 
 
-\begin{equation} 
+$$\begin{equation} 
   V\hat{a}r(\bar{x}) = \frac{\sum_{i=1}^{n}{\left(x_i - \bar{x}\right)^2}}{n\left(n-1\right)}  
   (\#eq:est-var-of-estimate)
 \end{equation}
-
+$$
 We can see the impact of sample size on variance by plotting $\frac{1}{n}$
 against the sample rate, \(\frac{n}{N}\), Fig. \@ref(fig:gg-n-fpc-scaling-plt).
 
-<div class="figure">
-<img src="images/gg-n-fpc-scaling-plt-1.png" alt="something"  />
-<p class="caption">(\#fig:gg-n-fpc-scaling-plt)something</p>
-</div>
+```{r gg-n-fpc-scaling-plt, dpi = 600, fig.cap ="something", fig.width = 7, fig.height = 3.5, echo = FALSE}
+shared_legend(n_scaling_plt, fpc_scaling_plt, ncol = 2, nrow = 1, position = "bottom")
+```
+
 In addition, as we sample a larger and larger portion of the population, our
 uncertainty about the estimate decereases. HERE BE THE FPC discussion, Fig.
 \@ref(fig:gg-n-fpc-scaling-plt).
@@ -261,10 +320,9 @@ generally don't apply FPC when sample rates below 5%, doesn't make a difference
 don't know actual variance - makes sample size analysis challenging, Fig.
 \@ref(fig:gg-totl-scaling-plt).
 
-<div class="figure">
-<img src="images/gg-totl-scaling-plt-1.png" alt="something"  />
-<p class="caption">(\#fig:gg-totl-scaling-plt)something</p>
-</div>
+```{r gg-totl-scaling-plt, dpi = 600, fig.cap ="something", fig.width = 7, fig.height = 3.5, echo = FALSE}
+     shared_legend(totl_scaling_n_plt, totl_scaling_rate_plt, ncol = 2, nrow = 1, position = "bottom")
+```
 
 # Cost-weighted boxes
 
@@ -285,12 +343,12 @@ variance of an estimate, for example the mean \(\bar{x}\), based on a stratified
 sample with *h* = 1 to *H* strata and \(\sum_{h=1}^{H}n_h = n\) is the vector of
 sample sizes that minimizes the stratified variance estimate (Eq. \@ref(eq:stratified-variance)):
 
-\begin{equation} 
+$$\begin{equation} 
   V\hat{a}r(\bar{x}) = \sum_{h = 1}^{H}
 W_h V\hat{a}r(\hat{x}_{h})\left(\frac{1}{n_h} - \frac{1}{N_h}\right)  
  (\#eq:stratified-variance) 
 \end{equation}
- 
+$$ 
 where \(W_h = \frac{N_h}{N}\) and \(n= \sum{n_h}\)
 
 This can be minimized by setting the strata-specific sample sizes,
@@ -300,11 +358,11 @@ otherwords, when \(\frac{n_h}{N_h} = kS_h\) where
 that\(\sum(n_h) = n\). More specifically, the overall variance will be
 minimized when
 
-\begin{equation}  
+$$\begin{equation}  
   \hat{n}_{h} = n \frac{w_{h} \sigma_{h}}{\sum_{i = 1}^{H} w_{h} \sigma_i}
   (\#eq:Neyman-sample-size) 
 \end{equation}
-
+$$
 Note that the relies on knowing \(Var(\bar{x})\), which is rarely the case.
 Generally, the estimated variance is used under the assumption that the
 estimate will accurately reflect the true variability in each stratum. This is
@@ -315,11 +373,11 @@ proportional to their standard deviations and inversely proportional to the
 stratum-specific cost of sampling, Eq.\@ref(eq:Neyman-optimal-sample-size),
 below.
 
-\begin{equation} 
+$$\begin{equation} 
   \hat{n}_{h} = n \frac{\frac{w_h \sigma_h}{\sqrt{c_h}}}{\sum_{h
 = 1}^{H}\frac{w_h \sigma_h}{\sqrt{c_h}}}   
   (\#eq:Neyman-optimal-sample-size) 
-\end{equation}
+\end{equation}$$
 where $c_h$ is the cost associated with sampling stratum *h*.
 
 ### One stage deployment
@@ -331,19 +389,19 @@ The probability of taking a sample of size *n* from a population *N*
 total trips where *K* trips are of interest (in a given cell), and getting *k*
 successes in the sample is given by \@ref(eq:hypergeom-probability).
 
-\begin{equation}
+$$\begin{equation}
   P\left(X = k\right) = \frac{\binom{K}{k}\binom{N - K}{n - k}}{\binom{N}{n}}
   (\#eq:hypergeom-probability) 
-\end{equation}
+\end{equation}$$
 
 The probability of the sample having no monitored trips in a given cell is given
 by \@ref(eq:hypergoem-prob-zero).
 
-\begin{equation}
+$$\begin{equation}
   P\left(k = 0\right) = \frac{\binom{K}{0}\binom{N - K}{n - 0}}{\binom{N}{n}} =
 \frac{\binom{N - K}{n}}{\binom{N}{n}} = \frac{(N - K)!}{(N - K - n)!}
   (\#eq:hypergoem-prob-zero) 
-\end{equation}
+\end{equation}$$
 
 If we know these probabilities for each cell in the stratum, we can define a 
 "not monitored cell" as any cell where the probability of no data is greater
@@ -353,10 +411,10 @@ Eq. \@ref(eq:hypergoem-prob-zero).
 
 Letting \( I\left(P_i\left(k_i = 0\right) \geq a\right) \) be the indicator of no data, for a given
 stratum, we have the proportion of cells with no data as:
-\begin{equation}
+$$\begin{equation}
   T_h = \frac{\sum_{i}^{B_h} I_{ih}\left(P_{ih}(k_{ih} = 0) > a\right)}{B_h} 
   (\#eq:proport-cells-no-data-stratum) 
-\end{equation}
+\end{equation}$$
 where *i* from 1 to *B* indexes the total number of cells in the stratum.
 
 Intuitively, we want to allocate more sample to strata that have a higher
@@ -368,11 +426,11 @@ Refering back to our original minimization problem and substituting in
 for\(P_i(k_i = 0)\), we could find the set of \(n_h\) that minimizes the sum
 over all strata of having no data, *i.e., minimizes
 \@ref(eq:mean-proport-cells-no-data-stratum).
-\begin{equation}
+$$\begin{equation}
   \bar{T} = \frac{1}{H} \sum_{h}T_h = \sum_{h}
 \left[\frac{\sum_{i}^{B_h} I_i\left(\frac{(N_{h} - K_{ih})!}{(N_{h} - K_{ih} - n_{h})!} > a\right)}{B_h}\right]
   (\#eq:mean-proport-cells-no-data-stratum) 
-\end{equation}
+\end{equation}$$
 
 Intuitively, we want to allocate more sample to strata that have a higher
 proportion of cells with few trips (*i.e.*, strata where there are a higher
@@ -385,13 +443,13 @@ equally while using the sum of the proportions (divided by the total number of
 boxes, *i.e.*, the weighted mean), sampling strata with larger numbers of cells
 will contribute more to the overall proportion (metric being minimized). 
 
-\begin{equation}
+$$\begin{equation}
   \bar{T} = \frac{\sum_{h}\sum_{i}^{B_h} I_{ih}\left(P_{ih}(k_{ih} = 0)
 \geq a\right)}{\sum_{h}{B_h}} = \frac{\sum_{h}\sum_{i}^{B_h}
 I_{ih}\left(\frac{(N_{h} - K_{ih})!}{(N_{h} - K_{ih} - n_{h})!} >
 a\right)}{\sum_{h}B_h} 
   (\#eq:proport-ALL-cells-no-data-stratum) 
-\end{equation}
+\end{equation}$$
 
 For a given set of strata, with population sizes for each stratum, \(N_h\), and
 numbers of trips in each box in each stratum, \(K_ih\), we need to estimate the
@@ -411,10 +469,10 @@ If we want to "optimize" this in terms of costs of sampling, then we need to
 incorporate the differential costs associated with each stratum, balancing
 costs with the probability of not getting data.
 
-\begin{equation}   
+$$\begin{equation}   
   \bar{T} = \frac{1}{H} \sum_{h}T_hC_h 
  (\#eq:cost-weighted-boxes) 
-\end{equation}
+\end{equation}$$
 
 Where \(C_h\) is the mean cost per unit of sampling in stratum *h* and we need
 to minimize \(\bar{T}\).
@@ -477,10 +535,12 @@ differing sample rates.)
 
 define a set of hexagons 
     * note that placement of hex centers will impact the numbers of trips in
-each     
+each, hence allow 'overlapping' neighborhoods.     
 * identify the 6 hexagons immediately adjactent to hex-of-interest
-    * determine the probability that at least one trip is observed in those 7
-hexes
+    * determine the whether each trip in the center hex has a sampled
+      neighbor in either the center hex or the surrounding hexes. 
+      * computed as the sample rate^number of trips
+    * 
     
 
 
