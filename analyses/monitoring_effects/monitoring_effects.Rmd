@@ -114,10 +114,12 @@ save(perm_results, file = "results/perm_results.RData")
 
 ```{r figure_1}
 # Get percent differences and monitoring rates from the permutation test results
-dat   <- perm_results$N_table[perm_results$obs[SCALE == "PCT"], on = .(ADP, STRATA)]
-dat   <- melt(dat, id.vars = c(groups, "N", "n", "rate"), measure.vars = metrics, variable.name = "metric", value.name = "pct_diff")
+dat   <- perm_results$N_table[perm_results$obs, on = .(ADP, STRATA)]
+dat   <- melt(dat, id.vars = c(groups, "N", "n", "rate", "SCALE"), measure.vars = metrics, variable.name = "metric", value.name = "diff")
 p_val <- melt(perm_results$`p-value`, id.vars = groups, measure.vars = metrics, variable.name = "metric", value.name = "p_val")
 dat   <- dat[p_val, on = .(ADP, STRATA, metric)][, sig_point := ifelse(p_val <= 0.05/length(metrics), "Yes", "No")]
+dat   <- pivot_wider(dat, names_from = SCALE, values_from = diff)
+dat   <- setDT(rename(dat, raw_diff = RAW, pct_diff = PCT))
 
 # Construct a linear model of percent difference ~ rate for each stratum and metric combination
 mod <- lm(pct_diff ~ -1 + STRATA:metric + rate:STRATA:metric, data = dat)
@@ -213,19 +215,21 @@ ggsave(filename = "output_figures/permutation_pct_diff_n.png", width = 11, heigh
   
 Figure 2. Difference in means (%, monitored - unmonitored) against sample size for years 2013 through 2021. Each point represents one year of data. Lines represent the linear regression of the points. We labeled points statistically significant if the *p*-value from the permutation test was $\le$ 0.05/6 for that year of data. We labeled lines statistically significant if the *p*-value for the linear model slope coefficient was $\le$ 0.05/6.
 
-```{r}
+```{r figure_3}
+# Wrangle data for figure
 dat <- mod_df %>% 
-          select(STRATA, metric, pct_diff) %>% 
-          group_by(STRATA, metric) %>% 
-          summarise(mean = mean(pct_diff), 
+       select(STRATA, metric, pct_diff) %>% 
+       group_by(STRATA, metric) %>% 
+       summarise(mean = mean(pct_diff), 
                     se = sd(pct_diff) / sqrt(n()), 
                     lci = mean - (qnorm(.025/6,lower.tail=FALSE) * se), 
                     uci = mean + (qnorm(.025/6,lower.tail=FALSE) * se), 
                     sig = ifelse(lci <= 0 & uci >= 0, "No", "Yes"),
-                    .groups = "drop")
+                    .groups = "drop") %>% 
+       setDT()
 
 # Create figure
-f3 <- ggplot(dat, aes(x = metric, y = mean, color = sig)) +
+f3 <- ggplot(dat[STRATA != "EM TRW EFP"], aes(x = metric, y = mean, color = sig)) +
       geom_point() +
       geom_errorbar(aes(ymin = lci, ymax = uci)) +
       geom_hline(yintercept = 0, lty = 3) +
@@ -244,3 +248,37 @@ ggsave(filename = "output_figures/permutation_pct_diff_summary.png", width = 11,
 ```
 
 Figure 3. Mean difference in means (%, monitored - unmonitored) across all years of data from 2013 through 2021. Error bars represent 95% confidence intervals. We labelled results statistically significant if the 95% confidence interval does not contain 0.
+
+```{r figure_4}
+# Wrangle data for figure
+dat <- mod_df %>% 
+       select(STRATA, metric, raw_diff) %>% 
+       group_by(STRATA, metric) %>% 
+       summarise(mean = mean(raw_diff), 
+                    se = sd(raw_diff) / sqrt(n()), 
+                    lci = mean - (qnorm(.025/6,lower.tail=FALSE) * se), 
+                    uci = mean + (qnorm(.025/6,lower.tail=FALSE) * se), 
+                    sig = ifelse(lci <= 0 & uci >= 0, "No", "Yes"),
+                    .groups = "drop") %>% 
+       setDT()
+
+# Create figure
+f4 <- ggplot(dat[STRATA != "EM TRW EFP"], aes(x = STRATA, y = mean, color = sig)) +
+      geom_point() +
+      geom_errorbar(aes(ymin = lci, ymax = uci)) +
+      geom_hline(yintercept = 0, lty = 3) +
+      facet_wrap(. ~ metric, scales = "free_y") +
+      scale_color_manual(values = c("Yes" = "red", "No" = "black")) +
+      labs(x = "Metric", y = "Mean difference in means (monitored - unmonitored)", color = "Statistically significant?") +
+      theme(legend.position = "bottom", axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+# Print figure
+f4
+
+# Save figure
+if(!file.exists("output_figures/permutation_raw_diff_summary.png")){
+ggsave(filename = "output_figures/permutation_raw_diff_summary.png", width = 11, height = 8.5, units = 'in')
+}
+```
+
+Figure 4. Mean difference in means (monitored - unmonitored) across all years of data from 2013 through 2021. Error bars represent 95% confidence intervals. We labelled results statistically significant if the 95% confidence interval does not contain 0.
