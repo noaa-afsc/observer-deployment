@@ -34,6 +34,8 @@ tinytex::tlmgr_update()
  #rmarkdown::render("C:\\Users\\jennifer.cahalan\\Work\\JAC Stuff\\ADP2024\\ADP2024-code (JAC code)\\allocation-background.Rmd")
  rmarkdown::render("C:\\Users\\jennifer.cahalan\\Work\\JAC Stuff\\ADP2024\\2024_ADP\\analyses\\allocation_background\\allocation-background-word.Rmd")
  
+ rmarkdown::render("C:\\Users\\jennifer.cahalan\\Work\\JAC Stuff\\ADP2024\\ADP2024-code (JAC code)\\Var_Allocation\\Allocation_by_psc_var.rmd")
+  
  rmarkdown::render("C:\\Users\\jennifer.cahalan\\Work\\JAC Stuff\\NPGOP_Sampling\\ProjectCode\\Good_Code\\2022\\annual_review_summary_27feb2023.Rmd")
  rmarkdown::render("C:\\Users\\jennifer.cahalan\\Work\\JAC Stuff\\NPGOP_Sampling\\ProjectCode\\Good_Code\\create-reference-word-doc.Rmd")
  
