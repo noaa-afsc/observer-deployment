@@ -324,6 +324,41 @@ don't know actual variance - makes sample size analysis challenging, Fig.
      shared_legend(totl_scaling_n_plt, totl_scaling_rate_plt, ncol = 2, nrow = 1, position = "bottom")
 ```
 
+# Proximity design (awaiting new name?)
+
+## from the analytic document:
+Sample rates such that we *maximize* the percentage of trips that occur in those
+boxes that have greater than a predetermined probability of 1 or more trips per
+post-stratum (inspired by SEA methods of Gasper et al. 2017). Final sample rates
+are likely to differ between strata, but an important feature of this design is
+that strata are set to be equal in terms of their data resolution outcome.
+
+We would change the percentage of trips (currently 75%) contained within
+post-strata with greater than 50% probability of having one trip, not the
+probability of having one trip observed. The different strata are likely to
+“respond” differently as that proportion changes (could plot this). Use
+hypergeometric distribution to estimate the probability of having one trip in a
+post-strata (instead of conducting simulation analysis). 
+
+Post-strata definitions will impact expected gap sizes and data resolution;
+larger post-strata will result in lower data resolution but perhaps fewer gaps.
+Hence, in considering post-strata definition, we can use 2 or 3-weeks temporal
+bins instead of 1 week and/or could drop/bin trip target and compare results to
+assess advantages of different post-stratification definitions or impacts of
+differing sample rates.)
+
+## from geoff's description
+
+define a set of hexagons     * note that placement of hex centers will impact the
+numbers of trips in each, hence allow 'overlapping' neighborhoods.     
+* identify the 6 hexagons immediately adjactent to hex-of-interest
+    * determine the whether each trip in the center hex has a sampled neighbor
+      in either the center hex or the surrounding hexes. 
+      * computed as the sample rate^number of trips (binomial approximation to the hypergeometric)
+    * 
+
+
+
 # Cost-weighted boxes
 
 ## Probability of monitoring as a function of sample size
@@ -508,46 +543,48 @@ For example, \[frac{(N-K)!}{N!}]\] equals the falling product from *N* to
 *N-K+1*, \[prod_{x = a}^{b} f(x)\]
 
 
-# SEA-ish design (awaiting new name?)
-
-## from teh analytic document
-Sample rates such that we *maximize* the percentage of trips that occur in those
-boxes that have greater than a predetermined probability of 1 or more trips per
-post-stratum (inspired by SEA methods of Gasper et al. 2017). Final sample rates
-are likely to differ between strata, but an important feature of this design is
-that strata are set to be equal in terms of their data resolution outcome.
-
-We would change the percentage of trips (currently 75%) contained within
-post-strata with greater than 50% probability of having one trip, not the
-probability of having one trip observed. The different strata are likely to
-“respond” differently as that proportion changes (could plot this). Use
-hypergeometric distribution to estimate the probability of having one trip in a
-post-strata (instead of conducting simulation analysis). 
-
-Post-strata definitions will impact expected gap sizes and data resolution;
-larger post-strata will result in lower data resolution but perhaps fewer gaps.
-Hence, in considering post-strata definition, we can use 2 or 3-weeks temporal
-bins instead of 1 week and/or could drop/bin trip target and compare results to
-assess advantages of different post-stratification definitions or impacts of
-differing sample rates.)
-
-## from geoff's description
-
-define a set of hexagons 
-    * note that placement of hex centers will impact the numbers of trips in
-each, hence allow 'overlapping' neighborhoods.     
-* identify the 6 hexagons immediately adjactent to hex-of-interest
-    * determine the whether each trip in the center hex has a sampled
-      neighbor in either the center hex or the surrounding hexes. 
-      * computed as the sample rate^number of trips
-    * 
     
+## New
+This allocation distributes sampling effort to partial coverage strata (i.e.,
+both observed and electronic monitoring) so that, for a given amount of funding,
+the proportion of predefined spatio-temporal boxes where we expect to not have
+data is controlled. Note that it does not allocate sample in order to get data
+from all boxes and hence, it is not allocating sample effort to ensure we have
+data from any particular box (not chasing small boxes). It is also important to
+note that the proportion of boxes that are expected to be unmonitored is not
+minimized per se, but rather sample effort is added to each stratum iteratively
+to maintain a consistent expected proportion of boxes without data across all
+strata.
+
+To achieve this, spatial-temporal hexagons are defined the same way as in the
+Proximity allocation scheme: spatial hexagonal cells 250km across and temporal
+block 1-week in length. Trips are allowed to span multiple boxes in both time
+and space (based on the landing reports), and trips are considered neighboring
+if they are in adjacent spatial or temporal cells. 
+
+The probability that we do not have any data is estimated using the binomial
+approximation of the hypergeometric distribution ($P(e = 0) = (1- r_h)e$) where
+e is the number of trips in a cell. Using this, we calculated the expected
+proportion of boxes that will not be monitored given a sampling rate, $P_h$$ ,
+as the average across all cells of the probability of having no data. 
 
 
+$$\begin{equation} 
+\hat{{P}_h = \frac{\sum_{b=1}^{B_h}left\(1-r_h)^e_bh\right}{B_h}
+\end{equation}
+$$
+
+where $b$ indexes the number of hexagons in stratum $h$, $B_h$ is the total
+number of hexagons in the stratum, $r_h$ is the initial (assumed) sample rate
+used to estimate the probability that a hexagon is unmonitored, and $e_bh$ is
+the number of trips in hexagon $b$ and stratum $h$. 
+
+Since the number of trips in each stratum (and each year) differs, the rate that
+Ph decreases with increasing sample rate also differs with stratum and year ().
 
 
-
-
-
-
+```{r logo-apps, fig.align = 'center', out.width = "25%", fig.cap = "The APPS
+logo for our 50th year!"} knitr::include_graphics(here::here("figs",
+"logo-apps.png"))
+```
 
