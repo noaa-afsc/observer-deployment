@@ -218,40 +218,6 @@ Figure 2. Difference in means (%, monitored - unmonitored) against sample size f
 ```{r figure_3}
 # Wrangle data for figure
 dat <- mod_df %>% 
-       select(STRATA, metric, pct_diff) %>% 
-       group_by(STRATA, metric) %>% 
-       summarise(mean = mean(pct_diff), 
-                    se = sd(pct_diff) / sqrt(n()), 
-                    lci = mean - (qnorm(.025/6,lower.tail=FALSE) * se), 
-                    uci = mean + (qnorm(.025/6,lower.tail=FALSE) * se), 
-                    sig = ifelse(lci <= 0 & uci >= 0, "No", "Yes"),
-                    .groups = "drop") %>% 
-       setDT()
-
-# Create figure
-f3 <- ggplot(dat[STRATA != "EM TRW EFP"], aes(x = metric, y = mean, color = sig)) +
-      geom_point() +
-      geom_errorbar(aes(ymin = lci, ymax = uci)) +
-      geom_hline(yintercept = 0, lty = 3) +
-      facet_grid(. ~ STRATA) +
-      scale_color_manual(values = c("Yes" = "red", "No" = "black")) +
-      labs(x = "Metric", y = "Mean difference in means (%, monitored - unmonitored)", color = "Statistically significant?") +
-      theme(legend.position = "bottom", axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-
-# Print figure
-f3
-
-# Save figure
-if(!file.exists("output_figures/permutation_pct_diff_summary.png")){
-ggsave(filename = "output_figures/permutation_pct_diff_summary.png", width = 11, height = 8.5, units = 'in')
-}
-```
-
-Figure 3. Mean difference in means (%, monitored - unmonitored) across all years of data from 2013 through 2021. Error bars represent 95% confidence intervals. We labelled results statistically significant if the 95% confidence interval does not contain 0.
-
-```{r figure_4}
-# Wrangle data for figure
-dat <- mod_df %>% 
        select(STRATA, metric, raw_diff) %>% 
        group_by(STRATA, metric) %>% 
        summarise(mean = mean(raw_diff), 
@@ -263,7 +229,7 @@ dat <- mod_df %>%
        setDT()
 
 # Create figure
-f4 <- ggplot(dat[STRATA != "EM TRW EFP"], aes(x = STRATA, y = mean, color = sig)) +
+f3 <- ggplot(dat[STRATA != "EM TRW EFP"], aes(x = STRATA, y = mean, color = sig)) +
       geom_point() +
       geom_errorbar(aes(ymin = lci, ymax = uci)) +
       geom_hline(yintercept = 0, lty = 3) +
@@ -273,7 +239,7 @@ f4 <- ggplot(dat[STRATA != "EM TRW EFP"], aes(x = STRATA, y = mean, color = sig)
       theme(legend.position = "bottom", axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
 # Print figure
-f4
+f3
 
 # Save figure
 if(!file.exists("output_figures/permutation_raw_diff_summary.png")){
@@ -281,4 +247,4 @@ ggsave(filename = "output_figures/permutation_raw_diff_summary.png", width = 11,
 }
 ```
 
-Figure 4. Mean difference in means (monitored - unmonitored) across all years of data from 2013 through 2021. Error bars represent 95% confidence intervals. We labelled results statistically significant if the 95% confidence interval does not contain 0.
+Figure 3. Mean difference in means (monitored - unmonitored) across all years of data from 2013 through 2021. Error bars represent 95% confidence intervals. We labelled results statistically significant if the 95% confidence interval does not contain 0.
