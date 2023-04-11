@@ -344,18 +344,34 @@ over_forties
 # The VL object contains the most up-to-date vessel lengths, so it could
 # be that a vessel which was < 40 (and therefore zero coverage) is now
 # > 40 (and should therefore be switched to a gear-based stratum)
-work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% over_forties$VESSEL_ID & VESSEL_ID %in% em_base$VESSEL_ID, paste("EM", AGENCY_GEAR_CODE, sep = "_"), STRATA_NEW))
-work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% over_forties$VESSEL_ID & !(VESSEL_ID %in% em_base$VESSEL_ID), AGENCY_GEAR_CODE, STRATA_NEW))
+work.data <- mutate(work.data, STRATA_NEW = ifelse(TRIP_ID %in% over_forties$TRIP_ID & !(VESSEL_ID %in% em_base$VESSEL_ID), AGENCY_GEAR_CODE, STRATA_NEW))
+
+work.data <- work.data %>% 
+             group_by(TRIP_ID) %>% 
+             mutate(STRATA_NEW = ifelse(TRIP_ID %in% over_forties$TRIP_ID & 
+                                        VESSEL_ID %in% em_base$VESSEL_ID, 
+                                        paste("EM", unique(AGENCY_GEAR_CODE[AGENCY_GEAR_CODE != "JIG"]), sep = "_", collapse = " "), 
+                                        STRATA_NEW)) %>% 
+             setDT()
+
+work.data <- work.data %>% 
+             group_by(TRIP_ID) %>% 
+             mutate(STRATA_NEW = ifelse(any(AGENCY_GEAR_CODE == "JIG") &
+                                        n_distinct(STRATA_NEW) > 1, 
+                                        unique(STRATA_NEW[STRATA_NEW != "ZERO"]), 
+                                        STRATA_NEW)) %>% 
+             setDT()
 
 # View jig gear to see if STRATA_NEW makes sense
 work.data %>% 
-filter(TRIP_ID %in% work.data$TRIP_ID[work.data$AGENCY_GEAR_CODE=="JIG" & (STRATA != "ZERO" | STRATA_NEW != "ZERO")]) %>% 
-distinct(ADP, TRIP_ID, AGENCY_GEAR_CODE, STRATA, STRATA_NEW) %>% 
-arrange(ADP, TRIP_ID)
+filter(TRIP_ID %in% work.data[AGENCY_GEAR_CODE=="JIG", TRIP_ID]  & (STRATA != "ZERO" | STRATA_NEW != "ZERO")) %>% 
+distinct(ADP, VESSEL_ID, TRIP_ID, AGENCY_GEAR_CODE, STRATA, STRATA_NEW) %>% 
+arrange(ADP, VESSEL_ID, TRIP_ID)
 
 # View strata conversions to see if they make sense
 distinct(work.data, STRATA, AGENCY_GEAR_CODE, STRATA_NEW) %>% 
-arrange(STRATA_NEW, STRATA, AGENCY_GEAR_CODE)
+arrange(STRATA_NEW, STRATA, AGENCY_GEAR_CODE) %>% 
+print(n = Inf)
 
 # View distinct coverage types and strata
 distinct(work.data, CVG_NEW, STRATA_NEW) %>% 
