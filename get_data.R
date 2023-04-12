@@ -399,15 +399,20 @@ if(nrow(dups) != 0){
   warning("More than one STRATA or STRATA_NEW within some TRIP_IDs")
 }
 
-# Split trips that fished both full and partial coverage  
-work.data <- copy(work.data)[TRIP_ID %in% work.data[STRATA_NEW == "FULL", TRIP_ID], N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
-                             ][N > 1, TRIP_ID := ifelse(STRATA_NEW != "FULL", round(as.numeric(TRIP_ID) + 0.1, 1), round(as.numeric(TRIP_ID) + 0.2, 1))
+# Split trips that fished both EM EFP and other strata
+work.data <- copy(work.data)[TRIP_ID %in% work.data[STRATA_NEW == "EM_TRW_EFP", TRIP_ID], N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
+                             ][N > 1, TRIP_ID := ifelse(STRATA_NEW != "EM_TRW_EFP", paste(TRIP_ID, 1), paste(TRIP_ID, 2))
                                ][, N := NULL]
 
-# For remaining combo strata trips, default to stratum with the most landed weight  
+# Split trips that fished both full and partial coverage
+work.data[TRIP_ID %in% work.data[STRATA_NEW == "FULL", TRIP_ID], N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
+          ][N > 1, TRIP_ID := ifelse(STRATA_NEW != "FULL", paste(TRIP_ID, 1), paste(TRIP_ID, 2))
+            ][, N := NULL]
+
+# For remaining combo strata trips, default to stratum with the most landed weight
 work.data[, N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
-          ][N > 1, STRATA_WEIGHT := sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"]), by = .(TRIP_ID, STRATA_NEW)
-            ][N > 1, ':=' (COVERAGE_TYPE = COVERAGE_TYPE[which.max(STRATA_WEIGHT)], STRATA_NEW = STRATA_NEW[which.max(STRATA_WEIGHT)]), by = .(TRIP_ID)
+          ][N > 1, STRATA_WEIGHT := sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = TRUE), by = .(TRIP_ID, STRATA_NEW)
+            ][N > 1, ':=' (CVG_NEW = CVG_NEW[which.max(STRATA_WEIGHT)], STRATA_NEW = STRATA_NEW[which.max(STRATA_WEIGHT)]), by = .(TRIP_ID)
               ][, ':=' (N = NULL, STRATA_WEIGHT = NULL)]
 
 # Check for any remaining combo strata trips 
