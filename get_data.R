@@ -2,12 +2,11 @@
 ADPyear     <- 2024     # Enter numeric year you are doing the ADP for
 ADP_version <- "Draft"  # Enter "Draft" or "Final"
 EM_final    <- "N"      # Is the final EM list approved? Y/N (caps)
-location    <- getPass::getPass('Enter your location: Juneau or Seattle') # Your physical location
 options(scipen = 9999)  # Avoid scientific notation
 
 # Get packages ------------------------------------------------------------
-if(tolower(location) == "seattle") if(!require("odbc")) install.packages("odbc", repos='http://cran.us.r-project.org')
-if(tolower(location) == "juneau") if(!require("ROracle")) install.packages("ROracle", repos='http://cran.us.r-project.org')
+if(!require("odbc")) install.packages("odbc", repos='http://cran.us.r-project.org')
+if(!require("ROracle")) install.packages("ROracle", repos='http://cran.us.r-project.org')
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
 if(!require("lubridate"))   install.packages("lubridate", repos='http://cran.us.r-project.org') # For fixing datetimes
 if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.r-project.org') # ggplot2, dplyr, tidyr, readr, purrr, tibble, stringr, forcats  
@@ -645,5 +644,5 @@ out_name <- paste(ADPyear, ADP_version, "ADP_data.rdata", sep="_")
 out_save <- getPass::getPass(paste0("Would you like to save off a new version of ", out_name, "? (Enter Y or N)"))
 
 if(out_save == "Y"){                              
-save(list = c("work.data", "trips_melt", "efrt", "PartialCPs", "full_efrt", "max_date", "fg_em", "td_mod"), file=paste0("data/", out_name))
+save(list = c("work.data", "trips_melt", "efrt", "PartialCPs", "full_efrt", "max_date", "fg_em", "td_mod"), file=paste0("source_data/", out_name))
 }
