@@ -508,7 +508,7 @@ discard <-
   filter(discard > 0)
 
 # Merge optimization metrics together
-metrics <- full_join(hlbt_psc, chnk_psc, on = "TRIP_ID") %>% full_join(discard, on = "TRIP_ID")
+metrics <- full_join(hlbt_psc, chnk_psc, by = "TRIP_ID") %>% full_join(discard, by = "TRIP_ID")
 
 # * Create trip data frames ----
 
