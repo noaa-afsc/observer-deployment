@@ -1,0 +1,40 @@
+---
+title: "Between-Trip Variance Evaluation Metric"
+output: html_document
+date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r start, include=FALSE}
+# Get packages
+library(data.table)
+library(tidyverse)
+
+# Get data
+load("source_data/2024_Draft_ADP_data.rdata")
+rm(list=setdiff(ls(), c("trips_melt", "efrt", "work.data")))
+
+# Settings
+knitr::opts_chunk$set(echo = TRUE)
+options(scipen = 9999)
+```
+
+```{r wrangle}
+# Convert optimization metrics to wide format
+metrics <- dcast(trips_melt[, .(TRIP_ID, STRATA = strata_ID, METRIC = Metric, VALUE = Value)], TRIP_ID + STRATA ~ METRIC, value.var = "VALUE")
+
+# Join optimization metric values with the most recent year of trips
+dat <- metrics[efrt[ADP == 2022], on = .(TRIP_ID, STRATA), nomatch=0]
+
+# Total number of trips per stratum
+dat[, N := uniqueN(TRIP_ID), keyby = .(STRATA)]
+
+# Sum metrics by columns of interest
+dat <- dat[, .(chnk_psc = sum(chnk_psc), hlbt_psc = sum(hlbt_psc), discard = sum(discard)), by = .(TRIP_ID, STRATA, N)]
+
+# Calculate between-trip standard deviation
+dat <- dat[, .(sd_chnk = sd(chnk_psc), sd_hlbt = sd(hlbt_psc), sd_discard = sd(discard)), by = .(STRATA, N)]
+
+```
+
