@@ -36,5 +36,25 @@ dat <- dat[, .(chnk_psc = sum(chnk_psc), hlbt_psc = sum(hlbt_psc), discard = sum
 # Calculate between-trip standard deviation
 dat <- dat[, .(sd_chnk = sd(chnk_psc), sd_hlbt = sd(hlbt_psc), sd_discard = sd(discard)), by = .(STRATA, N)]
 
+# Join with the full range of sample sizes for each stratum  
+dat <- dat[, .(n = 2:N), by = .(STRATA)][dat, on = .(STRATA)]
+
+# Convert to long format  
+dat <- melt(dat, id.vars = c("STRATA", "n", "N"), variable.name = "metric", value.name = "sd")
+
+# Calculate standard error  
+dat[, se := sqrt((N-n)/N) * sqrt(1/n) * sd]
+
+# Recode strata and metric names
+dat[, ":=" (STRATA = recode(STRATA, "EM_HAL" = "EM HAL", "EM_POT" = "EM POT", "EM_TRW_EFP" = "EM TRW EFP"), metric = recode(metric, "sd_chnk" = "Chinook PSC", "sd_hlbt" = "Halibut PSC", "sd_discard" = "Groundfish discards"))]
+
+
+```
+
+```{r plot, echo = FALSE}
+ggplot(dat, aes(x = n, y = se)) +
+  geom_line() +
+  facet_grid(metric ~ STRATA, scales = "free") +
+  theme_bw()
 ```
 
