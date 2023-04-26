@@ -9,6 +9,7 @@ editor_options:
 ```{r start, include=FALSE}
 # Get packages
 library(data.table)
+library(flextable)
 library(tidyverse)
 
 # Get data
@@ -42,8 +43,8 @@ dat <- dat[, .(n = 2:N), by = .(STRATA)][dat, on = .(STRATA)]
 # Convert to long format  
 dat <- melt(dat, id.vars = c("STRATA", "n", "N"), variable.name = "metric", value.name = "sd")
 
-# Calculate standard error  
-dat[, se := sqrt((N-n)/N) * sqrt(1/n) * sd]
+# Calculate stratum-level standard error  
+dat[, se := N * sqrt((N-n)/N) * sqrt(1/n) * sd]
 
 # Recode strata and metric names
 dat[, ":=" (STRATA = recode(STRATA, "EM_HAL" = "EM HAL", "EM_POT" = "EM POT", "EM_TRW_EFP" = "EM TRW EFP"), metric = recode(metric, "sd_chnk" = "Chinook PSC", "sd_hlbt" = "Halibut PSC", "sd_discard" = "Groundfish discards"))]
@@ -52,9 +53,47 @@ dat[, ":=" (STRATA = recode(STRATA, "EM_HAL" = "EM HAL", "EM_POT" = "EM POT", "E
 dat[, monitoring_rate := n/N]
 ```
 
-```{r plot, echo = FALSE}
+```{r plot}
 ggplot(dat, aes(x = n, y = se)) +
   geom_line() +
   facet_grid(metric ~ STRATA, scales = "free") +
   theme_bw()
 ```
+
+If we wanted to see what margins of error would result from two of the allocation schemes proposed in the Draft 2022 ADP (NMFS 2021), we could do so with a table:  
+```{r example}
+adp_rates <- data.frame(STRATA = c("EM HAL", "EM POT", "EM TRW EFP", "HAL", "POT", "TRW"),
+                        equal_rates = c(30.00, 30.00, 33.33, 19.44, 19.44, 19.44),
+                        min_plus_opt_0.95 = c(30.00, 30.00, 33.33, 18.21, 17.48, 28.10))
+
+se_adp <- dat %>% 
+          left_join(adp_rates, by = "STRATA") 
+
+se_adp <- rbind(
+          se_adp %>% 
+          group_by(STRATA) %>% 
+          filter(round(equal_rates/100 * N) == n) %>% 
+          mutate(`Allocation scheme` = "Equal Rates") %>% 
+          ungroup(),
+          se_adp %>% 
+          group_by(STRATA) %>% 
+          filter(round(min_plus_opt_0.95/100 * N) == n) %>% 
+          mutate(`Allocation scheme` = "15% + Opt 0.95") %>% 
+          ungroup())
+
+se_adp <- se_adp %>% 
+          mutate(margin_of_error = 1.96 * se) %>% 
+          select(STRATA, Metric = metric, `Allocation scheme`, margin_of_error)
+
+se_adp <- reshape2::dcast(se_adp, `Allocation scheme` + Metric ~ STRATA, value.var = "margin_of_error")
+
+se_adp <- se_adp %>% 
+          mutate(Total = rowSums(select_if(., is.numeric), na.rm = TRUE)) %>% 
+          mutate_if(is.numeric, round) %>% 
+          arrange(Metric, `Allocation scheme`) 
+
+ft_se_adp <- flextable(se_adp)
+
+ft_se_adp %>% width(j = c(1,2), width = 1.5)
+```
+
