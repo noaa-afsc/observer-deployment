@@ -17,7 +17,7 @@ load("source_data/2024_Draft_ADP_data.rdata")
 rm(list=setdiff(ls(), c("trips_melt", "efrt", "work.data")))
 
 # Settings
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = FALSE)
 options(scipen = 9999)
 ```
 
@@ -53,6 +53,7 @@ dat[, ":=" (STRATA = recode(STRATA, "EM_HAL" = "EM HAL", "EM_POT" = "EM POT", "E
 dat[, monitoring_rate := n/N]
 ```
 
+In constructing the between-trip variance evaluation metric, we start by generating estimates of standard error at the stratum-level for each of the current optimization metrics using the formula $N\times\sqrt{\frac{N - n}{N} \frac{1}{n} \frac{\sum_{i=1}^{n} (x-\bar{x})^2}{n-1}}$:  
 ```{r plot}
 ggplot(dat, aes(x = n, y = se)) +
   geom_line() +
@@ -60,12 +61,19 @@ ggplot(dat, aes(x = n, y = se)) +
   theme_bw()
 ```
 
-If we wanted to see what margins of error would result from two of the allocation schemes proposed in the Draft 2022 ADP (NMFS 2021), we could do so with a table:  
-```{r example}
+The data used for this calculation include zeros for trips that did not encounter any chinook PSC, halibut PSC, or groundfish discards. An assumption built into this approach is that all three metrics are measured without error at the trip-level, even though that is only true of chinook PSC. 
+
+One way to present results is to show the margin of error at the 95% confidence level. This margin of error is estimated by multiplying the standard error estimate by 1.96, since 95% of estimates are expected to fall within 1.96 standard errors of the true value. If we wanted to see what margins of error would result from two of the allocation schemes proposed in the Draft 2022 ADP (NMFS 2021), we could look at the selection rates that were proposed:  
+```{r example_rates, message = FALSE}
 adp_rates <- data.frame(STRATA = c("EM HAL", "EM POT", "EM TRW EFP", "HAL", "POT", "TRW"),
                         equal_rates = c(30.00, 30.00, 33.33, 19.44, 19.44, 19.44),
                         min_plus_opt_0.95 = c(30.00, 30.00, 33.33, 18.21, 17.48, 28.10))
 
+reshape2::melt(adp_rates, variable.name = "Allocation scheme") %>% mutate(`Allocation scheme` = recode(`Allocation scheme`, "equal_rates" = "Equal Rates", "min_plus_opt_0.95" = "15% + Opt 0.95")) %>% pivot_wider(names_from = STRATA, values_from = value) %>% flextable() %>% autofit()
+```
+
+And the margins of error associated with those selection rates:  
+```{r example_errors}
 se_adp <- dat %>% 
           left_join(adp_rates, by = "STRATA") 
 
@@ -97,3 +105,41 @@ ft_se_adp <- flextable(se_adp)
 ft_se_adp %>% width(j = c(1,2), width = 1.5)
 ```
 
+This table shows that the Equal Rates allocation strategy has a higher margin of error in Chinook PSC by 322 salmon (9%), in halibut PSC by 30 metric tons (12%), and in groundfish discards by 9 metric tons (<1%) when compared to 15% + Opt 0.95. Although the simplifying assumptions built into this evaluation metric mean that these are not the actual margins of error we would expect, the metric does show the relative impact on uncertainty at the trip-level that changes to selection rates have. If we wanted to condense the metric into one number for each design, we could scale by the lowest margin of error for each metric:   
+```{r example_condense_1}
+se_adp %>% 
+select(`Allocation scheme`, Metric, Total) %>% 
+group_by(Metric) %>% 
+mutate(Score = round(Total / min(Total), 2)) %>% 
+select(-Total) %>% 
+flextable() %>% 
+autofit()
+```
+
+Then take the sum of these values:  
+```{r example_condense_2}
+se_adp %>% 
+select(`Allocation scheme`, Metric, Total) %>% 
+group_by(Metric) %>% 
+mutate(Score = round(Total / min(Total), 2)) %>% 
+select(-Total) %>% 
+group_by(`Allocation scheme`) %>% 
+summarise(Score = sum(Score)) %>% 
+flextable() %>% 
+autofit()
+```
+
+And find the relative values of these sums:  
+```{r example_condense_3}
+se_adp %>% 
+select(`Allocation scheme`, Metric, Total) %>% 
+group_by(Metric) %>% 
+mutate(Score = round(Total / min(Total), 2)) %>% 
+select(-Total) %>% 
+group_by(`Allocation scheme`) %>% 
+summarise(Score = sum(Score)) %>% 
+ungroup() %>% 
+mutate(Score = Score / min(Score)) %>% 
+flextable() %>% 
+autofit()
+```
