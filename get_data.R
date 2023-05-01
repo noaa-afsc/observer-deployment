@@ -184,26 +184,35 @@ work.data <- mutate(work.data, TENDER = toupper(TENDER))
 up_dates <- setDT(dbGetQuery(channel_akro, paste0("select distinct 
                                                   cr.el_report_id as report_id,
                                                   td.calendar_date as db_trip_target_date,
-                                                  cr.el_report_date as db_landing_date
+                                                  cr.el_report_date as db_landing_date,
+                                                  g.gear_code as db_agency_gear_code
                                                   FROM akfish_report.transaction_fact tf
                                                   JOIN akfish_report.v_current_keys K ON tf.TRANSACTION_FACT_LOG_PK = k.transaction_fact_log_pk
                                                   AND tf.PARTITION_KEY_PK = k.partition_key_pk
                                                   JOIN akfish_report.catch_report cr on cr.catch_report_pk= tf.catch_report_pk
                                                   JOIN akfish_report.calendar_date td on td.calendar_date_pk = tf.trip_target_date_pk
+                                                  JOIN akfish_report.gear g on g.gear_pk = tf.gear_pk
                                                   WHERE k.year >=", ADPyear - 11,"
                                                   AND cr.el_report_id is not null")))
 
 up_dates[, ':='(DB_TRIP_TARGET_DATE = as.Date(DB_TRIP_TARGET_DATE), DB_LANDING_DATE = as.Date(DB_LANDING_DATE))]
 
-# View the changes to be made
+# View the changes to be made to dates
 changes <- unique(up_dates[work.data, on =.(REPORT_ID)][TRIP_TARGET_DATE != DB_TRIP_TARGET_DATE | LANDING_DATE != DB_LANDING_DATE, .(ADP, TRIP_ID, REPORT_ID, TRIP_TARGET_DATE, DB_TRIP_TARGET_DATE, LANDING_DATE, DB_LANDING_DATE)])
 changes[, ':='(TRIP_TARGET_DATE_DIFF = as.numeric(DB_TRIP_TARGET_DATE - TRIP_TARGET_DATE), LANDING_DATE_DIFF = as.numeric(DB_LANDING_DATE - LANDING_DATE))][order(-abs(TRIP_TARGET_DATE_DIFF))]
 
-# Defer to database dates where dates don't match
+# Defer to database when dates don't match
 work.data <- up_dates[work.data, on =.(REPORT_ID)]
 work.data[!is.na(DB_TRIP_TARGET_DATE) & TRIP_TARGET_DATE != DB_TRIP_TARGET_DATE, TRIP_TARGET_DATE := DB_TRIP_TARGET_DATE]
 work.data[!is.na(DB_LANDING_DATE) & LANDING_DATE != DB_LANDING_DATE, LANDING_DATE := DB_LANDING_DATE]
 work.data[, ':='(DB_TRIP_TARGET_DATE = NULL, DB_LANDING_DATE = NULL)]
+
+# View the changes to be made to gear
+work.data[AGENCY_GEAR_CODE != DB_AGENCY_GEAR_CODE, .(REPORT_IDS = uniqueN(REPORT_ID)), by = .(AGENCY_GEAR_CODE, DB_AGENCY_GEAR_CODE)]
+          
+# Defer to database when gear doesn't match
+work.data[AGENCY_GEAR_CODE != DB_AGENCY_GEAR_CODE, AGENCY_GEAR_CODE := DB_AGENCY_GEAR_CODE]
+work.data[, DB_AGENCY_GEAR_CODE := NULL]
 
 # Maximum date in valhalla - This will be saved as an output and used to ensure 
 # 3 full years of data are packaged for trips_melt, efrt, and full coverage summaries
