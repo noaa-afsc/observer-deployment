@@ -539,9 +539,7 @@ wd[TARGET=="B", TARGET:="P"]  # Convert all 'bottom pollock' to 'pelagic pollock
 wd[, POOL := ifelse(STRATA %in% c("EM_HAL", "EM_POT"), "EM", ifelse(STRATA=="ZERO", "ZE", "OB"))]   # define pool
 wd[, MONTH := month(START)]
 wd[, FMP := ifelse(AREA >=600, "GOA", "BSAI")] # define FMP using area, splitting by GOA and BSAI only
-wd[, DAYS := td_out[wd, DAYS, on=.(TRIP_ID)]]  # Merge in trip durations for OB pool trips
-if(nrow(wd[is.na(DAYS) & POOL =="OB" & STRATA != "EM_TRW_EFP"]) >0){message("Some OB pool trips are missing trip durations!")} 
-wd <- wd[, .(ADP, POOL, STRATA, P_STRATA, FMP, PORT, AREA, TARGET, AGENCY_GEAR_CODE, GEAR, PERMIT, TRIP_ID, START, END, MONTH, DAYS)]
+wd <- wd[, .(ADP, POOL, STRATA, P_STRATA, FMP, PORT, AREA, TARGET, AGENCY_GEAR_CODE, GEAR, PERMIT, TRIP_ID, START, END, MONTH)]
 efrt <- unique(wd)  # final efrt object to output!
 
 # If any trips fished both PTR and NPT gear, remove instances of PTR - only trips that fished with PTR exclusively can be within the pollock EFP
