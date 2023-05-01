@@ -575,7 +575,6 @@ if((length(unique(trips_melt$TRIP_ID)) == length(unique(efrt[POOL!="ZE", TRIP_ID
 # * Full Coverage Summary ----
 full_efrt <- unique(work.data[CVG_NEW=="FULL", .(POOL="FULL", STRATA, P_STRATA, FMP, AREA=REPORTING_AREA_CODE, TARGET=TRIP_TARGET_CODE, AGENCY_GEAR_CODE, PERMIT, START=min(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), END=max(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), MONTH), keyby=.(ADP, TRIP_ID)])
 full_efrt[, GEAR := ifelse(AGENCY_GEAR_CODE %in% c("NPT", "PTR"), "TRW", AGENCY_GEAR_CODE)]   # Create GEAR column (i.e. TRW instead of NPT or PTR)
-full_efrt <- full_efrt[END >= max_date - years(1)]                              # Subset, so one full calendar year of fishing effort is included
 full_efrt[TARGET=="B", TARGET := "P"]                                           # Simplify 'bottom pollock' and 'pelagic pollock' to have only one 'pollock' target designation
 full_efrt <- unique(full_efrt)
 unique(full_efrt[, .(TRIP_ID, GEAR)])[, .N, keyby=GEAR]                         # Here is a rough summary of trip counts by gear type without adjusting for EM/COD
