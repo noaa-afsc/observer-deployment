@@ -569,8 +569,7 @@ efrt <- # Isolate zero coverage trips in work.data, because efrt doesn't contain
 # View how these trips were re-stratified
 efrt[POOL == "ZE", .(N = uniqueN(TRIP_ID)), by = .(POOL, STRATA)][order(POOL, STRATA)]
 
-# If trips_melt has metrics from more than three years, trim it down (we don't need more than 3 years!)
-trips_melt <- trips_melt[TRIP_ID %in% efrt[POOL!="ZE", TRIP_ID]] # subset trips_melt by trip_IDs in the most recent 3 years
+# Check that all trips in efrt have optimization metrics associated with them  
 if((length(unique(trips_melt$TRIP_ID)) == length(unique(efrt[POOL!="ZE", TRIP_ID]))) != TRUE){message("Wait! Some trips are missing metrics in trips_melt!")}
 
 # * Full Coverage Summary ----
