@@ -11,9 +11,6 @@ if(!require("data.table"))   install.packages("data.table", repos='http://cran.u
 if(!require("lubridate"))   install.packages("lubridate", repos='http://cran.us.r-project.org') # For fixing datetimes
 if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.r-project.org') # ggplot2, dplyr, tidyr, readr, purrr, tibble, stringr, forcats  
 
-# Get user-defined functions ----------------------------------------------
-source("common_functions/model_trip_duration.R")    # load in trip duration function 
-
 # Establish channels ------------------------------------------------------
 channel_afsc <- eval(parse(text = Sys.getenv("channel_afsc")))
 channel_akro <- eval(parse(text = Sys.getenv("channel_cas")))
@@ -425,49 +422,6 @@ work.data[, N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
 
 # Check for any remaining combo strata trips 
 unique(work.data[, .(TRIP_ID, STRATA_NEW)])[, .N, by = .(TRIP_ID)][N > 1]
-
-# * Calculate trip durations ----
-
-# Currently, model_trip_duration does its own query of Valhalla and ODDS tables and merges them together with rolling joins - in the future, just use work.data for Valhalla 
-# and a separate query for the ODDS tables. Uses actual days observed in ODDS to build a model that can be applied to all observer-pool PC trips in Valhalla
-# to estimate observer assignment durations (using primarily trip end - trip start but also gear type, ADP year, and tender status as covariates. 
-
-# initial run performs the queries and joins and runs with a default model of DAYS ~ RAW. Spits 'mod_dat' to the global environment
-td_init <- model_trip_duration(ADP_version, ADPyear)  
-td_init$TD_PLOT
-td_init$DIAG
-
-# After some testing, the model below was decided as the best for predicting trip durations
-td_mod <- model_trip_duration(ADP_version, ADPyear, use_mod="DAYS ~ RAW + ADP*AGENCY_GEAR_CODE")
-td_mod$TD_PLOT
-td_mod$DIAG     
-
-# Subset all observer pool trips for the most recent 3 years
-td_dat <- unique(work.data[CVG_NEW!="FULL" & STRATA_NEW != "ZERO" & AGENCY_GEAR_CODE != "JIG", .(VESSEL_ID, ADP, AGENCY_GEAR_CODE, START=min(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), END=max(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), TENDER), by=.(TRIP_ID)])
-td_dat <- td_dat[END >= (max_date-years(3))]                                             # Subset this to get full 3 years of prior fishing effort
-td_dat[, RAW := as.numeric(END-START, units="days")]                              # calculate raw trip duration (fishing end minus fishing start)
-td_dat[, ADP := as.factor(ADP)]                                                   # convert ADP to a factor so it is handled by the model correctly
-td_dat[, AGENCY_GEAR_CODE := factor(AGENCY_GEAR_CODE, levels=c("HAL", "POT", "PTR", "NPT"))]   # Set factor levels
-
-# Apply the model to predict trip duration
-td_dat[, MOD := round(predict(td_mod$TD_MOD, newdata=td_dat)/0.5)*0.5]              # Predict trip durations for each trip, and round to the nearest 0.5 days
-message(paste(nrow(td_dat[MOD < 0.5]), "trips had estimated trip durations less than 0.5 days"))
-td_dat[MOD < 0.5]                                                                 # These are about to get coerced to 0.5 days - make sure this is reasonable!
-td_dat[MOD < 0.5, MOD := 0.5]                                                     # I'm doing it!
-
-# TODO : These trip start/end dates in Valhalla should be verified!
-head(td_dat[order(-MOD)], 10)                                                     # Looking at 10 longest trips - Some of these must be keypunch errors!
-
-# Check the model fit - make sure durations make reasonable sense - limiting axes to exclude outliers
-ggplot(td_dat, aes(x=RAW, y=MOD, color=TENDER)) + geom_point(position=position_jitter(width=0.2, height=0.2)) + facet_grid(AGENCY_GEAR_CODE ~ ADP) + xlim(0, 30) + ylim(0, 30) + geom_abline(slope=1) + scale_color_manual(values=c("blue", "red"))
-# Notice that tendered PTR/NPT trips have low slops and don't track with RAW. This behavior appears consistent with actuals in ODDS (td_mod$TD_PLOT)
-
-# Some trips may have had more than one gear type (typically HAL+POT and PTR+NPT) The trip durations for these trips will be averaged across both instances
-# and arounded to the nearest 0.5 (e.g., an averaged duration of 3.25 would be rounded down to 3.00, but a duration of 3.75 would be rounded up to 4.00)
-td_dat[TRIP_ID %in% td_dat[, .(N = .N), by=TRIP_ID][N>1, TRIP_ID]][order(TRIP_ID)]
-td_out <- td_dat[, .(DAYS = round(mean(MOD)/0.5)*0.5), keyby=.(TRIP_ID)]          # Final output of estimated trip duration
-
-rm(mod_dat, td_init, td_dat)  # removing everything except td_out and td_mod
 
 # * Get TRIP_IDs for PSC ----
 # Metrics:
