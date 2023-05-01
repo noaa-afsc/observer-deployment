@@ -495,23 +495,19 @@ trip_wgts_strata[is.na(trip_wgts_strata)] <- 0
 # We are only evaluating one stratification: HAL, POT, TRW, EM_HAL, EM_POT
 trip_wgts_strata <- rename(trip_wgts_strata, STRATA_GEAR = STRATA_NEW)
 
-# Merge back trip durations
-trip_wgts_strata[, DAYS := td_out[trip_wgts_strata, DAYS, on=.(TRIP_ID)]]
-if(nrow(trip_wgts_strata[is.na(DAYS) & ADP>=ADPyear-3]) > 0){message("Uh-oh! Some trips from the last 3 years are missing durations.")}
-
 # * Melt trips data ----
 # data.table::melt and reshape2::melt() work the same here
 # Note this will only add a column if there is one stratification scheme
 # First create a vector of all strata_schemes - 
 trips_melt_s <- data.table::melt(trip_wgts_strata, 
-                                 id.vars = c("TRIP_ID", "TENDER", "DAYS", "discard", "hlbt_psc", "chnk_psc"), 
+                                 id.vars = c("TRIP_ID", "TENDER", "discard", "hlbt_psc", "chnk_psc"), 
                                  measure.vars = c(colnames(select(trip_wgts_strata, dplyr::contains("STRATA")))),
                                  variable.name = "strata_scheme",
                                  value.name = "strata_ID") %>%
                 filter(!is.na(strata_ID))
 
 # Then for each strata scheme, create a vector of metrics
-trips_melt <- data.table::melt(trips_melt_s, id.vars = c("TRIP_ID", "TENDER", "DAYS", "strata_scheme", "strata_ID"), 
+trips_melt <- data.table::melt(trips_melt_s, id.vars = c("TRIP_ID", "TENDER", "strata_scheme", "strata_ID"), 
                                measure.vars = c("discard", "hlbt_psc", "chnk_psc"),
                                variable.name = "Metric",
                                value.name = "Value") %>%
@@ -523,7 +519,7 @@ trips_melt <- trips_melt %>%
          Metric = as.character(Metric))
 
 # * Check for NAs in trips_melt ----
-if(nrow(trips_melt %>% select(-DAYS) %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected in trips_melt")}
+if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected in trips_melt")}
 
 # * Add post-strata to trips_melt and work.data ----
 trips_melt <- trips_melt %>% 
