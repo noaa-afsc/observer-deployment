@@ -1,0 +1,188 @@
+---
+title: "Data Timeliness Evaluation Metric"
+output: html_document
+date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r start, include=FALSE}
+library(reshape2)
+library(ROracle)
+library(tidyverse)
+
+channel_afsc <- eval(parse(text = Sys.getenv("channel_afsc")))
+
+knitr::opts_chunk$set(echo = FALSE)
+options(scipen = 9999)
+```
+
+```{r get_data}
+em_entry <- dbGetQuery(channel_afsc, "select all_data.*, em_rev_gear.em_gear_code, 
+  hd_data.date_hd_received_by_psmfc,
+  hd_data.date_exported_to_afsc,
+  hd_data.actual_em_trip_start_date_time,
+  hd_data.actual_em_trip_end_date_time from (
+  select 
+  
+  case
+  when em_reviewed.trip_plan_log_seq is not null
+  then 'YES'
+  else 'NO'
+  End as EM_DATA_REVIEWED,   
+  em_reviewed.trip_number as em_reviewed_trip_number, 
+  em_selected.*
+  from    
+  
+  ---- from ODDS get the list of selected EM trips that are in completed or pending status
+  ---- and are not compliance monitoring trips
+  ( select distinct
+  
+  e.odds_trip_number,
+  d.name as vessel_name,
+  d.adfg_number as vessel_adfg_number,
+  trunc(e.date_logged) as date_logged,
+  e.GEAR_TYPE as gear_type_logged,
+  trunc(e.declared_leave_date) as declared_trip_start_date,
+  e.declared_port_of_departure as declared_trip_start_port,
+  trunc(e.declared_return_date) as declared_trip_end_date,
+  e.declared_plant_offloading_to as declared_trip_end_port,
+  trip_status,
+  i.user_reqst_coverage
+  
+  from norpac.odds_provider a,                   
+  norpac.odds_em_vessel_request f,
+  norpac.odds_eligible_opt_strata g,
+  norpac.odds_vessel_sample_plan c,
+  norpac.atl_lov_vessel d,
+  norpac.odds_logged_trip_summary_v e,
+  norpac.odds_em_request_status h,
+  norpac.odds_monitor i
+  where f.eligible_opt_seq = g.eligible_opt_seq
+  and g.vessel_seq = d.vessel_seq
+  and c.vessel_seq = d.vessel_seq
+  and d.permit = e.akr_vessel_id
+  and e.odds_trip_number = i.trip_plan_log_seq
+  and e.year = h.status_year   --- need this to make sure we don't get duplicates
+  and e.observer_status_code <> 'NO'
+  and e.year = 2022
+  and h.status_year = 2022
+  and i.sample_plan_seq in (13))em_selected
+  
+  left join
+  
+  ----get the em reviewed trip number for those em trips that have been reviwed and where AFSC has the data
+  
+  (select a.trip_plan_log_seq, a.trip_number 
+  from em_pac_review.em_trip a
+  )em_reviewed
+  
+  on em_selected.ODDS_TRIP_NUMBER = em_reviewed.trip_plan_log_seq  
+  
+  
+  AND em_selected.trip_status in ('COMPLETED', 'PENDING')  
+  
+  order by  em_selected.odds_trip_number asc)all_data
+  
+  left join 
+  
+  ---- the below query will get the em gear code from the em data
+  
+  (select em_rev_gear.* from 
+  (select em_gear_code.trip_number,
+  em_gear_code.gear_type_code as em_gear_code
+  from
+  (select a.trip_number, b.gear_type_code
+  from EM_PAC_REVIEW.EM_FISHING_EVENT a,
+  em_pac_review.em_gear_type_lov b
+  where a.gear_Type_id = b.gear_type_id
+  group by a.trip_number, b.gear_type_code)em_gear_code
+  group by em_gear_code.trip_number, em_gear_code.gear_type_code)em_rev_gear)em_rev_gear
+  
+  on em_rev_gear.trip_number = all_data.em_reviewed_trip_number
+  
+  left join 
+  
+  --- the below query will get the when the HD was received by psmfc, when it was exported to AFSC and the em trip start date and time and trip end date and time
+  
+  (select a.trip_number, 
+  b.date_received_by_psmfc as date_hd_received_by_psmfc,
+  a.file_import_date as date_exported_to_afsc, 
+  c.trip_plan_log_seq, 
+  c.trip_start_date_time as actual_em_trip_start_date_time, 
+  c.trip_end_date_time as actual_em_trip_end_date_time,
+  d.planned_embark_date as declared_embark_date,
+  d.planned_disembark_date as declared_end_date
+  from em_pac_review.em_trip_hard_drive a,
+  em_pac_review.em_hard_drive b,
+  em_pac_review.em_trip c,
+  norpac.odds_trip_plan_log d
+  where a.HARD_DRIVE_NUMBER = b.HARD_DRIVE_NUMBER
+  and c.TRIP_PLAN_LOG_SEQ = d.TRIP_PLAN_LOG_SEQ
+  and a.trip_number = c.trip_number)hd_data
+  
+  on hd_data.trip_number = all_data.em_reviewed_trip_number")
+
+ob_entry <- dbGetQuery(channel_afsc, "select h.seq_number, h.cruise, h.permit, h.trip_seq, h.haul_seq, 
+                                      decode(g.description, 'Pelagic Trawl', 'TRW', 'Non Pelagic Trawl', 'TRW', 'Pot or Trap', 'POT', 'Longliner', 'HAL') strata, 
+                                      h.retrv_date_time, h.date_changed
+                                      from norpac.atl_haul_h h
+                                      join norpac.atl_lov_gear_type g on g.gear_type_code = h.gear_type_code and g.geartype_form = h.geartype_form
+                                      join norpac.ols_observer_cruise cru on cru.cruise = h.cruise
+                                      join norpac.ols_observer_contract con on con.contract_number = cru.contract_number
+                                      where extract(year from deploy_date_time) = 2022
+                                      and con.employer_code = 'AIS'")
+
+```
+
+```{r}
+em_times <- em_entry %>% 
+            filter(EM_DATA_REVIEWED=="YES") %>% 
+            distinct(TRIP_ID = EM_REVIEWED_TRIP_NUMBER, 
+                     STRATA = recode(GEAR_TYPE_LOGGED, "LONGLINE" = "EM HAL", "POT" = "EM POT"), 
+                     START = as.Date(DATE_HD_RECEIVED_BY_PSMFC), 
+                     END = as.Date(DATE_EXPORTED_TO_AFSC), 
+                     time_to_entry = as.numeric(END - START))
+
+em_times_smry <- em_times %>%
+                 group_by(STRATA) %>%
+                 summarise('25th percentile' = round(as.vector(quantile(time_to_entry, 0.25))),
+                           median = round(as.vector(quantile(time_to_entry, 0.50))),
+                           '75th percentile' = round(as.vector(quantile(time_to_entry, 0.75))),
+                           mean = round(mean(time_to_entry)), .groups = "drop") %>%
+                 melt(id.vars=c("STRATA"), measure.vars=c("25th percentile", "median", "75th percentile", "mean")) %>%
+                 mutate(label = formatC(value, width=max(nchar(value))))
+
+em.times.figure <- ggplot(em_times, aes(x=time_to_entry)) +
+                   facet_grid(. ~ STRATA, scales="free_y") +
+                   geom_histogram(bins=20, fill="gray70") +
+                   geom_vline(data=em_times_smry, aes(xintercept=value), linetype=2) +
+                   geom_text(data=em_times_smry, aes(x=value, y=Inf, label=paste0(variable, ": ", label, "  ")), angle=90, hjust=1, vjust=-.25) +
+                   labs(x="Days", y="Count") +
+                   theme_bw()
+
+ob_times <- ob_entry %>% 
+            group_by(CRUISE, PERMIT, TRIP_SEQ, HAUL_SEQ, STRATA) %>% 
+            summarise(START = as.Date(RETRV_DATE_TIME[which(SEQ_NUMBER == max(SEQ_NUMBER))]),
+                      END = as.Date(min(DATE_CHANGED)), .groups = "drop") %>% 
+            mutate(time_to_entry = as.numeric(END - START))
+
+ob_times_smry <- ob_times %>%
+                 group_by(STRATA) %>%
+                 summarise('25th percentile' = round(as.vector(quantile(time_to_entry, 0.25))),
+                           median = round(as.vector(quantile(time_to_entry, 0.50))),
+                           '75th percentile' = round(as.vector(quantile(time_to_entry, 0.75))),
+                           mean = round(mean(time_to_entry)), .groups = "drop") %>%
+                 melt(measure.vars=c("25th percentile", "median", "75th percentile", "mean")) %>%
+                 mutate(label = formatC(value, width=max(nchar(value))))
+
+ob.times.figure <- ggplot(ob_times, aes(x=time_to_entry)) +
+                   facet_grid(. ~ STRATA, scales="free_y") +
+                   geom_histogram(bins=20, fill="gray70") +
+                   geom_vline(data=ob_times_smry, aes(xintercept=value), linetype=2) +
+                   geom_text(data=ob_times_smry, aes(x=value, y=Inf, label=paste0(variable, ": ", label, "  ")), angle=90, hjust=1, vjust=-.25) +
+                   labs(x="Days", y="Count") +
+                   theme_bw()
+
+```
+
