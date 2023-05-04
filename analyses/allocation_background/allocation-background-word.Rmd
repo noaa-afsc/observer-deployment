@@ -121,9 +121,9 @@ be dhyper(*0,m,n,k*) =  0.1813187.
 
 ```{r echo = FALSE, results = 'asis'}
 N <- c(300, 700, 1200) # population size; note three pop sizes could be considered analygous to strata
-K <- c(1,2,5,seq(10, 40, 10)) # vector of the number of successes in the population
+K <- c(1,2,3,4, 5, seq(15, 35, 10)) # vector of the number of successes in the population
 k_sample <- 0 # number of successes in sample
-n_sample <- seq(15,500, 25) # number of selected items (sample size)
+n_sample <- seq(5, 500, 10) # number of selected items (sample size)
 
 #build the base population; no domains, uses population parameters defined above
 base_popul <- expand.grid(N = N, k_sample = k_sample, K = K, n_sample = n_sample)
@@ -151,24 +151,28 @@ reference_lines_dat$sample_15_pct <- 0.15*reference_lines_dat$N
 samplerate_prob0_line_plt <- (ggplot(base_popul, aes(x = n_sample/N, y = 1 - prob_k_sample)) 
 			+ geom_line(aes(color = factor(K), linetype = factor(K)))
 			+ scale_color_hue('Number trips in cell')
-			+ facet_wrap(. ~ N, ncol = 5, scales = "free_x")
+			+ facet_wrap(. ~ N, ncol = 5)
+            + xlim(0, 0.4)
 			+ scale_linetype('Number trips in cell')
 			+ geom_vline(xintercept = 0.15, color = 'grey60')
-			#+ geom_vline(xintercept = 0.10, color = 'grey60')
-			+ labs(y = paste("Probability of more than", k_sample,"monitored trips"),
-					x = "Sample rate")
-			+ theme_grey()
+			+ geom_hline(yintercept = 0.5, color = 'grey60')
+			#+ labs(y = paste("Probability of more than", k_sample,"monitored trips"),
+			#		x = "Sample rate")
+            + labs(y = paste("Probability cell is monitored"),
+                    x = "Sample rate")
+            + theme_grey()
 			+ theme(legend.position = "bottom")
 			+ guides(color = guide_legend(nrow = 1), linetype = guide_legend(nrow = 1))
 			)
 
 samplesize_prob0_line_plt <- (ggplot(base_popul, aes(x = n_sample, y = 1 - prob_k_sample)) 
 			+ geom_line(aes(color = factor(K), linetype = factor(K)))
-			+ facet_wrap(. ~ N, ncol = 5, scales = "free_x")
+			+ facet_wrap(. ~ N, ncol = 3, scales = "free")
+            + xlim(0, 300)
 			+ scale_color_hue('Number trips in cell')
 			+ scale_linetype('Number trips in cell')
 			+ geom_vline(data = reference_lines_dat, aes(xintercept = sample_15_pct), color = 'grey60')
-			#+ geom_hline(yintercept = 0.10, color = 'grey60')
+			+ geom_hline(yintercept = 0.50, color = 'grey60')
 			+ labs(y = paste("Probability of more than", k_sample,"monitored trips"),
 					x = "Sample size")
 			+ theme_grey()
