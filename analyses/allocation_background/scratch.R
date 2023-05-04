@@ -39,6 +39,10 @@ tinytex::tlmgr_update()
  rmarkdown::render("C:\\Users\\jennifer.cahalan\\Work\\JAC Stuff\\NPGOP_Sampling\\ProjectCode\\Good_Code\\2022\\annual_review_summary_27feb2023.Rmd")
  rmarkdown::render("C:\\Users\\jennifer.cahalan\\Work\\JAC Stuff\\NPGOP_Sampling\\ProjectCode\\Good_Code\\create-reference-word-doc.Rmd")
  
+ rmarkdown::render("C:\\Users\\jennifer.cahalan\\Work\\JAC Stuff\\mean weight per fish 2020\\Fish-weights\\EM-var-and-sample-size-8sept21update.Rmd")
+ 
+
+ 
  install.packages('tinytex')
 
  
