@@ -31,11 +31,14 @@ dat <- metrics[efrt[ADP == 2022], on = .(TRIP_ID, STRATA), nomatch=0]
 # Total number of trips per stratum
 dat[, N := uniqueN(TRIP_ID), keyby = .(STRATA)]
 
+# Get observed trip status
+dat <- unique(work.data[, .(TRIP_ID, OBSERVED_FLAG)])[dat, on = .(TRIP_ID)]
+
 # Sum metrics by columns of interest
-dat <- dat[, .(chnk_psc = sum(chnk_psc), hlbt_psc = sum(hlbt_psc), discard = sum(discard)), by = .(TRIP_ID, STRATA, N)]
+dat <- dat[, .(chnk_psc = sum(chnk_psc), hlbt_psc = sum(hlbt_psc), discard = sum(discard)), by = .(TRIP_ID, STRATA, OBSERVED_FLAG, N)]
 
 # Calculate between-trip standard deviation
-dat <- dat[, .(sd_chnk = sd(chnk_psc), sd_hlbt = sd(hlbt_psc), sd_discard = sd(discard)), by = .(STRATA, N)]
+dat <- dat[, .(sd_chnk = sd(chnk_psc[OBSERVED_FLAG == "Y"]), sd_hlbt = sd(hlbt_psc[OBSERVED_FLAG == "Y"]), sd_discard = sd(discard[OBSERVED_FLAG == "Y"])), by = .(STRATA, N)]
 
 # Join with the full range of sample sizes for each stratum  
 dat <- dat[, .(n = 2:N), by = .(STRATA)][dat, on = .(STRATA)]
@@ -105,7 +108,7 @@ ft_se_adp <- flextable(se_adp)
 ft_se_adp %>% width(j = c(1,2), width = 1.5)
 ```
 
-This table shows that the Equal Rates allocation strategy has a higher margin of error in Chinook PSC by 322 salmon (9%), in halibut PSC by 30 metric tons (12%), and in groundfish discards by 9 metric tons (<1%) when compared to 15% + Opt 0.95. Although the simplifying assumptions built into this evaluation metric mean that these are not the actual margins of error we would expect, the metric does show the relative impact on uncertainty at the trip-level that changes to selection rates have. If we wanted to condense the metric into one number for each design, we could scale by the lowest margin of error for each metric:   
+This table shows that the Equal Rates allocation strategy has a higher margin of error in Chinook PSC by 346 salmon (8%), in halibut PSC by 42 metric tons (15%), and in groundfish discards by 58 metric tons (2%) when compared to 15% + Opt 0.95. Although the simplifying assumptions built into this evaluation metric mean that these are not the actual margins of error we would expect, the metric does show the relative impact on uncertainty at the trip-level that changes to selection rates have. If we wanted to condense the metric into one number for each design, we could scale by the lowest margin of error for each metric:   
 ```{r example_condense_1}
 se_adp %>% 
 select(`Allocation scheme`, Metric, Total) %>% 
