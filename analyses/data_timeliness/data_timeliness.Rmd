@@ -18,7 +18,8 @@ options(scipen = 9999)
 ```
 
 ```{r get_data}
-em_entry <- dbGetQuery(channel_afsc, "select all_data.*, em_rev_gear.em_gear_code, 
+em_entry <- dbGetQuery(channel_afsc, 
+ "select all_data.*, em_rev_gear.em_gear_code, 
   hd_data.date_hd_received_by_psmfc,
   hd_data.date_exported_to_afsc,
   hd_data.actual_em_trip_start_date_time,
@@ -123,66 +124,69 @@ em_entry <- dbGetQuery(channel_afsc, "select all_data.*, em_rev_gear.em_gear_cod
   
   on hd_data.trip_number = all_data.em_reviewed_trip_number")
 
-ob_entry <- dbGetQuery(channel_afsc, "select h.seq_number, h.cruise, h.permit, h.trip_seq, h.haul_seq, 
-                                      decode(g.description, 'Pelagic Trawl', 'TRW', 'Non Pelagic Trawl', 'TRW', 'Pot or Trap', 'POT', 'Longliner', 'HAL') strata, 
-                                      h.retrv_date_time, h.date_changed
-                                      from norpac.atl_haul_h h
-                                      join norpac.atl_lov_gear_type g on g.gear_type_code = h.gear_type_code and g.geartype_form = h.geartype_form
-                                      join norpac.ols_observer_cruise cru on cru.cruise = h.cruise
-                                      join norpac.ols_observer_contract con on con.contract_number = cru.contract_number
-                                      where extract(year from deploy_date_time) = 2022
-                                      and con.employer_code = 'AIS'")
+ob_trips <- dbGetQuery(channel_afsc, 
+  "select t.cruise, t.permit, t.trip_seq, t.end_date as trip_end
+   from norpac.atl_fma_trip t
+   join norpac.ols_observer_cruise cru on cru.cruise = t.cruise
+   join norpac.ols_observer_contract con on con.contract_number = cru.contract_number
+   where extract(year from t.start_date) = 2022
+   and con.employer_code = 'AIS'
+   and t.did_fishing_occur_flag = 'Y'")
 
+ob_hauls <- dbGetQuery(channel_afsc, 
+  "select h.seq_number, h.cruise, h.permit, h.trip_seq, h.haul_seq, 
+   decode(g.description, 'Pelagic Trawl', 'TRW', 'Non Pelagic Trawl', 'TRW', 'Pot or Trap', 'POT', 'Longliner', 'HAL') strata, 
+   min(h.date_changed) as data_in
+   from norpac.atl_haul_h h
+   join norpac.atl_lov_gear_type g on g.gear_type_code = h.gear_type_code and g.geartype_form = h.geartype_form
+   join norpac.ols_observer_cruise cru on cru.cruise = h.cruise
+   join norpac.ols_observer_contract con on con.contract_number = cru.contract_number
+   where extract(year from deploy_date_time) = 2022
+   and con.employer_code = 'AIS'
+   group by h.seq_number, h.cruise, h.permit, h.trip_seq, h.haul_seq, 
+   decode(g.description, 'Pelagic Trawl', 'TRW', 'Non Pelagic Trawl', 'TRW', 'Pot or Trap', 'POT', 'Longliner', 'HAL')")
 ```
 
-```{r}
+```{r figure}
 em_times <- em_entry %>% 
             filter(EM_DATA_REVIEWED=="YES") %>% 
-            distinct(TRIP_ID = EM_REVIEWED_TRIP_NUMBER, 
+            distinct(ID = EM_REVIEWED_TRIP_NUMBER, 
                      STRATA = recode(GEAR_TYPE_LOGGED, "LONGLINE" = "EM HAL", "POT" = "EM POT"), 
-                     START = as.Date(DATE_HD_RECEIVED_BY_PSMFC), 
-                     END = as.Date(DATE_EXPORTED_TO_AFSC), 
-                     time_to_entry = as.numeric(END - START))
+                     TRIP_END = as.Date(ACTUAL_EM_TRIP_END_DATE_TIME), 
+                     DATA_IN = as.Date(DATE_EXPORTED_TO_AFSC), 
+                     time_to_entry = as.numeric(DATA_IN - TRIP_END))
 
-em_times_smry <- em_times %>%
-                 group_by(STRATA) %>%
-                 summarise('25th percentile' = round(as.vector(quantile(time_to_entry, 0.25))),
-                           median = round(as.vector(quantile(time_to_entry, 0.50))),
-                           '75th percentile' = round(as.vector(quantile(time_to_entry, 0.75))),
-                           mean = round(mean(time_to_entry)), .groups = "drop") %>%
-                 melt(id.vars=c("STRATA"), measure.vars=c("25th percentile", "median", "75th percentile", "mean")) %>%
-                 mutate(label = formatC(value, width=max(nchar(value))))
+ob_times <- ob_trips %>% 
+            inner_join(ob_hauls %>% 
+            group_by(CRUISE, PERMIT, TRIP_SEQ, STRATA) %>% 
+            summarise(DATA_IN = min(DATA_IN[HAUL_SEQ == max(HAUL_SEQ)]), .groups = "drop"),
+            by = c("CRUISE", "PERMIT", "TRIP_SEQ")) %>% 
+            mutate(ID = paste0(CRUISE, PERMIT, TRIP_SEQ), 
+                   TRIP_END = as.Date(TRIP_END), 
+                   DATA_IN = as.Date(DATA_IN)) %>% 
+            select(ID, STRATA, TRIP_END, DATA_IN) %>%  
+            mutate(time_to_entry = as.numeric(DATA_IN - TRIP_END))
 
-em.times.figure <- ggplot(em_times, aes(x=time_to_entry)) +
-                   facet_grid(. ~ STRATA, scales="free_y") +
-                   geom_histogram(bins=20, fill="gray70") +
-                   geom_vline(data=em_times_smry, aes(xintercept=value), linetype=2) +
-                   geom_text(data=em_times_smry, aes(x=value, y=Inf, label=paste0(variable, ": ", label, "  ")), angle=90, hjust=1, vjust=-.25) +
-                   labs(x="Days", y="Count") +
-                   theme_bw()
+times <- rbind(em_times, ob_times)
 
-ob_times <- ob_entry %>% 
-            group_by(CRUISE, PERMIT, TRIP_SEQ, HAUL_SEQ, STRATA) %>% 
-            summarise(START = as.Date(RETRV_DATE_TIME[which(SEQ_NUMBER == max(SEQ_NUMBER))]),
-                      END = as.Date(min(DATE_CHANGED)), .groups = "drop") %>% 
-            mutate(time_to_entry = as.numeric(END - START))
+times_smry <- times %>%
+              group_by(STRATA) %>%
+              summarise('25th percentile' = round(as.vector(quantile(time_to_entry, 0.25))),
+                        median = round(as.vector(quantile(time_to_entry, 0.50))),
+                        '75th percentile' = round(as.vector(quantile(time_to_entry, 0.75))),
+                        mean = round(mean(time_to_entry)), .groups = "drop") %>%
+              melt(id.vars=c("STRATA"), measure.vars=c("25th percentile", "median", "75th percentile", "mean")) %>%
+              mutate(label = formatC(value, width=max(nchar(value))))
 
-ob_times_smry <- ob_times %>%
-                 group_by(STRATA) %>%
-                 summarise('25th percentile' = round(as.vector(quantile(time_to_entry, 0.25))),
-                           median = round(as.vector(quantile(time_to_entry, 0.50))),
-                           '75th percentile' = round(as.vector(quantile(time_to_entry, 0.75))),
-                           mean = round(mean(time_to_entry)), .groups = "drop") %>%
-                 melt(measure.vars=c("25th percentile", "median", "75th percentile", "mean")) %>%
-                 mutate(label = formatC(value, width=max(nchar(value))))
+times_figure <- ggplot(times, aes(x=time_to_entry)) +
+                facet_grid(STRATA ~ ., scales="free_y") +
+                geom_histogram(bins=20, fill="gray70") +
+                geom_vline(data=filter(times_smry, variable == "median"), aes(xintercept=value), linetype=2) +
+                geom_text(data=filter(times_smry, variable == "median"), aes(x=value, y=Inf, label=paste(label, "days")), angle=90, hjust=1.1, vjust=-.25, size=8) +
+                labs(x="Days", y="Count") +
+                theme_bw() +
+  theme(text=element_text(size=26))
 
-ob.times.figure <- ggplot(ob_times, aes(x=time_to_entry)) +
-                   facet_grid(. ~ STRATA, scales="free_y") +
-                   geom_histogram(bins=20, fill="gray70") +
-                   geom_vline(data=ob_times_smry, aes(xintercept=value), linetype=2) +
-                   geom_text(data=ob_times_smry, aes(x=value, y=Inf, label=paste0(variable, ": ", label, "  ")), angle=90, hjust=1, vjust=-.25) +
-                   labs(x="Days", y="Count") +
-                   theme_bw()
-
+ggsave(filename = "output_figures/data_timeliness.png", width = 16, height = 9, units = 'in')
 ```
 
