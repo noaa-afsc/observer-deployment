@@ -26,7 +26,7 @@ This allocation method intends to allocate sampling to all monitored partial cov
 \frac{n_{h}}{n} \equiv \frac{ N_{h}S_{h}/\sqrt{c_{h}} }{\sum{\left(N_{h}S_{h}/\sqrt{c_{h}}\right) }}
 \end{equation}
 
-where $h$ is each stratum, $N$ is the the total number of trips, $S$ is the standard deviation of a specified metric, and $c$ is the per-unit monitoring cost.
+where $h$ is each stratum, $N$ is the total number of trips, $S$ is the standard deviation of a specified metric, and $c$ is the per-unit monitoring cost.
 
 Our idea for this allocation method was to replace the standard deviation ($S_{h}$) terms with each stratum's **proportion of boxes with less than a pre-specified probability of having no monitored trips**. This pre-specified probability of having no monitored trips would be set equal for all strata (50%, for instance), or $P50_{h}$:
 
@@ -35,7 +35,7 @@ Our idea for this allocation method was to replace the standard deviation ($S_{h
 \frac{n_{h}}{n} \equiv \frac{ N_{h}P50_{h}/\sqrt{c_{h}} }{\sum{\left(N_{h}P50_{h}/\sqrt{c_{h}}\right) }}
 \end{equation}
 
-Here, 'domains' are defined the same way as there were in the 'proximity' allocation scheme: spatial hexagonal cells 250km across and temporal block 1-week in length. Trips are allowed to span multiple boxes in both time and space (based on the landing reports), and trips are considered neighboring if they are in adjacent spatial cells or temporal cells.
+Here, 'boxes' are defined the same way as there were in the 'proximity' allocation scheme: spatial hexagonal cells 250km across and temporal block 1-week in length. Trips are allowed to span multiple boxes in both time and space (based on the landing reports), and trips are considered neighboring if they are in adjacent spatial cells or temporal cells.
 
 Alternatively to calculating $P50_h$, leveraging the machinery that is used in the 'proximity' allocation scheme, we can instead calculate the **expected proportion of boxes that will not be monitored given a sampling rate**, or $\bar{P}_{h}$. This metric does not rely on an arbitrarily chosen cutoff probability and is calculated by averaging the probabilities that each box will be monitored: 
 
@@ -57,7 +57,7 @@ ggplot(cwb_prop$Ph_dt[STRATA != "ZERO"], aes(x = SAMPLE_RATE, y = Ph, color = ST
 **Figure 1.** $\bar{P}_h$, the expected proportion of boxes that will not be sampled as a function of each stratum's sampling rate $r_h$.
 
 \
-$\bar{P}_h$ is dependent on the distribution of fishing trips in space and time as well as the size of the stratum. Both *EM_POT* and *EM_TRW* are small strata in terms of $N_h$, but it is clear that the distribution of fishing effort in *EM_POT* is much more diffuse than for *EM_TRW* because a much higher $r_h$ is required to reduce $\bar{P}_h$. The effect of $N_h$ is apparent in the *OB_POT* stratum, which has increased in recent years, as shown by the lower $\bar{P}_h$ values at any given $r_h$.
+$\bar{P}_h$ is dependent on the distribution of fishing trips in space and time - specifically, how many trips are within or neighboring each box. In this sense, the spatiotemporal extent and total number of trips $N_h$ affect $\bar{P}_h$. At any given monitoring rate, if more boxes are sparsely populated, $\bar{P}_h$ will be higher. Both *EM_POT* and *EM_TRW* are small strata in terms of $N_h$, but it is clear that the distribution of fishing effort in *EM_POT* is much more diffuse than for *EM_TRW* because a much higher $r_h$ is required to reduce $\bar{P}_h$. The effect of $N_h$ is apparent in the *OB_POT* stratum, which has increased in recent years, as shown by the lower $\bar{P}_h$ values at any given $r_h$.
 
 \
 Our updated allocation equation is now:
@@ -125,9 +125,10 @@ ggplot(step7, aes(x = ADP, y = fh, color = STRATA)) + geom_line(lwd = 1) + theme
 ```
 
 \
-
 ### Additional testing of this allocation method
 
 - **DONE** : This method is not sensitive to the initial starting point (i.e., `r round(equal_rate_2022, 4)`) and converges at essentially the same $f_h$ values. Very minor discrepancies will always result due to the iterative nature of the method.
 
 - **TO DO** : Make a version that weights independent of cost? This modified method would be informative of the influence of monitoring costs in the allocation algorithm. However, would need to calculate $n$ somehow without equation 5.24, so calculating nh/Nh to get fh might be tricky. Equations 5.17 through 5.22 are devoted to figuring out $n$, but I don't understand them well enough to modify them.
+
+- **TO DO** : Haven't tested to see how different stratification schemes perform.
