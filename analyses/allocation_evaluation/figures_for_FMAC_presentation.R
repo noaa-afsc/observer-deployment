@@ -232,17 +232,6 @@ fmp_n_bs_ai_goa <- fmp_n_bs_ai_goa[, .(TRIPS = uniqueN(TRIP_ID)), by = .(POOL, S
 fmp_n_bs_ai_goa[, LABEL := gsub("  ", " ", trimws(paste0(c(AI, BS, GOA), collapse = " "), which = "both")), by = 1:nrow(fmp_n_bs_ai_goa)]
 fmp_n_bs_ai_goa[, HATCH := ifelse(LABEL %in% c("AI", "BS", "GOA"), "plain", "patterned")]
 fmp_n_bs_ai_goa[, POOL := fcase(POOL == "EM", "EM", POOL == "OB", "Observer", POOL == "ZE", "Zero")]
-# ggplot(fmp_n_bs_ai_goa, aes(x = STRATA, y = TRIPS, fill = LABEL)) + 
-#   geom_col(position = "fill", color = "black") + labs(y = "Proportion of Trips", fill = "FMPs", x = "Strata") + 
-#   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
-#   scale_fill_viridis_d()
-
-# ggplot(fmp_n_bs_ai_goa, aes(x = STRATA, y = TRIPS)) + 
-#   geom_col_pattern(aes(fill = LABEL, pattern_density = HATCH), pattern_type = "plain", position = "fill", color = "black") + 
-#   labs(y = "Proportion of Trips", fill = "FMPs", x = "Strata") + 
-#   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
-#   scale_pattern_density_discrete(range = c(0, 0.25)) +
-#   scale_fill_viridis_d() 
 
 FMAC_fig_mixed_fmp_trips <- ggplot(fmp_n_bs_ai_goa, aes(y = STRATA, x = TRIPS)) + 
   facet_grid(POOL ~ ., scales = "free_y", space = "free_y") + 
@@ -257,22 +246,6 @@ FMAC_fig_mixed_fmp_trips <- ggplot(fmp_n_bs_ai_goa, aes(y = STRATA, x = TRIPS)) 
   labs(x = "Proportion of Trips", fill = "FMPs", pattern = "FMPs", y = "Pool and Strata") 
 
 ggsave(filename = "analyses/allocation_evaluation/figures/FMAC_fig_mixed_fmp_trips.png", FMAC_fig_mixed_fmp_trips, width = 7, height = 4, units = "in", dpi = 600)
-
-
-
-
-# # Split by BSAI and GOA
-# fmp_n_bsai_goa <- unique(fmp_n[, FMP := fcase(
-#   AREA %in% 500:543, "BSAI",
-#   AREA %in% 600:660, "GOA")
-# ][, .(TRIP_ID, POOL, STRATA, FMP)])
-# fmp_n_bsai_goa <- dcast(fmp_n_bsai_goa, POOL + STRATA + TRIP_ID ~ FMP, value.var = "FMP", fill = "")
-# fmp_n_bsai_goa <- fmp_n_bsai_goa[, .(TRIPS = uniqueN(TRIP_ID)), by = .(POOL, STRATA, BSAI, GOA)]
-# fmp_n_bsai_goa[, LABEL := gsub("  ", " ", trimws(paste0(c(BSAI, GOA), collapse = " "))), by = 1:nrow(fmp_n_bsai_goa)]
-# ggplot(fmp_n_bsai_goa, aes(x = STRATA, y = TRIPS, fill = LABEL)) + 
-#   geom_col(position = "fill", color = "black") + labs(y = "Proportion of Trips", fill = "FMPs", x = "Strata") + 
-#   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
-#   scale_fill_viridis_d()
 
 #======================================================================================================================#
 # Evaluation Figure ----------------------------------------------------------------------------------------------------
@@ -296,8 +269,6 @@ dmn_insp_prox <- calculate_dmn_interspersion3(box_res, prox_rates_4.5M, stratum_
 
 dmn_res_pool_dt <- copy(dmn_insp_prox)
 design_desc <- NULL
-
-# TEST : dmn_res_pool_dt <- copy(dmn_insp_fmp); design_desc <- NULL
 
 year_col <- dmn_res_pool_dt$params$year_col
 if(!is.null(design_desc)) design_desc <- paste0("Design: ", design_desc, "; ")
