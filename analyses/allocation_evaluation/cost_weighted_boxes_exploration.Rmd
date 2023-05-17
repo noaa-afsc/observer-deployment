@@ -88,12 +88,6 @@ As shown previously in Figure 1, for each year and stratum, $\bar{P}_h$ scales d
 
 \
 ```{r cwb_steps_plot, fig.width = 7.5, fig.height = 5}
-# ggplot(cwb_results, aes(x = Step, color = STRATA)) + theme(legend.position = "bottom") + 
-#   facet_grid(. ~ ADP) + labs(y = "Rate", color = "Strata") + 
-#   geom_line(aes(y = SAMPLE_RATE), linetype = 2, lwd = 1) + 
-#   geom_line(aes(y = fh), lwd = 1) + labs(subtitle = 'Dashed is assumed rate (rh), solid is allocated rate (fh)') + 
-#   scale_y_continuous(limits = c(0, NA))
-
 ggplot(melt(copy(cwb_results)[, "rh" := SAMPLE_RATE], id.vars = c("ADP", "STRATA", "Step"), measure.vars = c("rh", "fh")), aes(x = Step, color = variable)) + theme(legend.position = "bottom") + 
   facet_grid(STRATA ~ ADP, scales = "free_y") + labs(y = "Rate", color = "Strata") + 
   geom_line(aes(y = value), lwd = 1)
