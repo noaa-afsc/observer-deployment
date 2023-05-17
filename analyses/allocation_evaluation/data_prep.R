@@ -2,23 +2,6 @@
 # Creates analyses/allocation_evaluation/allocation_evaluation.Rdata
 
 #======================================================================================================================#
-# TODO LIST! 
-#======================================================================================================================#
-
-# [X] Need the source code that generates 2024_Draft_ADP_data.rdata (Phil Ganz)
-
-# [X] 'trips_melt' needs include all trips as far back as possible (at least 2016, as early as 2014)
-
-# [X] STRATA_NEW for EM_TRW_EFP does not have any trips in 2014-2015. Why is this?
-
-# [ ] In 2015 and 2016, PartialCPs have no `LANDING_DATE`s?
-# For now, I've excluded any trips missing LANDING_DATE as we cant estimate trip length
-
-# [X] Finalize this output and upload to google drive. (First uploaded 2023-03-15)
-
-# [X] For non-observed trips, calculate DAYS based on count of days between all TRIP_TARGET_DATE and LANDING_DATE
-
-#======================================================================================================================#
 # Load Packages --------------------------------------------------------------------------------------------------------
 #======================================================================================================================#
 
