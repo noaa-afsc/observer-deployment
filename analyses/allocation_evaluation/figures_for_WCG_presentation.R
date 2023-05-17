@@ -1,4 +1,4 @@
-# Figures for WCG Presentation
+# Figures for Western Groundfish Conference (WGC) Presentation
 
 library(data.table)
 library(scales)
@@ -34,7 +34,7 @@ s4_fig_b <- ggplot(s4_dat, aes(x = FMP, y = MT, fill = CVG_NEW)) + geom_col(colo
 
 s4_fig <- ggarrange(s4_fig_a, s4_fig_b, ncol = 1, common.legend = T, align = "v")
 
-ggsave("analyses/allocation_evaluation/figures/WCG_s4_fig.png", s4_fig, width = 5, height = 6, units = "in", dpi = 300)
+ggsave("analyses/allocation_evaluation/figures/WGC_s4_fig.png", s4_fig, width = 5, height = 6, units = "in", dpi = 300)
 
 #======================================================================================================================#
 
@@ -72,7 +72,7 @@ s5_fig_b <- ggplot(s5_dat, aes(x = FMP, y = MT, fill = GROUP)) + geom_col(color 
 
 s5_fig <- ggarrange(s5_fig_a, s5_fig_b, ncol = 1, common.legend = T, align = "v")
 
-ggsave("analyses/allocation_evaluation/figures/WCG_s5_fig.png", s5_fig, width = 5, height = 6, units = "in", dpi = 300)
+ggsave("analyses/allocation_evaluation/figures/WGC_s5_fig.png", s5_fig, width = 5, height = 6, units = "in", dpi = 300)
 
 #======================================================================================================================#
 
@@ -188,4 +188,4 @@ s13_fig <- ggplot() +
     panel.spacing = unit(0.1, "lines")) + 
   labs(y = "Month", fill = "Observer sample probability") 
 
-ggsave("analyses/allocation_evaluation/figures/WCG_s13_fig.png", s13_fig, width = 6, height = 4, units = "in", dpi = 300)
+ggsave("analyses/allocation_evaluation/figures/WGC_s13_fig.png", s13_fig, width = 6, height = 4, units = "in", dpi = 300)
