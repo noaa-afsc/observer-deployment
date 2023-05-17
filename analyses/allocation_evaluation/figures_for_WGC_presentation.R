@@ -127,7 +127,7 @@ source("analyses/allocation_evaluation/functions.R")
 
 # Apply box definition
 system.time(box_res <- define_boxes(
-  val_2018_2022_dt, c(2e5, 2.5e5), time = c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"),
+  val_2018_2022_dt, c(2.5e5, 2.5e5), time = c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"),
   year_col = "ADP", stratum_cols = "STRATA", dmn_cols = c("BSAI_GOA", "GEAR"), geom = T))
 
 # Calculate index
