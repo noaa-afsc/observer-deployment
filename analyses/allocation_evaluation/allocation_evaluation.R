@@ -244,15 +244,15 @@ allocation_gaps_tbl <- allocation_gaps$rates[
 
 # How many sea days are afforded by the each allocation scheme?
 sea_days_afforded <- copy(allocation_gaps_CV$rates)[
-][STRATA %in% c("HAL", "POT", "TRW")  
+][STRATA %in% c("OB_HAL", "OB_POT", "OB_TRW")  
 ][, .SD[target_budgets, on = .(INDEX_COST), roll = "nearest"], by = .(ADP, STRATA)]
 sea_days_afforded[, MEAN_TRIP_DAYS := trip_cost_dt[sea_days_afforded, MEAN_TRIP_DAYS, on = .(ADP, STRATA)]]
 sea_days_afforded[, DAYS := MEAN_TRIP_DAYS * n]
 sea_days_afforded <- sea_days_afforded[, .(TOTAL_SEA_DAYS = sum(DAYS)), keyby = .(INDEX_COST, ADP)]
 
 sea_days_afforded_FMP <- copy(allocation_gaps_CV_FMP$rates)[
-][STRATA %in% c("HAL", "POT", "TRW")  
-][, .SD[target_budgets, on = .(INDEX_COST), roll = "nearest"], by = .(ADP, STRATA, FMP_MT)]
+][STRATA %in% c("OB_HAL", "OB_POT", "OB_TRW")  
+][, .SD[target_budgets, on = .(INDEX_COST), roll = "nearest"], by = .(ADP, STRATA, BSAI_GOA)]
 sea_days_afforded_FMP[, MEAN_TRIP_DAYS := trip_cost_dt[sea_days_afforded_FMP, MEAN_TRIP_DAYS, on = .(ADP, STRATA)]]
 sea_days_afforded_FMP[, DAYS := MEAN_TRIP_DAYS * n]
 sea_days_afforded_FMP <- sea_days_afforded_FMP[, .(TOTAL_SEA_DAYS_FMP = sum(DAYS)), keyby = .(INDEX_COST, ADP)]
