@@ -177,7 +177,7 @@ allocation_gaps_CV__FMP_tbl <- allocation_gaps_CV_FMP$rates[
 allocation_gaps_CV_FMP$melt[
 ][variable == "MEAN_PROP_N_IN_SAMPLED_PS", variable := "INTERSPERSION"
 ][, variable := factor(variable, levels = c("INTERSPERSION", "CV_SCALING", "INDEX", "SAMPLE_RATE")) ]
-ggplot(allocation_gaps_CV_FMP$melt, aes(x = INDEX_COST/1e6, y = value, color = STRATA)) + facet_grid(variable ~ ADP + FMP_MT, scales = "free_y") + geom_line(size = 1) + 
+ggplot(allocation_gaps_CV_FMP$melt, aes(x = INDEX_COST/1e6, y = value, color = STRATA)) + facet_grid(variable ~ ADP + BSAI_GOA, scales = "free_y") + geom_line(size = 1) + 
   theme(legend.position = "bottom") + geom_vline(xintercept = 4, linetype = 2) + 
   labs(subtitle = "Gaps + CV. Dashed line indicates total budget of $4M", x = "Cost ($ Million)")
 
@@ -186,7 +186,7 @@ dcast(
   STRATA ~ ADP, value.var = c("SAMPLE_RATE"))
 dcast(
   allocation_gaps_CV_FMP$rates[, .SD[findInterval(4e6, INDEX_COST)], by = c(attr(allocation_gaps_CV_FMP, "stratum_cols"))],
-  STRATA + FMP_MT ~ ADP, value.var = c("SAMPLE_RATE"))
+  STRATA + BSAI_GOA ~ ADP, value.var = c("SAMPLE_RATE"))
 
 allocation_gaps_CV$rates[, .SD[findInterval(4e6, INDEX_COST)], by = c(attr(allocation_gaps_CV, "stratum_cols"))][ADP==2022]
 allocation_gaps_CV_FMP$rates[, .SD[findInterval(4e6, INDEX_COST)], by = c(attr(allocation_gaps_CV_FMP, "stratum_cols"))][ADP==2022]
@@ -230,7 +230,7 @@ metric_compare
 
 
 allocation_gaps_FMP <- calculate_gaps(box_def_with_strata_mean_prop_n, trip_costs_dt)
-ggplot(allocation_gaps_FMP$melt, aes(x = INDEX_COST/1e6, y = value, color = STRATA)) + facet_grid(variable ~ ADP + FMP_MT, scales = "free_y") + geom_line(size = 1) + 
+ggplot(allocation_gaps_FMP$melt, aes(x = INDEX_COST/1e6, y = value, color = STRATA)) + facet_grid(variable ~ ADP + BSAI_GOA, scales = "free_y") + geom_line(size = 1) + 
   theme(legend.position = "bottom") + geom_vline(xintercept = 4, linetype = 2) + 
   labs(subtitle = "Interspersion only. Dashed line indicates total budget of $4M", x = "Cost ($ Million)")
 
