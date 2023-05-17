@@ -178,7 +178,7 @@ pool_4k <- merge(dmn_res_pool_dt$geom, pool_4k, by = "HEX_ID")
 
 # Subset the data to focus on 2022 HAL effort, and only on OB overlapping EM and ZE pools
 hal_2022_sub <- pool_4k  %>% filter(POOL != "OB" & GEAR == "HAL" & ADP == 2022 & TIME_4 %in% c(9,10))
-ak_map_cropped <- ak_low_res %>% st_crs(crs = st_crs(hal_2022_sub))
+ak_map_cropped <- ak_low_res %>% st_set_crs(st_crs(hal_2022_sub))
 
 s13_fig <- ggplot() + 
   facet_grid(TIME_4 ~ POOL) + 
