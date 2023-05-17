@@ -1,10 +1,12 @@
 # Figures for Western Groundfish Conference (WGC) Presentation
 
 library(data.table)
+library(dplyr)
 library(scales)
 library(ggplot2)
 library(ggpubr)      # For combining plots  devtools::install_github("kassambara/ggpubr")
 library(pals)        # Color palettes 
+library(sf)
 
 # Load 2024 Draft ADP Dataset:
 # https://drive.google.com/file/d/1Nq202X4JyuOOdnP_ENHRvsI7fWDE2qPo/view?usp=share_link
