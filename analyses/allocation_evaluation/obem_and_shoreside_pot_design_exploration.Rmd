@@ -1,0 +1,311 @@
+---
+title: "Interspersion Evaluation, OB+EM and Shoreside EM_POT"
+author: "Geoff_Mayhew"
+date: '2023-04-18'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+library(data.table)
+library(ggplot2)
+library(gridExtra)
+library(flextable)
+library(magrittr)  # for piping with flextable
+
+load("TEST_dmn_data.rdata")
+
+knitr::opts_chunk$set(echo = F)
+
+# TODO If we had biological data from shroeside POT EM, would we also use that data for estimate for ZERO? We'd have to 
+# account for the different sample rates of OB_POT and EM_POT, and we could treat the probability of having data as the probability that the cell as at least 1 neighboring observed trip TIMES (X) the probability that at least 1 EM_POT Trip is sampled.
+```
+
+## Domain Interspersion
+
+Previously, we familiarized ourselves with 'Interspersion' (within a stratum, given a monitoring rate, the expected proportion of trips that are monitored or neighboring a monitored trip) and its application towards allocating samples. It is a key component of the 'Proximity' allocation scheme in conjunction with the 'CV Scaling' metric that additionally weights sampling as a function of stratum size and the variance savings achieved for a given sample size.
+
+We can also use interspersion in an evaluative application that is not solely stratum-specific and accommodates comparisons on sub-stratum levels, i.e., 'domains', that further divide the trips within strata by factors such as gear type and FMP. This allows us to quantify the expected proximity of monitored trips in the observed strata (OB_HAL and OB_POT) that fished with HAL gear to trips in the fixed-gear EM strata that also fished with HAL gear. Such a comparison is important to identify where and when fishing effort does not overlap between the observer and fixed-gear EM strata and whether there is an increased likelihood that average-weight data would need to pooled across larger scales of space and time (and in theory raise bias or variance of estimates). We can also compare the overlap of the observer strata and Zero-selection stratum as well as compute summaries between the BSAI and GOA separately. 
+
+We will also use 'domain interspersion' in this analysis to explore two the potential of two other designs: EM+OB (placing observers on fixed-gear EM vessels) and Shoreside EM_POT (having shoreside observers collect biological data of randomly selected EM_POT offloads). By comparing the domain interspersion of the 'Proximity' and 'Proximity + FMP' designs with these new designs that are intended to improve the spatiotemporal availability of average weight data, we can 
+
+All of the exploration here uses 2022 partial coverage fishing effort and only focuses on fixed-gear trips. As a baseline we will use the rates allocated from the 'Proximity' design with a 4.5M budget. Given this scenario, what level of domain interspersion is achieved?  
+<br>
+
+**Table 1**. 'Proximity' design sample rates afforded and interspersion achieved with a $4.5M budget.
+
+```{r prox rates table}
+rates_4.5M[ADP == 2022 & STRATA %like% "HAL|POT", .(STRATA, STRATA_N, `SAMPLE %` = SAMPLE_RATE * 100, ISPN = round(ISPN, 4))] %>% flextable() %>% padding(padding = 2) %>% autofit()
+```
+
+<br>
+Note that the $4.5M budget achieves an interspersion value around 0.935-0.950 for all sampled fixed-gear strata. We can sort of use this as a benchmark of the level of interspersion we would like to achieve for our domains. Given the sample rates afforded for Observed fixed-gear trips, let's calculate the domain interspersion for the data-dependent strata, keeping gear types separate and combining strata by monitoring tool (i.e., OB, EM, and ZERO.  
+<br>
+
+**Table 2**. 'Proximity' design domain interspersion (GEAR) of fixed-gear strata grouped into pools by monitoring method. 'DMW_w' is the total number of component trips in each domain. 'DMN_ISPN' is domain interspersion which for this design quantifies the proximity of observed trips to other trips.
+
+```{r prox domain interspersion table}
+dmn_insp_smry_og$OVERALL[ADP == 2022 & GEAR %in% c("HAL", "POT"), .(GEAR, POOL, DMN_w = round(BOX_DMN_w, 1), DMN_ISPN = round(POOL_DMN_INTERSPERSION, 3))] %>% flextable()  %>% padding(padding = 2) %>% autofit() %>% hline(i = 3)
+```
+
+<br>
+We first notice that within the 'OB' pools (*HAL-OB* and *POT-OB*), domain interspersion appears to be higher than predicted during allocation. This is because mixed-gear trips were placed into a single stratum on the allocation side, but on the evaluation side, we assume such trips can count as neighbors for both HAL and POT gear trips. This results in a higher-than-expected availability of data that applies to other Observer pool trips. 
+
+We see that *POT-ZERO* has the lowest domain interspersion. Keep in mind that this domain has very few trips (~40) so that might influence how much we care about this score. The *HAL-ZERO* domain has the most fishing effort (*DMN_w*), so if 6.3% of those trips are not near an observed neighbor, that translate to around 96 trips. *POT-EM*'s domain interspersion is also somewhat lower than other domains. 
+
+These summaries were done AK-wide, but there might be large discrepancies between the BSAI and GOA due to disparate fishing effort. We will further define domains by FMP:  
+<br>
+
+**Table 3**. 'Proximity' design domain interspersion (GEAR + FMP) of fixed-gear strata grouped into pools by monitoring method. 'DMW_w' is the total number of component trips in each domain. 'DMN_ISPN' is domain interspersion which for this design quantifies the proximity of observed trips to other trips.
+
+```{r prox domain interspersion fmp table}
+dmn_insp_smry_og$BSAI_GOA[ADP == 2022 & GEAR %in% c("HAL", "POT"), .(GEAR, FMP = BSAI_GOA, POOL, DMN_w = round(BOX_DMN_w, 1), DMN_ISPN = round(POOL_DMN_INTERSPERSION, 3))] %>% flextable() %>% padding(padding = 2) %>% autofit() %>% hline(i = c(3,6,9))
+```
+
+<br>
+What we notice here is that the previous summary was oftentimes dominated by the higher fishing effort in the GOA than in the BSAI. In *HAL-GOA*, where the vast majority of fishing effort occurs, domain interspersion is ~0.99 for all pools. However, the *HAL-BSAI-OB* domain interspersion was only 0.758 for over 100 trips. Not surprisingly, the domain interspersion for the EM (31 trips) and ZERO (127 trips) pools in the BSAI were also low. In *POT-BSAI*, the OB pool is at a healthy 0.958 but the EM pool is lower at 0.876, which suggests either too low of a selection rate in OB_POT or a lack of overlap of fishing effort in space and time that can only be improved by collecting biological information from *EM_POT* stratum boats. The *POT-GOA-ZERO* domain interspersion was also lower than in other pools but also has low effort.  
+<br>
+
+## Proximity stratified by FMP
+
+If we further stratified by FMP prior to allocation with the 'proximity' method, we might reduce the discrepancies in domain interspersion between FMPs. By placing relatively more observers in the BSAI, we should expect the domain interspersion in the EM and ZERO pools to improve as long as fishing effort overlaps in space and time. Again, we will use a $4.5M budget.  
+<br>
+
+**Table 4**.  'Prox + FMP' design sample rates afforded and interspersion achieved with a $4.5M budget.
+
+```{r prox_fmp rates table}
+rates_4.5M_fmp[ADP == 2022 & STRATA %like% "HAL|POT", .(STRATA, FMP = BSAI_GOA, STRATA_N, `SAMPLE %` = SAMPLE_RATE * 100, ISPN = round(ISPN, 4))] %>% flextable() %>% padding(padding = 2) %>% autofit()
+```
+
+<br>
+We see that the expected interspersion varies much more than before (0.910-0.980  compared to 0.935-0.950) and that the selection rates are might higher for strata with fewer trips (CV scaling becomes more important in the allocation). Let's see whether the increased observer coverage in the BSAI translates to improved domain interspersion in the BSAI and more balance between the BSAI and GOA. First, we'll look at the overall, AK-wide domain interspersion.  
+<br>
+
+**Table 5**. AK-wide domain interspersion (GEAR) values from the 'Proximity' and 'Prox + FMP' designs of fixed-gear strata grouped into pools by monitoring method. 'DMW_w' is the total number of component trips in each domain. 'DMN_ISPN' is domain interspersion which for this design quantifies the proximity of observed trips to other trips.
+
+```{r prox_fmp domain interspersion table}
+dcast(
+  rbind(
+    cbind(
+      Design = "Proximity", 
+      dmn_insp_smry_og$OVERALL[
+        ADP == 2022 & GEAR %in% c("HAL", "POT"), 
+        .(GEAR, POOL, DMN_w = round(BOX_DMN_w, 1), DMN_ISPN = round(POOL_DMN_INTERSPERSION, 3))] ),
+  
+   cbind(
+     Design = "Prox + FMP", 
+     dmn_insp_smry_fmp$OVERALL[
+       ADP == 2022 & GEAR %in% c("HAL", "POT"), 
+       .(GEAR, POOL, DMN_w = round(BOX_DMN_w, 1), DMN_ISPN = round(POOL_DMN_INTERSPERSION, 3))] )
+  )[, Design := factor(Design, levels = c("Proximity", "Prox + FMP"))],
+  GEAR + POOL + DMN_w ~ Design, value.var = "DMN_ISPN" ) %>% 
+  flextable()  %>% padding(padding = 2) %>% autofit() %>% hline(i = 3)
+```
+
+<br>
+Already, we see that overall, domain interspersion is virtually higher for all pools and domains with the 'Prox + FMP' design compared to the 'Proximity' design. Shifting observer deployment from the GOA to the BSAI appears to be a cost-efficient way to improve the availability of observer-based data to the Observer, fixed-gear EM, and Zero-selection pools.
+
+To be thorough, we can also look at the results with the FMPs separated:  
+<br>
+
+**Table 6**. FMP-specific domain interspersion (GEAR + FMP) values from the 'Proximity' and 'Prox + FMP' designs of fixed-gear strata grouped into pools by monitoring method. 'DMW_w' is the total number of component trips in each domain. 'DMN_ISPN' is domain interspersion which for this design quantifies the proximity of observed trips to other trips.
+
+```{r prox_fmp domain interspersion fmp table}
+
+dcast(
+  rbind(
+    cbind(
+      Design = "Proximity", 
+      dmn_insp_smry_og$BSAI_GOA[
+        ADP == 2022 & GEAR %in% c("HAL", "POT"), 
+        .(GEAR, FMP = BSAI_GOA, POOL, DMN_w = round(BOX_DMN_w, 1), DMN_ISPN = round(POOL_DMN_INTERSPERSION, 3))] 
+    ),
+    cbind(
+      Design = "Prox + FMP", 
+      dmn_insp_smry_fmp$BSAI_GOA[
+        ADP == 2022 & GEAR %in% c("HAL", "POT"), 
+        .(GEAR, FMP = BSAI_GOA, POOL, DMN_w = round(BOX_DMN_w, 1), DMN_ISPN = round(POOL_DMN_INTERSPERSION, 3))] 
+    )
+  )[, Design := factor(Design, levels = c("Proximity", "Prox + FMP"))],
+  GEAR + FMP + POOL + DMN_w ~ Design, value.var = "DMN_ISPN") %>% 
+  flextable()  %>% padding(padding = 2) %>% autofit() %>% hline(i = c(3,6,9))
+
+```
+
+<br>
+Virtually all pools X domains have domain interspersion at or above 0.95 with the exception of *HAL-BSAI-ZERO*. This indicates that even with a monitoring rate of over 51% OB_HAL in the BSAI, still only 72% of *HAL-BSAI-ZERO* trips are near an observed neighbor. This is evidence that there is a lack of spatiotemporal overlap of fishing effort between the Observer and Zero-selection pools in the BSAI! [See maps below to see when/where these trips are.]  
+<br>
+
+## EM+OB Design and Shoreside EM_POT Design
+
+These proposed designs are meant to improve the availability of biological data to the fixed-gear EM strata. By moving vessels from the Observer pool to the fixed-gear EM stratum, there is the risk of reducing domain interspersion by virtue of reducing the amount of biological data collected as well as when/where it is collected. By finding ways for the fixed-gear EM strata to collect trip-specific biological data, we can mitigate and gaps in overlap with the observer strata and even potentially expand the fixed-gear EM vessel pool as it would not be dependent on the observer-only strata.
+
+In order to evaluate what gains are to be had with this increased biological data collection, **we will first naively assume that this additional data can be collected at zero cost**. This assumption lets us quickly poke around and see what improves to domain interspersion are possible. Then, if we identify that the designs show potential, we can worry about how to work in the additional sampling on the allocation side, which will require assumptions of cost.
+
+For the 'Shoreside EM_POT' design, in additional to 100% at-sea compliance and 100% at-sea monitoring of species composition to be post-selected, we would be assuming that all EM_POT offloads would be sampled shoreside by an observer (observers would be randomly selecting offloads to sample for biological information and sending the hard drive for analysis for species composition). For the sake of simplicity, we will use the rates afforded for the EM_POT stratum in the 'Proximity' design but assume that all POT gear trips by EM vessels would be able to acquire biological data from any Observer trip *and* any EM_POT trip. 
+
+For the EM+OB design, we would be placing observers on all or a subset of trips selected for at-sea electronic monitoring (every trip, or every 1 in 2, 1 in 4, or 1 in 8 selected EM trips). For now, we assume that all fixed-gear EM vessels can accommodate an observer (in reality some will not and be exempt). We will assume that any fixed-gear EM trip will be able to utilize biological data from any neighboring monitored trip that used similar gear from the EM or Observer pools.
+
+To summarize the impacts on domain interspersion from all designs, all results from these two designs and their variations will be compared with the 'Proximity' and 'Prox + FMP' designs shown previously.  
+
+## Assumed selection rates for all designs
+
+**Table 7**. Assumed selection rates of trips that also collect biological data for a variety of sample designs. Aside from 'Proximity' and 'Prox + FMP' designs, the additional biological data collected by the other designs is assumed cost-free. 
+
+```{r rate summaries}
+
+dcast(
+  rbind(
+    setDT(merge.data.frame(
+      rates_4.5M[ADP == 2022 & STRATA %like% c("HAL|POT"), .(STRATA, BIO_SAMPLE_RATE = SAMPLE_RATE * 100)],
+      data.frame(BSAI_GOA = c("BSAI", "GOA")), all = T
+    ))[, .(DESIGN = "Proximity", STRATA, BSAI_GOA, BIO_SAMPLE_RATE)][STRATA %like% "EM", BIO_SAMPLE_RATE := 0][],
+    
+    rates_4.5M_fmp[ADP == 2022& STRATA %like% c("HAL|POT"), .(DESIGN = "Prox + FMP", STRATA, BSAI_GOA, BIO_SAMPLE_RATE = SAMPLE_RATE * 100)][STRATA %like% "EM", BIO_SAMPLE_RATE := 0][],
+    
+    setDT(merge.data.frame(
+      rates_4.5M[ADP == 2022 & STRATA %like% c("HAL|POT"), .(STRATA, BIO_SAMPLE_RATE = SAMPLE_RATE * 100)],
+      data.frame(BSAI_GOA = c("BSAI", "GOA")), all = T
+    ))[, .(DESIGN = "Shoreside EM_POT", STRATA, BSAI_GOA, BIO_SAMPLE_RATE)][STRATA == "EM_HAL", BIO_SAMPLE_RATE := 0][],
+    
+    setDT(merge.data.frame(
+      rates_4.5M[ADP == 2022 & STRATA %like% c("HAL|POT"), .(STRATA, BIO_SAMPLE_RATE = SAMPLE_RATE * 100)],
+      data.frame(BSAI_GOA = c("BSAI", "GOA")), all = T
+    ))[, .(DESIGN = "EM+OB 1in1", STRATA, BSAI_GOA, BIO_SAMPLE_RATE)][],
+    
+    setDT(merge.data.frame(
+      rates_emob_1in2[ADP == 2022 & STRATA %like% c("HAL|POT"), .(STRATA, BIO_SAMPLE_RATE = SAMPLE_RATE * 100)],
+      data.frame(BSAI_GOA = c("BSAI", "GOA")), all = T
+    ))[, .(DESIGN = "EM+OB 1in2", STRATA, BSAI_GOA, BIO_SAMPLE_RATE)][],
+    
+    setDT(merge.data.frame(
+      rates_emob_1in4[ADP == 2022 & STRATA %like% c("HAL|POT"), .(STRATA, BIO_SAMPLE_RATE = SAMPLE_RATE * 100)],
+      data.frame(BSAI_GOA = c("BSAI", "GOA")), all = T
+    ))[, .(DESIGN = "EM+OB 1in4", STRATA, BSAI_GOA, BIO_SAMPLE_RATE)][],
+    
+    setDT(merge.data.frame(
+      rates_emob_1in8[ADP == 2022 & STRATA %like% c("HAL|POT"), .(STRATA, BIO_SAMPLE_RATE = SAMPLE_RATE * 100)],
+      data.frame(BSAI_GOA = c("BSAI", "GOA")), all = T
+    ))[, .(DESIGN = "EM+OB 1in8", STRATA, BSAI_GOA, BIO_SAMPLE_RATE)][]
+  
+  )[, DESIGN := factor(DESIGN, levels = c("Proximity", "Prox + FMP", "Shoreside EM_POT", "EM+OB 1in1", "EM+OB 1in2", "EM+OB 1in4", "EM+OB 1in8"))][order(STRATA, BSAI_GOA)],
+  STRATA + BSAI_GOA ~ DESIGN, value.var = "BIO_SAMPLE_RATE"
+  
+) %>% flextable() %>% colformat_double(j = 3:9, digits = 2) %>% fontsize(size = 8, part = "all") %>% padding(padding = 2) %>% autofit()
+
+```
+
+## AK-wide and FMP-specific summaries of domain interspersion
+
+### AK-Wide
+```{r summary_ak, fig.align='center', fig.dim = c(8, 6)}
+# Domain Interspersion Overall (not separating BSAI from GOA)
+
+plot_overall <- rbind(
+  cbind(Method = "Prox", dmn_insp_smry_og$OVERALL), 
+  cbind(Method = "Prox + FMP", dmn_insp_smry_fmp$OVERALL),
+  cbind(Method = "Shoreside EM_POT", dmn_insp_smry_spem$OVERALL),
+  cbind(Method = "EM+OB 1in1", dmn_insp_smry_emob_1in1$OVERALL),
+  cbind(Method = "EM+OB 1in2", dmn_insp_smry_emob_1in2$OVERALL),
+  cbind(Method = "EM+OB 1in4", dmn_insp_smry_emob_1in4$OVERALL),
+  cbind(Method = "EM+OB 1in8", dmn_insp_smry_emob_1in8$OVERALL)
+)
+plot_overall[, Method := factor(Method, levels = c("Prox", "Prox + FMP", "Shoreside EM_POT", "EM+OB 1in1", "EM+OB 1in2", "EM+OB 1in4", "EM+OB 1in8"))]
+ggplot(plot_overall[ADP == 2022 & GEAR %in% c("HAL", "POT")], aes(x = Method, y = POOL_DMN_INTERSPERSION)) + 
+  geom_col() + facet_grid(POOL ~ GEAR) + theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust= 0.5)) +
+  geom_text(aes(label = round(POOL_DMN_INTERSPERSION, 3)), size = 2, nudge_y = -0.05, color = "white") +
+  geom_text(aes(x = 1, y = 0.1, label = round(BOX_DMN_w, 0)), size = 2, color = "white") +
+  labs(x = "Design", y = "Domain interspersion")
+```
+
+**Figure 1**. Alaska-wide domain interspersion by design. Upper values are domain interspersion and lower-right values are total number of trips in domain.  
+
+### FMP-Specific
+
+```{r summary_fmp, fig.align='center', fig.dim = c(8, 6)}
+# Domain Interspersion split by FMP
+
+plot_fmp <- rbind(
+  cbind(Method = "Prox", dmn_insp_smry_og$BSAI_GOA), 
+  cbind(Method = "Prox + FMP", dmn_insp_smry_fmp$BSAI_GOA),
+  cbind(Method = "Shoreside EM_POT", dmn_insp_smry_spem$BSAI_GOA),
+  cbind(Method = "EM+OB 1in1", dmn_insp_smry_emob_1in1$BSAI_GOA),
+  cbind(Method = "EM+OB 1in2", dmn_insp_smry_emob_1in2$BSAI_GOA),
+  cbind(Method = "EM+OB 1in4", dmn_insp_smry_emob_1in4$BSAI_GOA),
+  cbind(Method = "EM+OB 1in8", dmn_insp_smry_emob_1in8$BSAI_GOA)
+)
+plot_fmp[, Method := factor(Method, levels = c("Prox", "Prox + FMP", "Shoreside EM_POT", "EM+OB 1in1", "EM+OB 1in2", "EM+OB 1in4", "EM+OB 1in8"))]
+ggplot(plot_fmp[ADP == 2022 & GEAR %in% c("HAL", "POT")], aes(x = Method, y= POOL_DMN_INTERSPERSION)) + 
+  geom_col() + facet_grid(POOL ~ GEAR + BSAI_GOA) + 
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust= 0.5), 
+    strip.text.x = element_text(margin = margin(b = 0.05, t = 0.05))) + 
+  geom_text(aes(label = round(POOL_DMN_INTERSPERSION, 3)), size = 2, nudge_y = -0.05, color = "white") +
+  geom_text(aes(x = 1, y = 0.1, label = round(BOX_DMN_w, 0)), size = 2, nudge_y = -0.05, color = "white") +
+  labs(x = "Design", y = "Domain interspersion")
+```
+
+**Figure 2**. FMP-specific domain interspersion by design. Upper values are domain interspersion and lower-right values are total number of trips in domain.  
+
+<br>
+It is apparent that the biggest 'gaps' occur in *HAL-BSAI* in all pools but especially for the Zero-stratum. None of the designs considered the possibility that FG-EM trips that collect biological data would be considered 'data donors' to the Zero-stratum, so the only improvements to *HAL-BSAI-ZERO* could be achieved by increasing the OB stratum rates via the 'Prox + FMP' design.
+
+One of the current reasons that we don't 'give credit' to the fixed-gear EM strata is that we don't consider the overlap between the fixed-gear EM strata and the Zero-selection stratum. As far as I know, CAS only uses observer data to generate discard estimates for Zero-stratum trips (and not FG-EM's count data X observer-derived average weights). At least in 2022, it does not seem that FG-EM stratum trips fish in times/spaces that ZERO does and OB does not, so any additional 'credit' for FG-EM if we were to allow it be a data donor to ZERO may be minimal. 
+
+
+## Domain Interspersion Maps {.tabset .tabset-pills}
+
+Here we will look at 2022 fixed-gear fishing effort and how the different designs affect interspersion of observer-based (biological) data. After applying our 'box' definition by stratum *X* week *X *200km hex cell and calculating the probability that each cell would be near a monitored neighbor, I grouped up boxes by time into 4-week groups so that a year's worth of fishing effort could be plotted in 12-13 panels instead of 52-53. This grouping included recalculating each 4-week *X* hex-cell's sample probability as a weighted average of the boxes' sample probability weighted by the number of component trips in each box (BOX_DMN_w). By coloring each hex cell by its sample probability, we can identify where fishing effort occurs and its likelihood that it will be near a sampled neighbor with observer-based data. Note that the *amount* of fishing effort (i.e., DMN_w) within a given cell is not indicated, so we are specifically focused on visualizing where in space and time we might have a lack of proximity, either due to lack of overlap or inadequate sampling effort.
+
+### Proximity
+
+```{r og_plot, fig.dim = c(10, 8)}
+# dmn_insp_plot_og$PLOTS$POT$`2022`
+grid.arrange(dmn_insp_plot_og$PLOTS$POT$`2022`, dmn_insp_plot_og$PLOTS$HAL$`2022`, nrow = 1, padding = unit(0, "line"))
+```
+
+### Prox + FMP
+
+```{r fmp_plot, fig.dim = c(10, 8)}
+#dmn_insp_plot_fmp$PLOTS$POT$`2022`
+grid.arrange(dmn_insp_plot_fmp$PLOTS$POT$`2022`, dmn_insp_plot_fmp$PLOTS$HAL$`2022`, nrow = 1)
+```
+
+### Shoreside EM_POT
+
+```{r spem_plot, fig.dim = c(10, 8)}
+#dmn_insp_plot_spem$PLOTS$POT$`2022`
+grid.arrange(dmn_insp_plot_spem$PLOTS$POT$`2022`, dmn_insp_plot_spem$PLOTS$HAL$`2022`, nrow = 1)
+```
+
+### EM+OB 1in1
+
+```{r obem_1in1, fig.dim = c(10, 8)}
+grid.arrange(dmn_insp_plot_emob_1in1$PLOTS$POT$`2022`, dmn_insp_plot_emob_1in1$PLOTS$HAL$`2022`, nrow = 1)
+```
+
+### EM+OB 1in2
+
+```{r obem_1in2, fig.dim = c(10, 8)}
+grid.arrange(dmn_insp_plot_emob_1in2$PLOTS$POT$`2022`, dmn_insp_plot_emob_1in2$PLOTS$HAL$`2022`, nrow = 1)
+```
+
+### EM+OB 1in4
+
+```{r obem_1in4, fig.dim = c(10, 8)}
+grid.arrange(dmn_insp_plot_emob_1in4$PLOTS$POT$`2022`, dmn_insp_plot_emob_1in4$PLOTS$HAL$`2022`, nrow = 1)
+```
+
+### EM+OB 1in8
+
+```{r obem_1in8, fig.dim = c(10, 8)}
+grid.arrange(dmn_insp_plot_emob_1in8$PLOTS$POT$`2022`, dmn_insp_plot_emob_1in8$PLOTS$HAL$`2022`, nrow = 1)
+```
+
+## Future Directions/Questions
+
+- Have not yet included stratifying the the EM+OB and Shoreside EM_POT designs. Considering what is achieved by the 'Prox + FMP' design and assuming effort will forever be like 2022, additional gains are not likely. However, effort will change and the fixed-gear EM vessel list will likely expand!
+
+- Above, we assumed that the additional biological monitoring was cost-free. How to actually allocate for those designs is still TBD and also depends on stratification decisions (e.g., only put observers on fixed-gear EM vessels fishing in the BSAI?).
+
+- If we get biological data from fixed-gear EM vessels (from any design), should/would we use that data towards estimation for the Zero-selection stratum? 
