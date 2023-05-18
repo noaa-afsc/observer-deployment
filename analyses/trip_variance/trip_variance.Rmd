@@ -108,12 +108,12 @@ ft_se_adp <- flextable(se_adp)
 ft_se_adp %>% width(j = c(1,2), width = 1.5)
 ```
 
-This table shows that the Equal Rates allocation strategy has a higher margin of error in Chinook PSC by 346 salmon (8%), in halibut PSC by 42 metric tons (15%), and in groundfish discards by 58 metric tons (2%) when compared to 15% + Opt 0.95. Although the simplifying assumptions built into this evaluation metric mean that these are not the actual margins of error we would expect, the metric does show the relative impact on uncertainty at the trip-level that changes to selection rates have. If we wanted to condense the metric into one number for each design, we could scale by the lowest margin of error for each metric:   
+This table shows that the Equal Rates allocation strategy has a higher margin of error in Chinook PSC by 346 salmon (8%), in halibut PSC by 42 metric tons (15%), and in groundfish discards by 58 metric tons (2%) when compared to 15% + Opt 0.95. Although the simplifying assumptions built into this evaluation metric mean that these are not the actual margins of error we would expect, the metric does show the relative impact on uncertainty at the trip-level that changes to selection rates have. If we wanted to condense the metric into one number for each design, we could scale relative to the Equal Rates design:   
 ```{r example_condense_1}
 se_adp %>% 
 select(`Allocation scheme`, Metric, Total) %>% 
 group_by(Metric) %>% 
-mutate(Score = round(Total / min(Total), 2)) %>% 
+mutate(Score = round(Total / Total[`Allocation scheme` == "Equal Rates"], 2)) %>% 
 select(-Total) %>% 
 flextable() %>% 
 autofit()
