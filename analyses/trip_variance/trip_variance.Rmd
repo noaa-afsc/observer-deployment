@@ -64,57 +64,43 @@ ggplot(dat, aes(x = n, y = se)) +
   theme_bw()
 ```
 
-The data used for this calculation include zeros for trips that did not encounter any chinook PSC, halibut PSC, or groundfish discards. An assumption built into this approach is that all three metrics are measured without error at the trip-level, even though that is only true of chinook PSC. 
-
-One way to present results is to show the margin of error at the 95% confidence level. This margin of error is estimated by multiplying the standard error estimate by 1.96, since 95% of estimates are expected to fall within 1.96 standard errors of the true value. If we wanted to see what margins of error would result from two of the allocation schemes proposed in the Draft 2022 ADP (NMFS 2021), we could look at the selection rates that were proposed:  
+The data used for this calculation include zeros for trips that did not encounter any chinook PSC, halibut PSC, or groundfish discards. An assumption built into this approach is that all three metrics are measured without error at the trip-level, even though that is only true of chinook PSC. If we wanted to see what standard errors would result from two of the allocation schemes proposed in the Draft 2022 ADP (NMFS 2021), we could look at the selection rates that were proposed:  
 ```{r example_rates, message = FALSE}
 adp_rates <- data.frame(STRATA = c("EM HAL", "EM POT", "EM TRW EFP", "HAL", "POT", "TRW"),
-                        equal_rates = c(30.00, 30.00, 33.33, 19.44, 19.44, 19.44),
-                        min_plus_opt_0.95 = c(30.00, 30.00, 33.33, 18.21, 17.48, 28.10))
+                        `Equal Rates` = c(30.00, 30.00, 33.33, 19.44, 19.44, 19.44),
+                        `15% + Opt 0.95` = c(30.00, 30.00, 33.33, 18.21, 17.48, 28.10),
+                         check.names = FALSE)
 
-reshape2::melt(adp_rates, variable.name = "Allocation scheme") %>% mutate(`Allocation scheme` = recode(`Allocation scheme`, "equal_rates" = "Equal Rates", "min_plus_opt_0.95" = "15% + Opt 0.95")) %>% pivot_wider(names_from = STRATA, values_from = value) %>% flextable() %>% autofit()
+reshape2::melt(adp_rates, id.vars = "STRATA", variable.name = "Allocation scheme") %>% 
+pivot_wider(names_from = STRATA, values_from = value) %>% 
+flextable() %>% 
+autofit()
 ```
 
-And the margins of error associated with those selection rates:  
+And the standard errors associated with those selection rates:  
 ```{r example_errors}
 se_adp <- dat %>% 
-          left_join(adp_rates, by = "STRATA") 
+          left_join(adp_rates, by = "STRATA") %>% 
+          melt(id.vars = c("STRATA", "metric", "N", "n", "monitoring_rate", "se"), measure.vars = c("Equal Rates", "15% + Opt 0.95"), variable.name = "Allocation scheme", value.name = "adp_rate") %>% 
+          filter(round(adp_rate/100 * N) == n)
 
-se_adp <- rbind(
-          se_adp %>% 
-          group_by(STRATA) %>% 
-          filter(round(equal_rates/100 * N) == n) %>% 
-          mutate(`Allocation scheme` = "Equal Rates") %>% 
-          ungroup(),
-          se_adp %>% 
-          group_by(STRATA) %>% 
-          filter(round(min_plus_opt_0.95/100 * N) == n) %>% 
-          mutate(`Allocation scheme` = "15% + Opt 0.95") %>% 
-          ungroup())
-
-se_adp <- se_adp %>% 
-          mutate(margin_of_error = 1.96 * se) %>% 
-          select(STRATA, Metric = metric, `Allocation scheme`, margin_of_error)
-
-se_adp <- reshape2::dcast(se_adp, `Allocation scheme` + Metric ~ STRATA, value.var = "margin_of_error")
-
-se_adp <- se_adp %>% 
-          mutate(Total = rowSums(select_if(., is.numeric), na.rm = TRUE)) %>% 
-          mutate_if(is.numeric, round) %>% 
-          arrange(Metric, `Allocation scheme`) 
-
-ft_se_adp <- flextable(se_adp)
-
-ft_se_adp %>% width(j = c(1,2), width = 1.5)
+se_adp %>% 
+select(STRATA, `Allocation scheme`, Metric = metric, se) %>% 
+pivot_wider(names_from = STRATA, values_from = se) %>% 
+# mutate(Total = rowSums(select_if(., is.numeric), na.rm = TRUE)) %>% 
+mutate_if(is.numeric, round) %>% 
+arrange(Metric, `Allocation scheme`) %>% 
+flextable() %>% 
+width(j = c(1,2), width = 1.5)
 ```
 
 This table shows that the Equal Rates allocation strategy has a higher margin of error in Chinook PSC by 346 salmon (8%), in halibut PSC by 42 metric tons (15%), and in groundfish discards by 58 metric tons (2%) when compared to 15% + Opt 0.95. Although the simplifying assumptions built into this evaluation metric mean that these are not the actual margins of error we would expect, the metric does show the relative impact on uncertainty at the trip-level that changes to selection rates have. If we wanted to condense the metric into one number for each design, we could scale relative to the Equal Rates design:   
 ```{r example_condense_1}
-se_adp %>% 
-select(`Allocation scheme`, Metric, Total) %>% 
-group_by(Metric) %>% 
-mutate(Score = round(Total / Total[`Allocation scheme` == "Equal Rates"], 2)) %>% 
-select(-Total) %>% 
-flextable() %>% 
-autofit()
+# se_adp %>% 
+# select(`Allocation scheme`, Metric, Total) %>% 
+# group_by(Metric) %>% 
+# mutate(Score = round(Total / Total[`Allocation scheme` == "Equal Rates"], 2)) %>% 
+# select(-Total) %>% 
+# flextable() %>% 
+# autofit()
 ```
