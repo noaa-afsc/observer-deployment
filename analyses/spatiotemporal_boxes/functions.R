@@ -8,7 +8,6 @@ library(data.table)   # TODO For data wrangling in some functions, but should be
 library(dplyr)        # For data wrangling/piping with sf package
 library(sf)           # For spatial statistics
 
-# stat_area_to_hex.R provides a function to use bin ADFG statistical areas within iso-area hex cells of a specified 
 # cell size. The output is a dataframe with corresponding ADFG_STAT_AREA_CODEs and HEX_IDs, as well as the
 # simple feature object (class sf) of the hex cell polygons.
 stat_area_to_hex <- function(cell_size, stat_area_sf){
@@ -65,6 +64,7 @@ define_poststrata <- function(data, space, time, ps_cols = NULL, stratum_cols, s
   # data <- copy(effort_target); space <- c(2e5, 2e5); time <- c("WEEK", 2); ps_cols <- NULL; stratum_cols <- c("ADP", "STRATA")
   # data <- copy(effort); space <- c(2e5, 2e5); time <- c("WEEK", 2); ps_cols <- c("TARGET", "GEAR"); stratum_cols <- c("ADP", "STRATA")
   # data <- copy(val_2018_2021_dt[POOL != "ZE"]); space <- c(2e5, 2e5); time <- c("WEEK", 1); ps_cols <- NULL; stratum_cols <- c("ADP", "STRATA"); geom = T
+  # data <- copy(test); space <- c(2e5, 2e5); time <- c("WEEK", 1); ps_cols <- NULL; stratum_cols <- c("ADP", "STRATA"); geom = T
   
   
   # NOTE: stratum_cols must include ADP! Typically includes STRATA, and works with FMP added as well
@@ -310,6 +310,9 @@ define_poststrata <- function(data, space, time, ps_cols = NULL, stratum_cols, s
 
 
 # A newer, slightly better version, that keeps PS_ID straight? define_postrata() didnt seem to do this correctly
+# TODO 'data' should be ideally formatted in a way that ADFG_STAT_AREA and WEEK are allowed to differ within TRIP_ID
+# Importantly, ADFG_STAT_AREA and WEEK should be linked such that if you have a long trip that spans a wide distance,
+# you don't count that trip in all spatial cells for all weeks!
 define_poststrata_geom <- function(data, space, time, year_col, stratum_cols, ps_cols = NULL, stata_area_sf = stat_area_sf, geom = F) {
   # data <- copy(test); space <- c(2e5, 2e5); time <- c("WEEK", 1); year_col <- "ADP"; ps_cols <- NULL; stratum_cols <- c("STRATA"); geom = T; acceptor <- NULL
   
@@ -458,6 +461,246 @@ define_poststrata_geom <- function(data, space, time, year_col, stratum_cols, ps
   
 }
 
+
+# Allow trips to vary in week as long as it fishes 11+days total and 4+ days in a week
+define_poststrata_geom_time <- function(data, space, time, year_col, stratum_cols, ps_cols = NULL, stata_area_sf = stat_area_sf, geom = F) {
+  # data <- copy(test); space <- c(2e5, 2e5); time <- c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"); year_col <- "ADP"; ps_cols <- NULL; stratum_cols <- c("STRATA"); geom = T;
+  
+  # This function allows for multiple years of data to be defined, and just needs 'year_col' to be specified so that the
+  # definitions can be done separately. The data's hierarchy should be:
+  # [year_col] -> [stratum_cols] -> [ps_cols if specified] -> [time x space]
+  
+  # NOTE: stratum_cols typically includes just 'STRATA', but can also include 'FMP' if you want to subdivide.
+  
+  #============================#
+  # Initialize and error-check #
+  #============================#
+  win <- as.integer(time[2])   # Specify the size of the temporal window, convert from character to integer. 
+  
+  # Make sure integer TRIP_ID, integer ADFG_STAT_AREA_CODE, and 'ps_cols' are specified in the data
+  if( length( intersect(colnames(data), c("TRIP_ID", "ADFG_STAT_AREA_CODE", ps_cols))) !=  length(c("TRIP_ID", "ADFG_STAT_AREA_CODE", ps_cols)) ) {
+    stop(paste0("'data' must have columns 'TRIP_ID' and 'ADFG_STAT_AREA_CODE and ps_cols: ", paste(ps_cols, collapse = ", ")))
+  } else {
+    if( all(lapply(data[, c("TRIP_ID", "ADFG_STAT_AREA_CODE")], class) != "integer")) {
+      stop ("'TRIP_ID' and 'ADFG_STAT_AREA_CODE' must be of class integer.")
+    }
+  }
+  # Remove any unused columns
+  keep_cols <- c(year_col, stratum_cols, ps_cols, "ADFG_STAT_AREA_CODE", time[3], time[4], "TRIP_ID")
+  data <- unique(subset(data, select = keep_cols))      
+  
+  #========================#
+  # Convert ADFG to HEX_ID #
+  #========================#
+  stat_area_lst <- stat_area_to_hex(space[1], stat_area_sf)
+  stat_area_dist_lst <- suppressWarnings(apply(
+    X = round(st_distance(st_centroid(stat_area_lst$HEX_GEOMETRY))), 
+    MARGIN = 1, 
+    FUN = function(x) which(x <= space[2])))
+  data <- unique(data.table(stat_area_lst$STAT_AREA_HEX_DF)[
+  ][data, on = .(ADFG_STAT_AREA_CODE)
+  ][, -"ADFG_STAT_AREA_CODE"])
+  # TODO define 'ts_cols" here as ts_cols <- c("HEX_ID", time[1])
+  setcolorder(data, neworder = c(year_col, stratum_cols, ps_cols, "HEX_ID", time[3], time[4]))
+  setkeyv(data, cols = c(year_col, stratum_cols, ps_cols, "HEX_ID", time[3], time[4]))
+  
+  if(nrow(data[is.na(HEX_ID)])) {
+    print(data[is.na(HEX_ID)])
+    stop("Could not assign a HEX_ID!")
+  }
+  
+  #======================#
+  # Define temporal unit #
+  #======================#
+  
+  # First, get all years and a table converting date to week
+  if(time[1] != "week") stop("So far this function only works with 'week()' function!")
+  dates_lst <- lapply(
+    lapply(
+      unique(unlist(test[, ..year_col])),
+      function(x) as.Date(paste0(x, c("-01-01", "-12-31")))
+    ),
+    function(x) as.Date(x[1] : x[2], origin = as.POSIXct("1970-01-01", tz = "UTC"))
+  )
+  dates_mtx <- cbind(unlist(dates_lst), unlist(lapply(dates_lst, get(time[1]))))
+
+  # Grab time columns and define groups based on TRIP_ID and HEX_ID
+  time_cols <- time[3:4]
+  time_int <- data[, ..time_cols]
+  time_int[, (time_cols) := lapply(.SD, as.integer), .SDcols = time_cols]
+  setnames(time_int, new = c("S", "E"))
+  data_int <- data[, .(TRIP_ID, HEX_ID)][, GRP := .GRP, by = .(TRIP_ID, HEX_ID)]
+  # Convert to matrix and split by TRIP_ID and HEX_ID
+  time_lst <- as.matrix(cbind(time_int, data_int[, .(GRP)]))
+  time_lst <- lapply(split(time_lst, time_lst[, "GRP"], drop = F), matrix, ncol = 3)
+  # For each TRIP_ID x HEX_ID, identify unique weeks
+  time_lst <- lapply(time_lst, function(x) {
+    dates_int <- unique(unlist(apply(x, 1, function(y) y[1] : y[2], simplify = F)))  # get unique days
+    unique(dates_mtx[dates_mtx[,1] %in% dates_int, 2, drop = F])                     # Identify week using dates_mtx
+  })
+  # Collapse into a data.table (this is much faster than rbindlist(lapply(data_lst, as.data.table)))
+  data_dt <- as.data.table(
+    do.call(rbind, Map(function(x1, x2) cbind(x1, x2), x1 = as.list(seq_along(time_lst)), x2 = time_lst)))
+  setnames(data_dt, new = c("GRP", toupper(time[1])))
+  # Merge
+  data_int <- unique(data_int)[data_dt, on = .(GRP)][, - "GRP"]
+  keep_cols2 <- c(setdiff(keep_cols, c(time_cols, "ADFG_STAT_AREA_CODE")), "HEX_ID")
+  data <- unique(data[, ..keep_cols2])[data_int, on = .(TRIP_ID, HEX_ID)]
+  
+  #===============================#
+  # Prepare to identify neighbors #
+  #===============================#
+  
+  # TODO should I combine year_col, stratum_cols, and ps_cols here? could remove one step of nesting...
+  group_cols <- c(year_col, stratum_cols, ps_cols)
+  
+  # TODO Instead of 'to_upper(time[1])' should I just name the column 'TIME'? 
+  # Specify Box Identifiers 
+  data[, PS_ID := rleidv(.SD, which(colnames(.SD) %in% c("HEX_ID", toupper(time[1])))), by = group_cols]
+  setcolorder(data, c(group_cols, "HEX_ID", toupper(time[1])))
+  
+  # Separate data into list according to group_cols
+  data_lst <- lapply(
+    X = split(x = data, by = group_cols, keep.by = F), 
+    FUN = as.matrix)
+  
+  # Make the frequency table of each TRIP_ID (so that trips are properly split by WEEK, time[1], and 'ps_cols' groupings.
+  trip_id_mat <- do.call(rbind, lapply(
+    data_lst,
+    function(p) {
+      trip_id_frq <- table(p[, "TRIP_ID"])
+      matrix(
+        c(as.integer(names(trip_id_frq)), trip_id_frq),
+        ncol = 2, dimnames = list(NULL, c("TRIP_ID", "Freq")))
+    }))
+  
+  #==================================================#
+  # Identify which TRIP_IDs are neighboring each box #
+  #==================================================#
+
+  out <- lapply(
+    data_lst,
+    function(x) {
+      # x <- data_lst[[1]]
+      
+      # get all unique time and space post-strata
+      x1 <- unique(x[, 1:2, drop = F])   # Columns: [1=HEX_ID], [2=WEEK]
+      
+      # for each time and space posts-stratum, find all trips that overlap
+      x2 <- apply(
+        X = x1, MARGIN = 1, simplify = F, 
+        function(y) {
+          # y <- x1[1, , drop = F]
+          # Identify trips in each post-stratum: Match HEX_ID and search for WEEK with -2 to +2 search range
+          # Return result with the post-stratum's identifying HEX_ID and WEEK (y)
+          
+          # TODO should y1 exclude PS_ID (column 4?) I don't need OG_PS_ID, right? the og_data object already tells you 
+          # which PS_IDs are centered on each PS_ID
+          
+          y1 <- x[(x[,1] %in% stat_area_dist_lst[[ y[1] ]]) & (x[,2] %in% (y[2] + -win:win)), 1:3, drop = F]
+          # # For trips centered in the post-strata, sum up the weight (reciprocal of freq) of the trips
+          y2 <- sum(1/trip_id_mat[match(y1[y1[,1] == y[1] & y1[,2] == y[2], , drop = F][, 3], trip_id_mat[, 1]), 2])
+          list(
+            ps_trip_ids = y1,
+            W = y2
+          ) 
+        }
+      )
+      
+      x2
+      
+    }
+  )
+  
+  # Create out_dt object, with group_cols, BOX_ID, ts_col, and TRIP_ID
+  out_dt <- rbindlist(
+    lapply(
+      out, 
+      function(x) rbindlist(lapply(lapply(x, "[[", "ps_trip_ids"), as.data.table), idcol = "PS_ID")
+    ),
+    idcol = "GROUP_COLS"
+  )
+  out_dt[, (group_cols) := tstrsplit(GROUP_COLS, split = "[.]")][, GROUP_COLS := NULL]
+  setcolorder(out_dt, c(group_cols, "PS_ID", "HEX_ID", toupper(time[1]), "TRIP_ID"))
+  int_cols <- c(year_col, "PS_ID", "HEX_ID", toupper(time[1]), "TRIP_ID")
+  out_dt[, (int_cols) := lapply(.SD, as.integer), .SDcols = int_cols]
+  
+  #======================#
+  # Prepare final output #
+  #======================#
+
+  W <- lapply(lapply(out, function(x) lapply(x, "[[", "W")), function(y) matrix(unlist(y), ncol = 1))
+  W <- lapply(W, function(x) as.data.table(data.frame(PS_ID = seq_along(x), W = x)))
+
+  ps_trip_id = lapply(
+    lapply(out, function(x) lapply(x, "[[", "ps_trip_ids")), 
+    function(y) {
+      do.call(rbind, Map(
+        f = function(x1, x2) {cbind(PS_ID = x1, x2)},
+        x1 = seq_along(y),
+        x2 = y
+      ))[, c("PS_ID", "TRIP_ID")]
+    })
+  # There are likely to be repeats within ps_trip_id - running unique() on this takes 1 sec but the functions that 
+  # handle this output ran run unique more efficiently.
+  
+  #=======================#
+  #=======================#
+  
+  out_lst <- list(
+    ps_trip_id = ps_trip_id,
+    W = W,
+    dt = out_dt,
+    strata_N_dt = data[, .(N = uniqueN(TRIP_ID)), keyby = c(year_col, stratum_cols)],
+    og_dt = data
+  )
+  
+  if(geom == T){
+    
+    # Create out_ts, which is ready for to plot with BOX_ID level-summaries
+    # counts of trips centered in each box. Also shows which HEX_ID x time[1] correspond to 'BOX_ID'
+    ps_n <- data[, .(PS_n = uniqueN(TRIP_ID)), keyby = c(group_cols, "HEX_ID", toupper(time[1]), "PS_ID")]
+    # Count neighbors. Use OG_PS_ID, which is the name of the PS_ID, whereas the existing PS_ID is where TRIP_ID is from!
+    ps_nbr <- out_dt[, .(PS_nbr = uniqueN(TRIP_ID)), keyby = c(group_cols, "PS_ID")]
+    
+    
+    if(F) {
+      # FIXME Why does this look wrong? I have way fewer ps_nbr than ps_n... should be equal to ps_n?
+      
+      setdiff(
+        unique(ps_n[, .(ADP, STRATA, PS_ID)]),  # This don't show in ps_nbr
+        unique(ps_nbr[, .(ADP, STRATA, PS_ID)])
+      )
+      # TODO Do I prevent some PS_ID from getting neighbors counted if they are not relevant in within the stratum?
+      # I will still want these 'neighbored' PS_ID when I compare across strata!
+  
+      # TODO I should define 'BOX' as a specific SPACE and TIME only!
+    
+    }
+    
+    # Get the weight of each PS_ID
+    ps_w <- rbindlist(lapply(out, function(x) data.table(W = unlist(lapply(x, "[[", "W")))), idcol = "GROUP_COLS")
+    ps_w[, PS_ID := seq.int(.N), by = .(GROUP_COLS)][, (group_cols) := tstrsplit(GROUP_COLS, split = "[.]")
+    ][, GROUP_COLS := NULL][, (year_col) := lapply(.SD, as.integer), .SDcols = year_col]
+    # Merge, and also merge with the geometry data
+    geom_sf <- merge(
+      stat_area_lst$HEX_GEOMETRY,
+      ps_n[ps_nbr, on = c(group_cols, "PS_ID")][ps_w, on = c(group_cols, "PS_ID")],
+      on = "HEX_ID"
+    )
+    
+    out_lst$geom <- geom_sf
+  }
+  
+  setattr(out_lst, "stratum_cols", c(year_col, stratum_cols))
+  out_lst
+  
+}
+
+
+
+
+
 #===========================================#
 # TEST TO SEE IF IT IS WORKING CORRECTLY ####
 #===========================================#
@@ -490,7 +733,13 @@ if(F) {
   #===========================================#
   
 }
-  
+
+
+# New version that allows trips to vary by week as well
+
+
+
+
 # Helper function used in spatiotemporal_boxes_analysis.R
 # TODO should be able to use this in mean_prop_n as well?
 # Quickly counts the number of trips per box
@@ -503,6 +752,8 @@ count_trips_per_cell <- function(x) {
 
 # Calculates the expected proportion of trips sampled or near a sampled neighbor in a stratum x year
 calculate_mean_prop_n <- function(ps_res, sample_rate_vec) {
+  # ps_res <- copy(box_def_week)
+  
   # Collapse PS total weights into a dt.
   stratum_cols <- attr(ps_res, "stratum_cols")
   
@@ -546,6 +797,7 @@ calculate_mean_prop_n <- function(ps_res, sample_rate_vec) {
 calculate_index <- function(x, costs){
   # x <- copy(s175_1_tW_1); costs <- copy(trip_cost_dt)
   # x <- copy(s175_2_tW_2); costs <- copy(trip_cost_dt)
+  # x <- copy(box_def_bs_ai_goa_mean_prop_n); costs <- copy(trip_cost_dt)
   
   # TODO check to make sure the 'costs' object is not missing before doing anything else!
   
