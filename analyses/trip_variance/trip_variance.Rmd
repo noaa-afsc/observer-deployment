@@ -118,31 +118,3 @@ select(-Total) %>%
 flextable() %>% 
 autofit()
 ```
-
-Then take the sum of these values:  
-```{r example_condense_2}
-se_adp %>% 
-select(`Allocation scheme`, Metric, Total) %>% 
-group_by(Metric) %>% 
-mutate(Score = round(Total / min(Total), 2)) %>% 
-select(-Total) %>% 
-group_by(`Allocation scheme`) %>% 
-summarise(Score = sum(Score)) %>% 
-flextable() %>% 
-autofit()
-```
-
-And find the relative values of these sums:  
-```{r example_condense_3}
-se_adp %>% 
-select(`Allocation scheme`, Metric, Total) %>% 
-group_by(Metric) %>% 
-mutate(Score = round(Total / min(Total), 2)) %>% 
-select(-Total) %>% 
-group_by(`Allocation scheme`) %>% 
-summarise(Score = sum(Score)) %>% 
-ungroup() %>% 
-mutate(Score = Score / min(Score)) %>% 
-flextable() %>% 
-autofit()
-```
