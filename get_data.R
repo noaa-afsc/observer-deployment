@@ -424,11 +424,20 @@ work.data[, N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
 unique(work.data[, .(TRIP_ID, STRATA_NEW)])[, .N, by = .(TRIP_ID)][N > 1]
 
 # * Get TRIP_IDs for PSC ----
-# Metrics:
-# 1. hlbt_psc - estimated halibut bycatch (t)
-# 2. chnk_psc - estimated chinook salmon bycatch (counts)
 
-# 1. hlbt
+# Metrics:
+# 1. hlbt_psc - Estimated halibut PSC (metric tons)
+# 2. chnk_psc - Estimated Chinook salmon PSC (counts) 
+# 3. discard  - Groundfish discards (metric tons)
+# 4. crab_psc - Estimated crab PSC (counts) consisting of:
+#               - Blue king crab (BKCR)
+#               - Bairdi Tanner crab (BTCR)
+#               - Golden (brown) king crab (GKCR)
+#               - Hanasaki (spiny) king crab (HKCR)
+#               - Opilio Tanner (snow) crab (OTCR)
+#               - Red king crab (RKCR)
+
+# 1. Halibut PSC
 hlbt_psc <-
   inner_join(
     # 1.1 Get distinct TRIP_ID / REPORT_ID pairs
@@ -440,19 +449,19 @@ hlbt_psc <-
   summarize(hlbt_psc = sum(PSC_TOTAL_CATCH)) %>%
   filter(hlbt_psc > 0)
 
-#2. chnk
+# 2. Chinook PSC
 chnk_psc <-
   inner_join(
     # 1.1 Get distinct TRIP_ID / REPORT_ID pairs
     work.data %>% distinct(TRIP_ID, REPORT_ID),
-    # 1.2 Merge those TRIP_IDs with REPORT_IDs that have halibut PSC
+    # 1.2 Merge those TRIP_IDs with REPORT_IDs that have Chinook PSC
     filter(PSC, SPECIES_GROUP_CODE == "CHNK"), by = "REPORT_ID") %>% 
   # 1.3 Sum weights by TRIP_ID
   group_by(TRIP_ID) %>% 
   summarize(chnk_psc = sum(PSC_TOTAL_CATCH)) %>%
   filter(chnk_psc > 0)
 
-#3. groundfish discards
+# 3. Groundfish discards
 discard <-
   left_join(
     # 1.1 Sum groundfish discards by TRIP_ID, REPORT_ID, and SPECIES_GROUP_CODE
@@ -469,9 +478,26 @@ discard <-
   summarize(discard = sum(WEIGHT_POSTED, na.rm = TRUE)) %>%
   filter(discard > 0)
 
-# Merge optimization metrics together
-metrics <- full_join(hlbt_psc, chnk_psc, by = "TRIP_ID") %>% full_join(discard, by = "TRIP_ID")
+# 4. Crab PSC
+crab_psc <-
+  inner_join(
+    # 1.1 Get distinct TRIP_ID / REPORT_ID pairs
+    work.data %>% distinct(TRIP_ID, REPORT_ID),
+    # 1.2 Merge those TRIP_IDs with REPORT_IDs that have crab PSC
+    filter(PSC, SPECIES_GROUP_CODE %in% c("BKCR", "BTCR", "GKCR", "HKCR", "OTCR", "RKCR")) %>% 
+      group_by(REPORT_ID) %>% 
+      summarise(PSC_TOTAL_CATCH = sum(PSC_TOTAL_CATCH, na.rm = TRUE), .groups = "drop"), 
+    by = "REPORT_ID") %>% 
+  # 1.3 Sum weights by TRIP_ID
+  group_by(TRIP_ID) %>% 
+  summarize(crab_psc = sum(PSC_TOTAL_CATCH)) %>%
+  filter(crab_psc > 0)
 
+# Merge optimization metrics together
+metrics <- full_join(hlbt_psc, chnk_psc, by = "TRIP_ID") %>% 
+           full_join(discard, by = "TRIP_ID") %>% 
+           full_join(crab_psc, by = "TRIP_ID")
+           
 # * Create trip data frames ----
 
 # Check for duplicate STRATA_NEW or TENDER entries before merging work.data with metrics
@@ -500,7 +526,7 @@ trip_wgts_strata <- rename(trip_wgts_strata, STRATA_GEAR = STRATA_NEW)
 # Note this will only add a column if there is one stratification scheme
 # First create a vector of all strata_schemes - 
 trips_melt_s <- data.table::melt(trip_wgts_strata, 
-                                 id.vars = c("TRIP_ID", "TENDER", "discard", "hlbt_psc", "chnk_psc"), 
+                                 id.vars = c("TRIP_ID", "TENDER", "discard", "hlbt_psc", "chnk_psc", "crab_psc"), 
                                  measure.vars = c(colnames(select(trip_wgts_strata, dplyr::contains("STRATA")))),
                                  variable.name = "strata_scheme",
                                  value.name = "strata_ID") %>%
@@ -508,7 +534,7 @@ trips_melt_s <- data.table::melt(trip_wgts_strata,
 
 # Then for each strata scheme, create a vector of metrics
 trips_melt <- data.table::melt(trips_melt_s, id.vars = c("TRIP_ID", "TENDER", "strata_scheme", "strata_ID"), 
-                               measure.vars = c("discard", "hlbt_psc", "chnk_psc"),
+                               measure.vars = c("discard", "hlbt_psc", "chnk_psc", "crab_psc"),
                                variable.name = "Metric",
                                value.name = "Value") %>%
               mutate(comboID = paste(strata_scheme, strata_ID, Metric, sep="."))
