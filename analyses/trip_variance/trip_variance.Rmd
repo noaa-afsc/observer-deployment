@@ -38,21 +38,26 @@ dat <- unique(work.data[, .(TRIP_ID, OBSERVED_FLAG)])[dat, on = .(TRIP_ID)]
 # Sum metrics by columns of interest
 dat <- dat[, .(chnk_psc = sum(chnk_psc), hlbt_psc = sum(hlbt_psc), discard = sum(discard)), by = .(TRIP_ID, STRATA, OBSERVED_FLAG, N)]
 
-# Calculate between-trip variance of monitored trips
-dat <- dat[, .(var_chnk = var(chnk_psc[OBSERVED_FLAG == "Y"]), var_hlbt = var(hlbt_psc[OBSERVED_FLAG == "Y"]), var_discard = var(discard[OBSERVED_FLAG == "Y"])), by = .(STRATA, N)]
+# Calculate trip-level mean and variance of monitored trips
+mean <- dat[, lapply(.SD, function(x) mean(x[OBSERVED_FLAG=="Y"], na.rm = TRUE)), .SDcols = c("chnk_psc", "hlbt_psc", "discard"), keyby = c("STRATA", "N")]
+var <- dat[, lapply(.SD, function(x) var(x[OBSERVED_FLAG=="Y"], na.rm = TRUE)), .SDcols = c("chnk_psc", "hlbt_psc", "discard"), keyby = c("STRATA", "N")]
 
+mean <- melt(mean, id.vars = c("STRATA", "N"), variable.name = "metric", value.name = "mean")
+var <- melt(var, id.vars = c("STRATA", "N"), variable.name = "metric", value.name = "var")
+
+dat <- merge(mean, var, by = c("STRATA", "N", "metric"))
+
+rm(mean, var)
 
 # Join with the full range of sample sizes for each stratum  
-dat <- dat[, .(n = 2:N), by = .(STRATA)][dat, on = .(STRATA)]
+dat <- dat[, .(n = 2:N), by = .(STRATA, metric)][dat, on = .(STRATA, metric)]
 
-# Convert to long format  
-dat <- melt(dat, id.vars = c("STRATA", "n", "N"), variable.name = "metric", value.name = "var")
-
-# Calculate stratum-level variance  
+# Estimate the stratum-level mean and variance  
+dat[, mean := N * mean]
 dat[, var := N^2 * (N-n)/N * 1/n * var]
 
 # Recode strata and metric names
-dat[, ":=" (STRATA = recode(STRATA, "EM_HAL" = "EM HAL", "EM_POT" = "EM POT", "EM_TRW_EFP" = "EM TRW EFP"), metric = recode(metric, "var_chnk" = "Chinook PSC", "var_hlbt" = "Halibut PSC", "var_discard" = "Groundfish discards"))]
+dat[, ":=" (STRATA = recode(STRATA, "EM_HAL" = "EM HAL", "EM_POT" = "EM POT", "EM_TRW_EFP" = "EM TRW EFP"), metric = recode(metric, "chnk_psc" = "Chinook PSC", "hlbt_psc" = "Halibut PSC", "discard" = "Groundfish discards"))]
 
 # Calculate monitoring rate
 dat[, monitoring_rate := n/N]
@@ -93,27 +98,38 @@ autofit()
 
 And the standard errors associated with those selection rates:  
 ```{r example_errors}
-var_adp <- dat %>% 
+est_adp <- dat %>% 
            left_join(adp_rates, by = "STRATA") %>% 
-           melt(id.vars = c("STRATA", "metric", "N", "n", "monitoring_rate", "var"), measure.vars = c("Equal Rates", "15% + Opt 0.95"), variable.name = "Allocation scheme", value.name = "adp_rate") %>% 
+           melt(id.vars = c("STRATA", "metric", "N", "n", "monitoring_rate", "mean", "var"), measure.vars = c("Equal Rates", "15% + Opt 0.95"), variable.name = "Allocation scheme", value.name = "adp_rate") %>% 
            filter(round(adp_rate/100 * N) == n)
 
-se_adp <- var_adp %>% 
-          select(STRATA, `Allocation scheme`, Metric = metric, var) %>% 
-          pivot_wider(names_from = STRATA, values_from = var) %>% 
-          mutate(Total = rowSums(select_if(., is.numeric), na.rm = TRUE)) %>% 
-          mutate_if(is.numeric, sqrt) %>%
-          mutate_if(is.numeric, round) %>%
-          arrange(Metric, `Allocation scheme`) 
+est_adp <- est_adp %>% 
+           select(STRATA, `Allocation scheme`, Metric = metric, var) %>% 
+           pivot_wider(names_from = STRATA, values_from = var) %>% 
+           mutate(Total  = rowSums(select_if(., is.numeric), na.rm = TRUE)) %>% 
+           mutate_if(is.numeric, sqrt) %>%
+           left_join(
+           est_adp %>% 
+           select(STRATA, `Allocation scheme`, Metric = metric, mean) %>% 
+           group_by(`Allocation scheme`, Metric) %>% 
+           summarise(`Catch Estimate` = sum(mean), .groups = "drop"),
+           by = join_by(`Allocation scheme`, Metric)
+           ) %>% 
+           mutate(CV = as.character(round(Total / `Catch Estimate`, 2))) %>% 
+           mutate_if(is.numeric, round) %>%
+           arrange(Metric, `Allocation scheme`) 
 
-se_adp %>% 
+est_adp %>% 
 flextable() %>% 
-width(j = c(1,2), width = 1.5)
+add_header_row(values = c("", "Standard error", ""), colwidths = c(2, 7, 2), top = TRUE) %>% 
+align(i = 1, align = "center", part = "header") %>% 
+vline(j=c(2,8:9)) %>% 
+autofit()
 ```
 
-This table shows that, compared to Equal Rates, the standard errors associated with the 15% + Opt 0.95 allocation strategy are 74 fish (or 4.1%) lower for Chinook PSC, 21 metric tons (or 18.8%) lower for halibut PSC, and 2 metric tons (or 0.2%) higher for groundfish discards. The total standard error for each allocation strategy and metric combination is the square root of the summed stratum-level variances, and is therefore not equal to the sum of the standard errors for each stratum. Although the simplifying assumptions built into this evaluation result in standard errors that are not equal to those we would expect out of the Catch Accounting System, the standard errors produced here do show the relative impact that changes to selection rates have on uncertainty at the trip-level, which is the level at which observer and EM deployment is planned. In presenting standard error as a performance metric, we could choose to score relative to the Equal Rates design, with low scores being better:   
+This table shows that, compared to Equal Rates, the standard errors associated with the 15% + Opt 0.95 allocation strategy are 74 fish (or 4.1%) lower for Chinook PSC, 21 metric tons (or 18.8%) lower for halibut PSC, and 2 metric tons (or 0.2%) higher for groundfish discards. The total standard error for each allocation strategy and metric combination is the square root of the summed stratum-level variances, and is therefore not equal to the sum of the standard errors for each stratum. Although the simplifying assumptions built into this evaluation result in standard errors that are not equal to those we would expect out of the Catch Accounting System, the standard errors produced here do show the relative impact that changes to selection rates have on uncertainty at the trip-level, which is the level at which observer and EM deployment is planned. Catch estimates and CVs help provide scale, but only standard error is used as a performance metric. In presenting standard error as a performance metric, we could choose to score relative to the Equal Rates design, with low scores being better:   
 ```{r score}
-se_adp %>%
+est_adp %>%
 select(`Allocation scheme`, Metric, Total) %>%
 group_by(Metric) %>%
 mutate(Score = round(Total / Total[`Allocation scheme` == "Equal Rates"], 2)) %>%
