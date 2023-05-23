@@ -624,5 +624,5 @@ out_name <- paste(ADPyear, ADP_version, "ADP_data.rdata", sep="_")
 out_save <- getPass::getPass(paste0("Would you like to save off a new version of ", out_name, "? (Enter Y or N)"))
 
 if(out_save == "Y"){                              
-save(list = c("work.data", "trips_melt", "efrt", "PartialCPs", "full_efrt", "max_date", "fg_em", "td_mod"), file=paste0("source_data/", out_name))
+save(list = c("work.data", "trips_melt", "efrt", "PartialCPs", "full_efrt", "max_date", "fg_em"), file=paste0("source_data/", out_name))
 }
