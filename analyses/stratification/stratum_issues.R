@@ -2,9 +2,9 @@ library(data.table)         # Data wrangling
 library(ggplot2)            # Plotting
 library(odbc)
 
-# TODO Split FMP by BS + AI + GOA as well!
-
-# TODO This is a preliminary version of work data with 2022. 
+# This is a preliminary version of work data with 2022. It is an outdated version of the output of 
+# analyses/allocation_evaluation/data_prep. Find it on the google drive's source data folder.
+# https://drive.google.com/file/d/1aMSthvWlBNqpu--T1Hm_RCn1C4PWTcze/view?usp=share_link
 load("source_data/allocation_evaluation_data_prep.Rdata")  # Loads 'work.data' and 'efrt' objects
 
 effort_pc <- unique(work.data[CVG_NEW == "PARTIAL"][, .(ADP, STRATA, STRATA_NEW, TRIP_ID, FMP, AGENCY_GEAR_CODE, OBSERVED_FLAG)])
@@ -33,7 +33,7 @@ ggplot(effort_pc_gear, aes(x = ADP, fill = GEARS)) + geom_bar(position = "fill")
 effort_pc_gear_mon <- unique(effort_pc[, .(ADP, STRATA_NEW, TRIP_ID, AGENCY_GEAR_CODE, OBSERVED_FLAG)])
 setorder(effort_pc_gear_mon, ADP, STRATA_NEW, AGENCY_GEAR_CODE)
 effort_pc_gear_mon <- effort_pc_gear_mon[, .(GEARS = paste(unique(AGENCY_GEAR_CODE), collapse = ",")), by = .(ADP, STRATA_NEW, TRIP_ID, OBSERVED_FLAG)]
-effort_pc_gear_mon_n <- effort_pc_gear_mon[, .(N = uniqueN(TRIP_ID)), keuby = .(ADP, STRATA_NEW, GEARS, OBSERVED_FLAG)]
+effort_pc_gear_mon_n <- effort_pc_gear_mon[, .(N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA_NEW, GEARS, OBSERVED_FLAG)]
 effort_pc_gear_mon_n[, STRATUM_N := sum(N), by = .(ADP, STRATA_NEW)]
 effort_pc_gear_mon_n[, STRATUM_PERC := round(N / STRATUM_N * 100, 2)]
 effort_pc_gear_mon_n[, GEAR_MON_PERC := round(N / sum(N) * 100, 2), by = .(ADP, STRATA_NEW, GEARS)]
@@ -45,18 +45,7 @@ dcast(
 # At least in 2022, it looks like monitored FG-EM trips tend to fish multiple gear types 25% of the time, but unomnitored
 # trips have multi-gear only 12-14% of the time (half as often!?)
 # Within OB_HAL, there is no difference in multi-gear between monitored and unmonitored trips
-# Within OB_POT, observed trips have a loess proportion of multi-gear trips.
-
-if(F) {
-  
-  library(odbc)
-  channel <- dbConnect(odbc::odbc(),"AFSC",
-                       UID    = rstudioapi::askForPassword("Database user"),
-                       PWD    = rstudioapi::askForPassword("Database password"))
-  
-  
-}
-
+# Within OB_POT, observed trips have a less proportion of multi-gear trips.
 
 #=====================================================#
 # Trips that fished multiple FMPs by year and stratum #
@@ -132,4 +121,4 @@ ggplot(fg_em_ob_pull_tot, aes(x = TOT_N, fill = as.factor(LENGTH))) + geom_histo
 save(
   effort_pc_gear, effort_pc_gear_n, effort_pc_fmp, effort_pc_fmp_n, fg_em, 
   fg_em_ob_pull_count, fg_em_ob_pull_count_wide, fg_em_ob_pull_tot, count_3, count_5, 
-  file = "analyses/allocation_evaluation/stratum_issues.Rdata")
+  file = "analyses/stratification/stratum_issues.Rdata")
