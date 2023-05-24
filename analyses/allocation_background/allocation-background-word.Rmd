@@ -3,7 +3,7 @@
 title: "Background information related to allocation"
 output:
   bookdown::word_document2:
-      reference_docx: C:\Users\jennifer.cahalan\Work\JAC Stuff\NPGOP_Sampling\ProjectCode\Good_Code\reference-word-doc.docx
+      reference_docx: ~\\reference-word-doc.docx
       page_margins:
            bottom: 0.75 
            top: 1
@@ -14,12 +14,6 @@ output:
            gutter: 0.0 
       keep_md: yes
    
-    #bookdown::pdf_book:
-     # default
- #bookdown::html_document2:      
- #    toc: true
-  #   toc_depth: 2
-#     code_folding: hide
 ---
 
 ```{r setup, include = FALSE, echo =FALSE}
