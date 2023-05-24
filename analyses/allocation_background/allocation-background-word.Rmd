@@ -29,7 +29,7 @@ options(tinytex.verbose = TRUE)
 #######################################################
 # Load Packages ----
 library(ggplot2)
-library(JACtools)
+library(JACtools)    # devtools::install_github("JenC36/JACtools")
 ## 
 ## This section of comments documents nomenclature for using the hypergeometric distribution
 ##      functions in R. Textbooks and other documentation often uses similar but different nomenclature
