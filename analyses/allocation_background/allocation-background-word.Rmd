@@ -3,7 +3,7 @@
 title: "Background information related to allocation"
 output:
   bookdown::word_document2:
-      reference_docx: ~\\reference-word-doc.docx
+      reference_docx: ../../reference-word-doc.docx
       page_margins:
            bottom: 0.75 
            top: 1
