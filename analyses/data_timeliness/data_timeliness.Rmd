@@ -11,6 +11,7 @@ library(reshape2)
 library(ROracle)
 library(tidyverse)
 
+channel_akro <- eval(parse(text = Sys.getenv("channel_cas")))
 channel_afsc <- eval(parse(text = Sys.getenv("channel_afsc")))
 
 knitr::opts_chunk$set(echo = FALSE)
@@ -18,111 +19,30 @@ options(scipen = 9999)
 ```
 
 ```{r get_data}
-em_entry <- dbGetQuery(channel_afsc, 
- "select all_data.*, em_rev_gear.em_gear_code, 
-  hd_data.date_hd_received_by_psmfc,
-  hd_data.date_exported_to_afsc,
-  hd_data.actual_em_trip_start_date_time,
-  hd_data.actual_em_trip_end_date_time from (
-  select 
-  
-  case
-  when em_reviewed.trip_plan_log_seq is not null
-  then 'YES'
-  else 'NO'
-  End as EM_DATA_REVIEWED,   
-  em_reviewed.trip_number as em_reviewed_trip_number, 
-  em_selected.*
-  from    
-  
-  ---- from ODDS get the list of selected EM trips that are in completed or pending status
-  ---- and are not compliance monitoring trips
-  ( select distinct
-  
-  e.odds_trip_number,
-  d.name as vessel_name,
-  d.adfg_number as vessel_adfg_number,
-  trunc(e.date_logged) as date_logged,
-  e.GEAR_TYPE as gear_type_logged,
-  trunc(e.declared_leave_date) as declared_trip_start_date,
-  e.declared_port_of_departure as declared_trip_start_port,
-  trunc(e.declared_return_date) as declared_trip_end_date,
-  e.declared_plant_offloading_to as declared_trip_end_port,
-  trip_status,
-  i.user_reqst_coverage
-  
-  from norpac.odds_provider a,                   
-  norpac.odds_em_vessel_request f,
-  norpac.odds_eligible_opt_strata g,
-  norpac.odds_vessel_sample_plan c,
-  norpac.atl_lov_vessel d,
-  norpac.odds_logged_trip_summary_v e,
-  norpac.odds_em_request_status h,
-  norpac.odds_monitor i
-  where f.eligible_opt_seq = g.eligible_opt_seq
-  and g.vessel_seq = d.vessel_seq
-  and c.vessel_seq = d.vessel_seq
-  and d.permit = e.akr_vessel_id
-  and e.odds_trip_number = i.trip_plan_log_seq
-  and e.year = h.status_year   --- need this to make sure we don't get duplicates
-  and e.observer_status_code <> 'NO'
-  and e.year = 2022
-  and h.status_year = 2022
-  and i.sample_plan_seq in (13))em_selected
-  
-  left join
-  
-  ----get the em reviewed trip number for those em trips that have been reviwed and where AFSC has the data
-  
-  (select a.trip_plan_log_seq, a.trip_number 
-  from em_pac_review.em_trip a
-  )em_reviewed
-  
-  on em_selected.ODDS_TRIP_NUMBER = em_reviewed.trip_plan_log_seq  
-  
-  
-  AND em_selected.trip_status in ('COMPLETED', 'PENDING')  
-  
-  order by  em_selected.odds_trip_number asc)all_data
-  
-  left join 
-  
-  ---- the below query will get the em gear code from the em data
-  
-  (select em_rev_gear.* from 
-  (select em_gear_code.trip_number,
-  em_gear_code.gear_type_code as em_gear_code
-  from
-  (select a.trip_number, b.gear_type_code
-  from EM_PAC_REVIEW.EM_FISHING_EVENT a,
-  em_pac_review.em_gear_type_lov b
-  where a.gear_Type_id = b.gear_type_id
-  group by a.trip_number, b.gear_type_code)em_gear_code
-  group by em_gear_code.trip_number, em_gear_code.gear_type_code)em_rev_gear)em_rev_gear
-  
-  on em_rev_gear.trip_number = all_data.em_reviewed_trip_number
-  
-  left join 
-  
-  --- the below query will get the when the HD was received by psmfc, when it was exported to AFSC and the em trip start date and time and trip end date and time
-  
-  (select a.trip_number, 
-  b.date_received_by_psmfc as date_hd_received_by_psmfc,
-  a.file_import_date as date_exported_to_afsc, 
-  c.trip_plan_log_seq, 
-  c.trip_start_date_time as actual_em_trip_start_date_time, 
-  c.trip_end_date_time as actual_em_trip_end_date_time,
-  d.planned_embark_date as declared_embark_date,
-  d.planned_disembark_date as declared_end_date
-  from em_pac_review.em_trip_hard_drive a,
-  em_pac_review.em_hard_drive b,
-  em_pac_review.em_trip c,
-  norpac.odds_trip_plan_log d
-  where a.HARD_DRIVE_NUMBER = b.HARD_DRIVE_NUMBER
-  and c.TRIP_PLAN_LOG_SEQ = d.TRIP_PLAN_LOG_SEQ
-  and a.trip_number = c.trip_number)hd_data
-  
-  on hd_data.trip_number = all_data.em_reviewed_trip_number")
+em_trip_end <- dbGetQuery(channel_afsc, "
+select distinct e.odds_trip_number, t.trip_number, 
+decode(e.gear_type, 'LONGLINE', 'EM HAL', 'POT', 'EM POT') as strata,
+t.trip_end_date_time as trip_end
+from norpac.odds_logged_trip_summary_v e
+join norpac.odds_em_request_status h on h.status_year = e.year 
+join norpac.odds_monitor i on i.trip_plan_log_seq = e.odds_trip_number
+left join em_pac_review.em_trip t on t.trip_plan_log_seq = e.odds_trip_number
+where e.year = 2022
+and e.observer_status_code <> 'NO'
+and e.trip_status in ('COMPLETED', 'PENDING')
+and i.sample_plan_seq in (13)
+order by t.trip_number")
+
+em_data_available <- dbGetQuery(channel_akro, "
+select h.ORIGINAL_EM_TRIP_NUMBER as trip_number, trunc(min(r.EFFECTIVE_DATE)) data_available
+from AKFISH_REPORT.CATCH_REPORT_SOURCE r
+join AKFISH_REPORT.CATCH_REPORT_SPECIES_FACT f on r.CATCH_REPORT_SOURCE_PK = f.CATCH_REPORT_SOURCE_PK
+join AKFISH_REPORT.EM_HAUL h on f.EM_HAUL_PK = h.EM_HAUL_PK
+join AKFISH_REPORT.CALENDAR_DATE c on f.REPORT_DATE_PK = c.CALENDAR_DATE_PK
+where r.year_pk >= 2021 
+and r.CATCH_REPORT_TYPE_CODE = 'EM'
+group by h.ORIGINAL_EM_TRIP_NUMBER
+order by h.ORIGINAL_EM_TRIP_NUMBER")
 
 ob_trips <- dbGetQuery(channel_afsc, 
   "select t.cruise, t.permit, t.trip_seq, t.end_date as trip_end
@@ -147,45 +67,54 @@ ob_hauls <- dbGetQuery(channel_afsc,
    decode(g.description, 'Pelagic Trawl', 'TRW', 'Non Pelagic Trawl', 'TRW', 'Pot or Trap', 'POT', 'Longliner', 'HAL')")
 ```
 
+```{r wrangle_data}
+em_data_timeliness <- em_trip_end %>% 
+                      left_join(
+                      em_data_available, 
+                      by = "TRIP_NUMBER"
+                      ) %>% 
+                      # TODO: decide how to handle trips that weren't reviewed
+                      filter(!is.na(TRIP_NUMBER)) %>% 
+                      select(-ODDS_TRIP_NUMBER) %>% 
+                      mutate(TRIP_END = as.Date(TRIP_END),
+                             DATA_AVAILABLE = as.Date(DATA_AVAILABLE),
+                             time_to_availability = as.numeric(DATA_AVAILABLE - TRIP_END))
+
+ob_data_timeliness <- ob_trips %>% 
+                      inner_join(
+                      ob_hauls %>% 
+                      group_by(CRUISE, PERMIT, TRIP_SEQ, STRATA) %>% 
+                      summarise(DATA_IN = min(DATA_IN[HAUL_SEQ == max(HAUL_SEQ)]), .groups = "drop"),
+                      by = c("CRUISE", "PERMIT", "TRIP_SEQ")
+                      ) %>% 
+                      mutate(TRIP_NUMBER = paste0(CRUISE, PERMIT, TRIP_SEQ), 
+                             TRIP_END = as.Date(TRIP_END),
+                             # TODO: use AKRO query to make this equivalent to EM (data available day after AFSC)
+                             DATA_AVAILABLE = as.Date(DATA_IN)) %>% 
+                      select(TRIP_NUMBER, STRATA, TRIP_END, DATA_AVAILABLE) %>%  
+                      mutate(time_to_availability = as.numeric(DATA_AVAILABLE - TRIP_END))
+
+data_timeliness <- rbind(em_data_timeliness, ob_data_timeliness)
+```
+
 ```{r figure}
-em_times <- em_entry %>% 
-            filter(EM_DATA_REVIEWED=="YES") %>% 
-            distinct(ID = EM_REVIEWED_TRIP_NUMBER, 
-                     STRATA = recode(GEAR_TYPE_LOGGED, "LONGLINE" = "EM HAL", "POT" = "EM POT"), 
-                     TRIP_END = as.Date(ACTUAL_EM_TRIP_END_DATE_TIME), 
-                     DATA_IN = as.Date(DATE_EXPORTED_TO_AFSC), 
-                     time_to_entry = as.numeric(DATA_IN - TRIP_END))
-
-ob_times <- ob_trips %>% 
-            inner_join(ob_hauls %>% 
-            group_by(CRUISE, PERMIT, TRIP_SEQ, STRATA) %>% 
-            summarise(DATA_IN = min(DATA_IN[HAUL_SEQ == max(HAUL_SEQ)]), .groups = "drop"),
-            by = c("CRUISE", "PERMIT", "TRIP_SEQ")) %>% 
-            mutate(ID = paste0(CRUISE, PERMIT, TRIP_SEQ), 
-                   TRIP_END = as.Date(TRIP_END), 
-                   DATA_IN = as.Date(DATA_IN)) %>% 
-            select(ID, STRATA, TRIP_END, DATA_IN) %>%  
-            mutate(time_to_entry = as.numeric(DATA_IN - TRIP_END))
-
-times <- rbind(em_times, ob_times)
-
-times_smry <- times %>%
+times_smry <- data_timeliness %>%
               group_by(STRATA) %>%
-              summarise('25th percentile' = round(as.vector(quantile(time_to_entry, 0.25))),
-                        median = round(as.vector(quantile(time_to_entry, 0.50))),
-                        '75th percentile' = round(as.vector(quantile(time_to_entry, 0.75))),
-                        mean = round(mean(time_to_entry)), .groups = "drop") %>%
+              summarise('25th percentile' = round(as.vector(quantile(time_to_availability, 0.25))),
+                        median = round(as.vector(quantile(time_to_availability, 0.50))),
+                        '75th percentile' = round(as.vector(quantile(time_to_availability, 0.75))),
+                        mean = round(mean(time_to_availability)), .groups = "drop") %>%
               melt(id.vars=c("STRATA"), measure.vars=c("25th percentile", "median", "75th percentile", "mean")) %>%
               mutate(label = formatC(value, width=max(nchar(value))))
 
-times_figure <- ggplot(times, aes(x=time_to_entry)) +
+times_figure <- ggplot(data_timeliness, aes(x=time_to_availability)) +
                 facet_grid(STRATA ~ ., scales="free_y") +
                 geom_histogram(bins=20, fill="gray70") +
                 geom_vline(data=filter(times_smry, variable == "median"), aes(xintercept=value), linetype=2) +
                 geom_text(data=filter(times_smry, variable == "median"), aes(x=value, y=Inf, label=paste(label, "days")), angle=90, hjust=1.1, vjust=-.25, size=8) +
                 labs(x="Days", y="Count") +
                 theme_bw() +
-  theme(text=element_text(size=26))
+                theme(text=element_text(size=26))
 
 ggsave(filename = "output_figures/data_timeliness.png", width = 16, height = 9, units = 'in')
 ```
