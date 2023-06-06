@@ -28,16 +28,16 @@ options(tinytex.verbose = TRUE)
 #######################################################
 # Load Packages ----
 library(ggplot2)
-library(JACtools)
+library(JACtools)    # devtools::install_github("JenC36/JACtools")
 ## 
 ## This section of comments documents nomenclature for using the hypergeometric distribution
 ##      functions in R. Textbooks and other documentation often uses similar but different nomenclature
-##      and this is my attempt to reduce my own, continual confution. These comments can be ignored 
+##      and this is my attempt to reduce my own, continual confusion. These comments can be ignored 
 ##      but please do not delete.
 ## dhyper(x, m, n, k) for us, 
 ##              x= number of successes drawn - e.g., dhyper(x, m, n, k) gives P(X=x)
 ##              n= number failures in population
-##              m=number sucesses in population (m+n=N=population size, 
+##              m=number successes in population (m+n=N=population size, 
 ##              k=number balls drawn from urn (=n=sample size)
 ## to be consistent with notes and other texts
 ##   phyper(k_lc,N-K,K,n_sample)
