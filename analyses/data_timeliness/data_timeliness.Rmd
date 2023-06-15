@@ -20,7 +20,7 @@ options(scipen = 9999)
 
 ```{r get_data}
 em_trip_end <- dbGetQuery(channel_afsc, "
-select distinct e.odds_trip_number, t.trip_number, 
+select distinct e.odds_trip_number,
 decode(e.gear_type, 'LONGLINE', 'EM HAL', 'POT', 'EM POT') as strata,
 t.trip_end_date_time as trip_end
 from norpac.odds_logged_trip_summary_v e
@@ -31,18 +31,18 @@ where e.year = 2022
 and e.observer_status_code <> 'NO'
 and e.trip_status in ('COMPLETED', 'PENDING')
 and i.sample_plan_seq in (13)
-order by t.trip_number")
+order by e.odds_trip_number")
 
 em_data_available <- dbGetQuery(channel_akro, "
-select h.ORIGINAL_EM_TRIP_NUMBER as trip_number, trunc(min(r.EFFECTIVE_DATE)) data_available
+select h.ODDS_TRIP_NUMBER, trunc(min(r.EFFECTIVE_DATE)) data_available
 from AKFISH_REPORT.CATCH_REPORT_SOURCE r
 join AKFISH_REPORT.CATCH_REPORT_SPECIES_FACT f on r.CATCH_REPORT_SOURCE_PK = f.CATCH_REPORT_SOURCE_PK
 join AKFISH_REPORT.EM_HAUL h on f.EM_HAUL_PK = h.EM_HAUL_PK
 join AKFISH_REPORT.CALENDAR_DATE c on f.REPORT_DATE_PK = c.CALENDAR_DATE_PK
 where r.year_pk >= 2021 
 and r.CATCH_REPORT_TYPE_CODE = 'EM'
-group by h.ORIGINAL_EM_TRIP_NUMBER
-order by h.ORIGINAL_EM_TRIP_NUMBER")
+group by h.ODDS_TRIP_NUMBER
+order by h.ODDS_TRIP_NUMBER")
 
 ob_trips <- dbGetQuery(channel_afsc, 
   "select t.cruise, t.permit, t.trip_seq, t.end_date as trip_end
@@ -71,14 +71,15 @@ ob_hauls <- dbGetQuery(channel_afsc,
 em_data_timeliness <- em_trip_end %>% 
                       left_join(
                       em_data_available, 
-                      by = "TRIP_NUMBER"
+                      by = "ODDS_TRIP_NUMBER"
                       ) %>% 
                       # TODO: decide how to handle trips that weren't reviewed
-                      filter(!is.na(TRIP_NUMBER)) %>% 
-                      select(-ODDS_TRIP_NUMBER) %>% 
+                      filter(!is.na(DATA_AVAILABLE)) %>% 
+                      select(TRIP_NUMBER = ODDS_TRIP_NUMBER, STRATA, TRIP_END, DATA_AVAILABLE) %>% 
                       mutate(TRIP_END = as.Date(TRIP_END),
                              DATA_AVAILABLE = as.Date(DATA_AVAILABLE),
                              time_to_availability = as.numeric(DATA_AVAILABLE - TRIP_END))
+                      
 
 ob_data_timeliness <- ob_trips %>% 
                       inner_join(
