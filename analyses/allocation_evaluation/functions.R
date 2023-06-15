@@ -63,15 +63,30 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_cols = N
   # data <- copy(test); space <- c(2e5, 2e5); time <- c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"); year_col <- "ADP"; dmn_cols <- NULL; stratum_cols <- c("STRATA"); geom = T;
   # Now with gear as a post-stratum column...
   # data <- copy(test); space <- c(2e5, 2e5); time <- c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"); year_col <- "ADP"; dmn_cols <- "GEAR"; stratum_cols <- c("STRATA"); geom = T;
-
+  # data <- copy(val_mixed); space <- c(2e5, 2e5); time <- c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"); year_col <- "ADP"; dmn_cols <- c("GEAR"); stratum_cols <- c("STRATA", "BSAI_GOA"); geom = T;
+  
   #==================================#
   # NOTE! Remove any jig-gear trips! #
   #==================================# 
-  
   # Jig-gear trips are generally in zero coverage (though sometimes HAL or EM_HAL trips might also fish
   # with jig gear in a trip?). Therefore, from an allocation perspective, it's not important if the rate will be 0.
   # Additionally, from an evaluation perspective, we don't use observed trips to make estimates for jig trips, so
   # we can remove them without issue. MAKE SURE 'data' HAS NO JIG GEAR COMPONENTS!
+  # TODO Do I want to do this here? Current our domains/evaluation doesn't allow OB_HAL to cross with ZE_JIG, and 
+  # can't if we remove all JIG trips at the very start.
+  
+  # Check for jig-gear in the dataset
+  check_jig_cols <- unique(c(stratum_cols, dmn_cols))
+  check_jig_cols <- apply(data[, ..check_jig_cols], 2, function(x) any(x == "JIG"))
+  # Remove jig records
+  if(any(check_jig_cols)) {
+    jig_cols <- names(which(check_jig_cols))
+    for(i in jig_cols) {
+      jig_trips <- data[which(data[[jig_cols]] == "JIG"), ]
+      cat(paste0("Removing ", nrow(jig_trips), " rows from ", uniqueN(jig_trips$TRIP_ID), " JIG trips from ", i, " column."), "\n")
+      data <- setdiff(data, jig_trips)
+    }
+  }
   
   win <- as.integer(time[2])
   
@@ -187,6 +202,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_cols = N
   }
   
   group_cols  <- c(year_col, stratum_cols)
+  setkeyv(data, group_cols)
   data_lst <- lapply(
     X = split(x = subset(data, select = c(group_cols, "BOX_ID", "TRIP_ID")), by = group_cols, keep.by = F),
     FUN = as.matrix)
@@ -238,7 +254,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_cols = N
   ) 
   
   # Calculate STRATA_N and ensure the sum of weights is equivalent
-  strata_N_dt <- data[, .(STRATA_N = uniqueN(TRIP_ID)), by= group_cols]
+  strata_N_dt <- data[, .(STRATA_N = uniqueN(TRIP_ID)), keyby = group_cols]
   
   # Double-check that weights sum to STRATA_N
   if(!(all(
@@ -272,6 +288,391 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_cols = N
   if(!is.null(dmn_cols)) {
     
     # Get trip weights, splitting by dmn_cols as well
+    trip_id_dmn_mat <- as.matrix(data_dmn[, .N, by = .(TRIP_ID)])  # For each TRIP_ID, count number of instances (split by group_cols and dmn_cols and BOX_ID)
+    trip_id_dmn_vec <- vector(mode = "integer")
+    trip_id_dmn_vec[trip_id_dmn_mat[, 1]] <- trip_id_dmn_mat[, 2]  # Have each index be TRIP_ID and each value be the trip's domain weight
+    
+    # Identify all BOX_IDs within a dmn_tbl group
+    dmn_tbl <- setorderv(unique(data_dmn[, ..dmn_cols]), dmn_cols)
+    dmn_lst <- vector(mode = "list", length = nrow(dmn_tbl))
+    for(i in 1:nrow(dmn_tbl)) {
+      # i <- 1
+      
+      # Subset the data by domain
+      focus_dmn_dat <- unique(subset(data_dmn[dmn_tbl[i,], on = dmn_cols], select = c(stratum_cols, "BOX_ID", "TRIP_ID")))
+      if(F) focus_dmn_dat[, sum(1/trip_id_dmn_vec[TRIP_ID])]  # 19670.29 trips in all strata with HAL, 5120.713 in POT,  7221 in TRW
+      # Split the data by stratum
+      focus_dmn_dat_stratum <- lapply(split(focus_dmn_dat, by = stratum_cols, keep.by = F), as.matrix)
+      if(F) sapply(focus_dmn_dat_stratum, function(x) sum(1 / trip_id_dmn_vec[x[, "TRIP_ID"]]))
+      # Get all BOX_IDs in the domain (exclude boxes without any trips)
+      focus_dmn_box_ids <- unique(focus_dmn_dat$BOX_ID)
+
+      # For each stratum...
+      focus_dmn_nbr_lst <- lapply(focus_dmn_dat_stratum, function(x) {
+        # x <- focus_dmn_dat_stratum[[8]]
+        
+        # for each BOX_ID
+        x1 <- lapply(focus_dmn_box_ids, function(y) {
+          # y <- focus_dmn_box_ids[[1]]
+          
+          trip_id_centered <- unique(x[x[,1] == y, 2])
+          
+          c(
+            BOX_ID = y,
+            BOX_DMN_n = length(trip_id_centered),
+            BOX_DMN_w = sum(1/trip_id_dmn_vec[trip_id_centered]),
+            BOX_DMN_nbr = length(unique(x[x[,1] %in% nbr_lst[[y]]]))
+          )
+
+        })
+
+        as.data.table(do.call(rbind, x1))
+        
+      })
+
+      focus_dmn_nbr_lst <- rbindlist(focus_dmn_nbr_lst, idcol = "STRATUM_COLS")
+      focus_dmn_nbr_lst[, (stratum_cols) := tstrsplit(STRATUM_COLS, split = "[.]")][, STRATUM_COLS := NULL]
+      dmn_lst[[i]] <- focus_dmn_nbr_lst
+    }
+    names(dmn_lst) <- apply(dmn_tbl, 1, paste0, collapse = ".")
+    dmn_nbr_dt <- rbindlist(dmn_lst, idcol = "DMN_COLS")
+    dmn_nbr_dt[, (dmn_cols) := tstrsplit(DMN_COLS, split = "[.]")][, DMN_COLS := NULL]
+    
+    box_id_details <- unique(data_dmn[, .(BOX_ID, ADP, HEX_ID, TIME)])
+    dmn_nbr_dt <- box_id_details[dmn_nbr_dt, on = .(BOX_ID)]
+    setcolorder(dmn_nbr_dt, c(year_col, stratum_cols, dmn_cols, "BOX_ID", "BOX_DMN_n", "BOX_DMN_w", "BOX_DMN_nbr"))
+    
+    # Calculate Number of trips in each STRATA x dmn_cols. Note that trips that have multiple 
+    # 'dmn_cols' were split here!
+    strata_dmn_N_dt <- dmn_nbr_dt[, .(STRATA_DMN_N = sum(BOX_DMN_w)), by = c(year_col, stratum_cols, dmn_cols)]
+
+    # Double-check that all weights in strata_N_dt are also in strata_dmn_N_dt. 
+    if(!fsetequal(
+      strata_dmn_N_dt[, .(STRATA_N = sum(STRATA_DMN_N)), keyby = c(year_col, stratum_cols)][STRATA_N != 0],
+      strata_N_dt
+    )) stop("STRATA_N and sum(BOX_DMN_w) are not equal!")
+    
+    if (F) {
+      
+      # As long as I remove all jig gear trips, total trip counts match up. 
+      strata_dmn_N_dt[, .(STRATA_N = sum(STRATA_DMN_N)), keyby = c(year_col, stratum_cols)][, sum(STRATA_N)]
+      strata_N_dt[, sum(STRATA_N)] 
+      data[, uniqueN(TRIP_ID)]      
+      
+      fsetdiff(
+        strata_dmn_N_dt[, .(STRATA_N = sum(STRATA_DMN_N)), keyby = c(year_col, stratum_cols)],
+        strata_N_dt
+      )
+      fsetdiff(
+        strata_N_dt,
+        strata_dmn_N_dt[, .(STRATA_N = sum(STRATA_DMN_N)), keyby = c(year_col, stratum_cols)]
+      )
+      
+      a <- strata_dmn_N_dt[, .(STRATA_N = sum(STRATA_DMN_N)), keyby = c(year_col, stratum_cols)]
+      a[ADP == 2022 & STRATA == "OB_MIXED"]           # 12 and 218
+      strata_N_dt[ADP == 2022 & STRATA == "OB_MIXED"] # 11 and 218: Does a different stratum make up the 1 trip difference?
+      
+      table(strata_dmn_N_dt$STRATA_DMN_N)  # Are domains all intergers? seems strange to me...
+      
+      
+      
+      
+      strata_dmn_N_dt[, .(STRATA_N = sum(STRATA_DMN_N)), keyby = .(year_col, stratum_cols)]
+      
+      
+      
+      
+      # 2022 BSAI ZERO are 190 and 191, BSAI-OB_MIXED are 11 and 12
+      strata_dmn_N_dt[, .(STRATA_N = sum(STRATA_DMN_N)), keyby = c(year_col, stratum_cols)][ADP == 2021 & STRATA == "ZERO"]
+      # These are quite far off
+      strata_N_dt[ADP == 2021 & STRATA == "ZERO"]
+      dmn_cols  # GEAR is used here. 
+      
+    }
+    
+    
+    
+    box_res$dmn <- list()
+    box_res$dmn$strata_dmn_n_dt <- strata_dmn_N_dt
+    box_res$dmn$box_dmn_smry_dt <- dmn_nbr_dt
+    box_res$dmn$strata_dt <- setorderv(unique(strata_N_dt[, ..stratum_cols]), cols = stratum_cols)[, STRATUM_ID := .I][]
+    
+  }
+  
+  # Create sf object with geometry if requested
+  if(geom == T) {
+    geom_sf <- merge(stat_area_lst$HEX_GEOMETRY, dt_out, on = .(HEX_ID))
+    box_res$geom_sf <- geom_sf
+    
+    if(!is.null(dmn_cols)) {
+      geom_dmn_sf <- merge(stat_area_lst$HEX_GEOMETRY, dmn_nbr_dt, on = .(HEX_ID))
+      box_res$dmn$geom_dmn_df <- geom_dmn_sf
+    }
+  }
+
+  # Return results
+  box_res
+  
+}
+
+# TODO a test version of define boxes that splits box definitions by gear type (set a ps_cols)
+# That is, within a stratum such as fgcombined, we count the number of overlaps in a gear-specific fashion
+define_boxes_gs <- function(data, space, time, year_col, stratum_cols, dmn_cols = NULL, stata_area_sf = stat_area_sf, geom = F, ps_cols = NULL) {
+  # data <-  copy(val_mixed); space <- c(2e5, 2e5); time <- c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"); year_col <- "ADP"; dmn_cols <- "GEAR"; stratum_cols <- c("STRATA"); geom = T; ps_cols <- "GEAR"
+  
+  # Testing with ps_cols = NULL
+  # data <-  copy(val_mixed); space <- c(2e5, 2e5); time <- c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"); year_col <- "ADP"; dmn_cols <- "GEAR"; stratum_cols <- c("STRATA"); geom = T; ps_cols <- NULL
+
+  #==================================#
+  # NOTE! Remove any jig-gear trips! #
+  #==================================# 
+  # Jig-gear trips are generally in zero coverage (though sometimes HAL or EM_HAL trips might also fish
+  # with jig gear in a trip?). Therefore, from an allocation perspective, it's not important if the rate will be 0.
+  # Additionally, from an evaluation perspective, we don't use observed trips to make estimates for jig trips, so
+  # we can remove them without issue. MAKE SURE 'data' HAS NO JIG GEAR COMPONENTS!
+  
+  # Check for jig-gear in the dataset
+  check_jig_cols <- unique(c(stratum_cols, dmn_cols, ps_cols))
+  check_jig_cols <- apply(data[, ..check_jig_cols], 2, function(x) any(x == "JIG"))
+  # Remove jig records
+  if(any(check_jig_cols)) {
+    jig_cols <- names(which(check_jig_cols))
+    for(i in jig_cols) {
+      jig_trips <- data[which(data[[jig_cols]] == "JIG"), ]
+      cat(paste0("Removing ", nrow(jig_trips), " rows from ", uniqueN(jig_trips$TRIP_ID), " JIG trips from ", i, " column."), "\n")
+      data <- setdiff(data, jig_trips)
+    }
+  }
+
+  win <- as.integer(time[2])
+  
+  # Make sure integer TRIP_ID, integer ADFG_STAT_AREA_CODE, and 'dmn_cols' are specified in the data
+  if( length( intersect(colnames(data), c("TRIP_ID", "ADFG_STAT_AREA_CODE", dmn_cols))) !=  length(c("TRIP_ID", "ADFG_STAT_AREA_CODE", dmn_cols)) ) {
+    stop(paste0("'data' must have columns 'TRIP_ID' and 'ADFG_STAT_AREA_CODE and dmn_cols: ", paste(dmn_cols, collapse = ", ")))
+  } else {
+    if( all(lapply(data[, c("TRIP_ID", "ADFG_STAT_AREA_CODE")], class) != "integer")) {
+      stop ("'TRIP_ID' and 'ADFG_STAT_AREA_CODE' must be of class integer.")
+    }
+  }
+  if(nrow(unique(data[, .(TRIP_ID, STRATA)])) != uniqueN(data$TRIP_ID)) stop("A trip is not in only one stratum!")
+  
+  # Remove any unused columns
+  keep_cols <- unique(c(year_col, stratum_cols, dmn_cols, "ADFG_STAT_AREA_CODE", time[3], time[4], "TRIP_ID", ps_cols))
+  data <- unique(subset(data, select = keep_cols))      
+  
+  #========================#
+  # Convert ADFG to HEX_ID #
+  #========================#
+  
+  stat_area_lst <- stat_area_to_hex(space[1], stat_area_sf)
+  stat_area_dist_lst <- suppressWarnings(apply(
+    X = round(st_distance(st_centroid(stat_area_lst$HEX_GEOMETRY))), 
+    MARGIN = 1, 
+    FUN = function(x) which(x <= space[2])))
+  data <- unique(data.table(stat_area_lst$STAT_AREA_HEX_DF)[
+  ][data, on = .(ADFG_STAT_AREA_CODE)
+  ][, -"ADFG_STAT_AREA_CODE"])
+  setcolorder(data, neworder = unique(c(year_col, stratum_cols, ps_cols, dmn_cols, "HEX_ID", time[3], time[4])))
+  setkeyv(data, cols = unique(c(year_col, stratum_cols, ps_cols, dmn_cols, "HEX_ID", time[3], time[4])))
+  
+  if(nrow(data[is.na(HEX_ID)])) {
+    print(data[is.na(HEX_ID)])
+    stop("Could not assign a HEX_ID!")
+  }
+  
+  #======================#
+  # Define temporal unit #
+  #======================#
+  
+  # First, get all years and a table converting date to week
+  if(time[1] != "week") stop("So far this function only works with 'week()' function!")
+  dates_lst <- lapply(
+    lapply(
+      unique(unlist(data[, ..year_col])),
+      function(x) as.Date(paste0(x, c("-01-01", "-12-31")))
+    ),
+    function(x) as.Date(x[1] : x[2], origin = as.POSIXct("1970-01-01", tz = "UTC"))
+  )
+  dates_mtx <- cbind(unlist(dates_lst), unlist(lapply(dates_lst, get(time[1]))))
+  dates_start <- min(dates_mtx[, 1]) - 1  # Get first date and subtract 1. T
+  dates_mtx[, 1] <- dates_mtx[, 1] - dates_start  # This makes it so matrix can be reference by row index, much faster
+  
+  # Grab time columns and define groups based on TRIP_ID and HEX_ID
+  time_cols <- time[3:4]
+  time_int <- data[, ..time_cols]
+  time_int[, (time_cols) := lapply(.SD, as.integer), .SDcols = time_cols]
+  setnames(time_int, new = c("S", "E"))
+  data_int <- data[, .(TRIP_ID, HEX_ID)][, GRP := .GRP, by = .(TRIP_ID, HEX_ID)]
+  # Convert to matrix and split by TRIP_ID and HEX_ID
+  time_lst <- as.matrix(cbind(time_int - dates_start, data_int[, .(GRP)]))
+  time_lst <- lapply(split(time_lst, time_lst[, "GRP"], drop = F), matrix, ncol = 3)
+  # For each TRIP_ID x HEX_ID, identify unique weeks
+  time_lst <- lapply(time_lst, function(x) {
+    dates_int <- unique(unlist(apply(x, 1, function(y) y[1] : y[2], simplify = F)))  # get unique days
+    unique(dates_mtx[dates_int, 2, drop = F])                     # Identify week using dates_mtx
+  }) 
+  
+  # Collapse into a data.table (this is much faster than rbindlist(lapply(data_lst, as.data.table)))
+  data_dt <- as.data.table(
+    do.call(rbind, Map(function(x1, x2) cbind(x1, x2), x1 = as.list(seq_along(time_lst)), x2 = time_lst)))
+  setnames(data_dt, new = c("GRP", "TIME"))
+  # Merge
+  data_int <- unique(data_int)[data_dt, on = .(GRP)][, - "GRP"]
+  keep_cols2 <- c(setdiff(keep_cols, c(time_cols, "ADFG_STAT_AREA_CODE")), "HEX_ID")
+  data <- unique(data[, ..keep_cols2])[data_int, on = .(TRIP_ID, HEX_ID)]
+  
+  #============#
+  # Define Box #
+  #============#
+
+  setkeyv(data, c(year_col, stratum_cols, "TIME", "HEX_ID"))
+  setcolorder(data, unique(c(year_col, stratum_cols, ps_cols, "TIME", "HEX_ID")))
+  # 'BOX_ID' is defined by HEX_ID and TIME and if specified, ps_cols, and is common to all data. This will be used to determine neighbors.
+  # 'stratum_cols' is not included so that we can later compare overlap between strata
+  data[, BOX_ID := .GRP, by = c(year_col, "TIME", "HEX_ID")]              
+  if(!is.null(ps_cols)) {
+    data[, PS_ID := .GRP, keyby = ps_cols]
+    ps_cols_tbl <- unique(subset(data, select = c(ps_cols, "PS_ID")))
+  } else {
+    ps_cols_tbl <- data.table(PS = "NA", PS_ID = 1L)
+    data[, PS_ID := 1L] 
+  }
+  setkey(data, BOX_ID)
+
+  #==================#
+  # Define Neighbors #
+  #==================#
+  
+  # For each BOX_ID, find which BOX_IDs are neighboring based on week and spatial cells.
+  sub_cols <- c(year_col, "TIME", "HEX_ID", "BOX_ID")
+  st_mtx <- as.matrix(unique(data[, ..sub_cols]))
+  nbr_lst <- apply(st_mtx, MARGIN = 1, function(x) {
+    # x <- st_mtx[1,]
+    box_mtx <- st_mtx[st_mtx[,1] == x[1], , drop = F]             # subset by year
+    nbr_time <- (x[2] + (-win:win))                               # identify neighboring TIME
+    box_mtx <- box_mtx[box_mtx[,2] %in% nbr_time, , drop = F]     # subset by time range
+    nbr_hex_id <- stat_area_dist_lst[[x[3]]]                      # identify neighboring HEX_IDs
+    box_mtx[box_mtx[, 3] %in% nbr_hex_id, 4]                      # subset by neighboring HEX_IDs, then grab BOX_ID
+  }) # 0.5 sec, but should save time when identifying number of neighbors?
+  # each element of this list corresponds to BOX_ID and contains all neighboring BOX_IDs
+  
+  #===================================================#
+  # Split up the dataset by year_col and stratum_cols #
+  #===================================================#
+  
+  if(!is.null(dmn_cols)) {
+    data_dmn <- copy(data)       # Create a copy that will keep dmn_cols
+    data <- unique(data[, -..dmn_cols])  # Remove 'dmn_cols' for now
+  }
+  
+  group_cols  <- c(year_col, stratum_cols)
+  setkeyv(data, cols = c(group_cols, "PS_ID", "BOX_ID"))
+  data_lst <- lapply(
+    X = split(x = subset(data, select = c(group_cols, "BOX_ID", "TRIP_ID", "PS_ID")), by = group_cols, keep.by = F),
+    FUN = as.matrix)
+
+  # Make the frequency table of each TRIP_ID (so that trips are properly split by HEX_ID, TIME, and if present, ps_cols
+  trip_id_mat <- do.call(rbind, lapply(
+    data_lst,
+    function(p) {
+      trip_id_frq <- table(p[, "TRIP_ID"])
+      matrix(
+        c(as.integer(names(trip_id_frq)), trip_id_frq),
+        ncol = 2, dimnames = list(NULL, c("TRIP_ID", "Freq")))
+    }))
+  trip_id_mat <- trip_id_mat[order(trip_id_mat[,1]), ]
+  trip_id_vec <- vector(mode = "integer")
+  trip_id_vec[trip_id_mat[, 1]] <- trip_id_mat[, 2]
+  
+  #==================================================#
+  # Identify which TRIP_IDs are neighboring each box #
+  #==================================================#
+  
+  box_smry <- lapply(
+    data_lst,
+    function(stratum_mtx) {
+      # as [1:BOX_ID] [2:TRIP_ID] and if specified, [3:PS_ID]
+      # stratum_mtx <- data_lst[[23]]   # 2022.OB_FIXED
+      # stratum_mtx <- data_lst[[24]]   # 2022.OB_TRW
+      
+      # First, split by PS_ID
+      ps_lst <- lapply(split(stratum_mtx[, 1:2], stratum_mtx[,3]), matrix, ncol = 2)
+      
+      # Now for each PS_ID group, identify neighboring trips
+      lapply(ps_lst, function(x) {
+        # x <- ps_lst[[1]]    # Here PS_ID = 1 is POT
+        
+        # Get all unique time and space boxes
+        x1 <- unique(x[, 1])
+        
+        # Now for each BOX_ID listed in 'x1', count the number unique TRIP_IDs in neighboring BOX_IDs
+        x2 <- do.call(rbind, lapply(x1, function(y) {
+          # y <- x1[1]   # Box 5749
+          
+          trip_id_centered <- x[x[,1] == y, 2]    # Identify number of trips actually  the box
+          # There shouldn't ever be the same trip counted twice in the same box.
+          if( length(trip_id_centered) != length(unique(trip_id_centered)) ) stop("There is a duplicate trip_id!")
+          
+          cbind(
+            BOX_ID = y,
+            # Count of trips centered in BOX_ID
+            BOX_n = length(trip_id_centered) ,
+            # Weight of trips centered in BOX_ID
+            # FIXME calculating BOX_w is slow!
+            BOX_w = sum(1/trip_id_vec[trip_id_centered]), 
+            # # Count of unique TRIP_IDs in neighboring BOX_IDs
+            BOX_nbr = length(unique(x[(x[,1] %in% nbr_lst[[y]]), 2])) 
+          )
+          
+        }))
+      })
+    }
+  ) 
+  
+  # Calculate STRATA_N and ensure the sum of weights is equivalent
+  strata_N_dt <- data[, .(STRATA_N = uniqueN(TRIP_ID)), by = group_cols]
+
+  # Double-check that weights sum to STRATA_N
+  if(!(all(
+    unname(sapply(box_smry, function(x) sum(sapply(x, function(y) sum(y[, "BOX_w"]))))) == strata_N_dt$STRATA_N
+  ))) stop("STRATA_N and sum(BOX_w) are not equal!")
+  
+  # Get post-strata weights (number of component trips in post-strata)
+  ps_W_dt <- data[, .(ps_W = sum(1 / trip_id_vec[TRIP_ID])), by = c(group_cols, "PS_ID")]
+  ps_W_dt <- ps_W_dt[ps_cols_tbl, on = .(PS_ID)]  # Merge in ps_cols on PS_ID
+  setkeyv(ps_W_dt, c(year_col, stratum_cols, "PS_ID"))
+  
+  # Create data.table output
+  st_dt <- unique(data[, .(BOX_ID, HEX_ID, TIME)])   # Table of BOX_ID, HEX_ID, and TIME
+  dt_out <- 
+    rbindlist(lapply(box_smry, function(x) rbindlist(lapply(x, as.data.table), idcol = "PS_ID")), idcol = "GROUP_COLS")[
+    ][, (group_cols) := tstrsplit(GROUP_COLS, split = "[.]")
+    ][, GROUP_COLS := NULL][
+    ][st_dt, on = .(BOX_ID)]
+  dt_out <- dt_out[
+  ][, which(colnames(dt_out) == year_col) := as.integer(dt_out$ADP)
+  ][, PS_ID := as.integer(PS_ID)
+  ][ps_cols_tbl, on = .(PS_ID)]
+  setcolorder(dt_out, c(group_cols, "PS_ID", "BOX_ID", "BOX_n", "BOX_w", "BOX_nbr", ps_cols, "HEX_ID", "TIME"))
+  
+  # Initialize outputs
+  box_res <- list(
+    box_smry = box_smry,
+    strata_n_dt = strata_N_dt,
+    ps_W_dt = ps_W_dt,
+    dt_out = dt_out,
+    og_data = data,
+    nbr_lst = nbr_lst,
+    params = list(stratum_cols = stratum_cols, year_col = year_col, dmn_cols = dmn_cols, ps_cols = ps_cols)
+  )
+  
+  #==========================#
+  # Handle dmn_cols now (GEAR)
+  #==========================#
+  
+  if(!is.null(dmn_cols)) {
+    
+    # Get trip weights, splitting by dmn_cols as well
     trip_id_dmn_mat <- as.matrix(data_dmn[, .N, by = .(TRIP_ID)])
     trip_id_dmn_vec <- vector(mode = "integer")
     trip_id_dmn_vec[trip_id_dmn_mat[, 1]] <- trip_id_dmn_mat[, 2]
@@ -285,7 +686,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_cols = N
       focus_dmn_dat <- unique(subset(data_dmn[dmn_tbl[i,], on = dmn_cols], select = c(stratum_cols, "BOX_ID", "TRIP_ID")))
       focus_dmn_dat_stratum <- lapply(split(focus_dmn_dat, by = stratum_cols, keep.by = F), as.matrix)
       focus_dmn_box_ids <- unique(focus_dmn_dat$BOX_ID)
-
+      
       # for each stratum...
       focus_dmn_nbr_lst <- lapply(focus_dmn_dat_stratum, function(x) {
         # x <- focus_dmn_dat_stratum[[1]]
@@ -302,7 +703,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_cols = N
             BOX_DMN_w = sum(1/trip_id_dmn_vec[trip_id_centered]),
             BOX_DMN_nbr = length(unique(x[x[,1] %in% nbr_lst[[y]]]))
           )
-
+          
         })
         as.data.table(do.call(rbind, x1))
         
@@ -325,13 +726,14 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_cols = N
     
     # Double-check that weights sum to STRATA_N
     if(!fsetequal(
-      strata_dmn_N_dt[, .(STRATA_N = sum(STRATA_DMN_N)), keyby = c(year_col, stratum_cols)],
+      strata_dmn_N_dt[, .(STRATA_N = sum(STRATA_DMN_N)), keyby = c(year_col, stratum_cols)][STRATA_N != 0],
       strata_N_dt
     )) stop("STRATA_N and sum(BOX_DMN_w) are not equal!")
     
     box_res$dmn <- list()
     box_res$dmn$strata_dmn_n_dt <- strata_dmn_N_dt
     box_res$dmn$box_dmn_smry_dt <- dmn_nbr_dt
+    box_res$dmn$strata_dt <- setorderv(unique(strata_N_dt[, ..stratum_cols]), cols = stratum_cols)[, STRATUM_ID := .I][]
     
   }
   
@@ -345,11 +747,12 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_cols = N
       box_res$dmn$geom_dmn_df <- geom_dmn_sf
     }
   }
-
+  
   # Return results
   box_res
   
 }
+
 
 
 # A revised version that lets you specify the size of temporal unit (not just week or month)
@@ -658,38 +1061,74 @@ define_boxes_2 <- function(data, space, time, time_cols, year_col, stratum_cols,
 # Allocation Functions -------------------------------------------------------------------------------------------------
 #======================================================================================================================#
 
+## Update Strata -------------------------------------------------------------------------------------------------------
+
+# This function prepares the inputs for the allo_equal() and allo_min_plus_opt() functions
+update_strata <- function(effort, tm, stratum_cols = c(), focus_years) {
+  # effort <- copy(pc_effort_dt); tm <- copy(trips_melt); stratum_cols <- c("STRATA", "BSAI_GOA"); focus_years <- 2018:2022
+  
+  # Update STRATA
+  sub_cols <- c("ADP", "TRIP_ID", "DAYS", stratum_cols)
+  new_effort <- unique(effort[, ..sub_cols])
+  new_strata <- apply(new_effort[, ..stratum_cols], 1, paste0, collapse = "-")
+  new_effort[, STRATA := new_strata]
+  if(length(setdiff(stratum_cols, "STRATA")) != 0)  new_effort[, setdiff(stratum_cols, "STRATA") := NULL]    
+  
+  # Update STRATA in trips_melt
+  new_trips_melt <- copy(tm)
+  new_trips_melt[, STRATA := unique(
+    new_effort[, .(TRIP_ID, STRATA)]
+  )[new_trips_melt, STRATA, on = .(TRIP_ID)]]
+  
+  # Summarize the data for use by equal_rates() and min_plus_opt() functions
+  new_effort_focus <- new_effort[ADP %in% focus_years][
+  ][, .(STRATA_N = uniqueN(TRIP_ID), TRP_DUR = mean(DAYS, na.rm = T)), by = .(ADP, STRATA)
+  ][, PRIOR_MTD := unique(
+    new_trips_melt[, .(ADP, STRATA, TRIP_ID, DAYS)])[
+    ][ADP %in% (.BY[[1]]-(1:3)) & STRATA == .BY[[2]], mean(DAYS, na.rm = T)], 
+    by = .(ADP, STRATA)][]
+  setkey(new_effort_focus, ADP, STRATA)
+  
+  list(
+    effort = new_effort_focus,
+    tm = new_trips_melt
+  )
+  
+}
+
 ## Equal Allocation ----------------------------------------------------------------------------------------------------
 
 # This function calculates the rates afforded with equal allocation. It is also used by allo_min_plus_opt if the budget
 # cannot afford 'optimized' days.
-allo_equal <- function(x, ob_budget){
-  # x <- copy(status_quo_dt); ob_budget <- (4.5e6 - 1e6); trip_costs <- copy(trip_cost_dt)
+allo_equal <- function(x, budget){
+  # x <- allo_dt[STRATA != "ZERO"];  budget <- 4.5e6
   
-  adp_years <- unique(x$ADP)
+  if(length(budget) != 1 & length(budget) != length(unique(x$ADP)) ) stop(
+    "'budget' must be length = 1 or length(unique(x$ADP))!"
+  )
   
-  adp_list <- lapply(adp_years, function(adp) {
-    # adp <- 2018
-    
-    x[ADP == adp
-    ][, EFF_D := sum(STRATA_N * TRP_DUR)    # Effort as total number of days across strata
-    ][, AFF_D := ob_budget / CPD
-    ][, RAW_OB_RATE := AFF_D/EFF_D        # Raw equal rate afforded
-    ][, RAW_OB_N := STRATA_N * RAW_OB_RATE      # Raw Expected number of trips observed within strata
-    ][, OB_N := RAW_OB_N + (STRATA_N/sum(STRATA_N)) # Final number of trips expected to be observed 
-    ][, OB_RATE := sum(OB_N)/sum(STRATA_N)  # Final equal rate  
-    ][, OB_D := OB_N * TRP_DUR      # Final number of days expected to be observed
-    ][, STRATA := as.factor(STRATA)
-    ][, OPT_N := NA]
-    
-  })
-  out_dt <- rbindlist(adp_list)
+  out_dt <- copy(x)
+  if( !("BUDGET" %in% colnames(x)) ) {
+    if(length(budget) == length(unique(x$ADP))) {
+      budget_tbl <- data.table(ADP = as.integer(names(budget)), BUDGET = budget)
+      out_dt[, BUDGET := budget_tbl[out_dt, BUDGET, on = .(ADP)]]
+    } else out_dt[, BUDGET := budget]
+  }
+  
+  out_dt[
+  ][, MON_RATE := unique(BUDGET) / sum(STRATA_N * TRP_DUR * CPD) , by = .(ADP)
+  ][, MON_N := MON_RATE * STRATA_N
+  ][, MON_D := MON_RATE * STRATA_N * TRP_DUR
+  ][, OPT_N := NA
+  ][, BUDGET := NULL]
+
   setkey(out_dt, ADP, STRATA)
   
   if( !("MIN_RATE") %in% colnames(x) ) {
-    return(out_dt[, .(ADP, STRATA, STRATA_N, TRP_DUR, PRIOR_MTD, CPD, MIN_RATE = NA_real_, MIN_N = NA_real_, MIN_D = NA_real_, TOT_MIN_D = NA_real_, OB_RATE, OB_N, OPT_N, OB_D)])
+    return(out_dt[, .(ADP, STRATA, STRATA_N, TRP_DUR, PRIOR_MTD, CPD, MIN_RATE = NA_real_, MIN_N = NA_real_, MIN_D = NA_real_, TOT_MIN_D = NA_real_, MON_RATE, MON_N, MON_D, OPT_N)])
   }
   
-  out_dt[, .(ADP, STRATA, STRATA_N, TRP_DUR, PRIOR_MTD, CPD, MIN_RATE, MIN_N = NA_real_, MIN_D = NA_real_, TOT_MIN_D = NA_real_, OB_RATE, OB_N, OPT_N, OB_D)]
+  out_dt[, .(ADP, STRATA, STRATA_N, TRP_DUR, PRIOR_MTD, CPD, MIN_RATE, MIN_N, MIN_D, TOT_MIN_D, MON_RATE, MON_N, MON_D, OPT_N)]
 }
 
 
@@ -721,24 +1160,66 @@ find_conf_rate <- function(strata_n, min_rate, conf){
 # Using conf=0.5 is the same as a 15% minimum. Increasing conf to 0.95, however, increases the minimum rate until there
 # is 95% confidence that random selection will result in >= hurdle rate. If the 15% minimum can be afforded but cannot
 # be achieved at the specified confidence level, it will allocate at the highest confidence level afforded..
-allo_min_plus_opt <- function(x, conf, tm, MIN_RATE = 0.15, ob_budget){
-  # x <- copy(status_quo_dt); conf <- 0.95; tm <- copy(trips_melt); MIN_RATE <- 0.15   # for 95% confidence (new method)
-  # x <- copy(status_quo_dt); conf <- 0.50; tm <- copy(trips_melt); MIN_RATE <- 0.15   # for 15% minimum (old method)
-  # ob_budget <- (4.5e6 - 1e6);  # for now, assume 30% of fixed-gear EM costs $1M
+# TODO add term to specify which optimization metrics to use.
+allo_min_plus_opt <- function(allo_lst, em_carve_off, conf, MIN_RATE = 0.15, budget){
+  # conf <- 0.95; MIN_RATE <- 0.15; budget <- 4.5e6
   
-  x0 <- copy(x)[
-  ][, OB_BUDGET := ob_budget
-  ][, AFF_D := OB_BUDGET / CPD][]
+  # 'em_carve_off' must be TRUE or FALSE
+  # 'budget' must be length = 1
+  
+  # em_carve_off <- T
+  # em_carve_off <- F
+  
+  
+  
+  # TODO MIGHT NOT NEED THIS IF I HAVE SQ TERM
+  # if(length(budget) != 1 & length(budget) != length(unique(x$ADP)) ) stop(
+  #   "'budget' must be length = 1 or length(unique(x$ADP))!"
+  # )
+  
+  # TODO MIGHT NOT NEED THIS IF I HAVE SQ TERM
+  # out_dt <- copy(x)
+  # if( !("BUDGET" %in% colnames(x)) ) {
+  #   if(length(budget) == length(unique(x$ADP))) {
+  #     budget_tbl <- data.table(ADP = as.integer(names(budget)), BUDGET = budget)
+  #     out_dt[, BUDGET := budget_tbl[out_dt, BUDGET, on = .(ADP)]]
+  #   } else out_dt[, BUDGET := budget]
+  # }
+  
+  out_dt <- copy(allo_lst$effort)
+  
+  # If em_carve_off = T, then set fixed-gear EM strata to 30% and TRW_EM to 1/3
+  if(em_carve_off) {
+    
+    out_dt_em <- out_dt[STRATA %like% "EM"]
+    out_dt_em[
+    ][, MON_RATE := ifelse(STRATA == "EM_TRW", 1/3, 0.3)
+    ][, MON_N := STRATA_N * MON_RATE
+    ][, MON_D := MON_N * TRP_DUR] 
+    # Calculate estimated total cost of EM strata by ADP
+    em_cost_by_adp <- out_dt_em[, .(EM_COST = sum(STRATA_N * MON_RATE * TRP_DUR * CPD)), by = .(ADP)]
+    #em_cost_by_adp <- setNames(em_cost_by_adp$EM_COST, em_cost_by_adp$ADP)
+    
+    # Allocate the remaining funds to observer strata
+    out_dt <- out_dt[STRATA %like% "OB"][
+    ][em_cost_by_adp, on = .(ADP)
+    ][, BUDGET := budget - EM_COST
+    ][, EM_COST := NULL][]
+
+  } else out_dt[, BUDGET := budget]
+
+  # Omit ZERO strata
+  out_dt <- out_dt[!(STRATA %like% "ZERO")]
   
   # Prepare allocation weights from trips_melt (variance of metrics for each stratum and ADP year)
-  weights <- tm[STRATA %in% unique(x$STRATA)  , .(S2_h = var(Value), N_h = .N), keyby = .(ADP, Metric, STRATA)]
+  weights <- allo_lst$tm[STRATA %in% unique(out_dt$STRATA)  , .(S2_h = var(Value), N_h = .N), keyby = .(ADP, Metric, STRATA)]
   
   # For each ADP year...
-  adp_years <- unique(x$ADP)
+  adp_years <- unique(out_dt$ADP)
   adp_list <- lapply(adp_years, function(adp) {
     
     # Determine trips/days to achieve the 15% hurdle and the conf_rate according to the confidence level specified
-    x1 <- x0[ADP == adp
+    x1 <- out_dt[ADP == adp
     ][, MIN_D := STRATA_N * MIN_RATE * TRP_DUR                # Calculate # days to observer to reach minimum hurdle
     ][, TOT_MIN_D := sum(MIN_D)          # Total days required to achieve minimum rate 
     ][, MIN_N := STRATA_N * MIN_RATE     # For each stratum, number of trips to observe to reach minimum rate
@@ -751,25 +1232,33 @@ allo_min_plus_opt <- function(x, conf, tm, MIN_RATE = 0.15, ob_budget){
     setkey(x1, ADP, STRATA)
     opt_days_afforded <- T   # Initialize whether optimized days are afforded 
     
+    # If the minimum rate is afforded at the specified confidence level, say so:
+    if ( unique(x1$BUDGET) > x1[, sum(CONF_D * CPD)]) {
+      cat(
+        paste0(adp, " : Hurdle afforded at ", conf, " confidence level. Allocating optimized samples.\n"))
+    } 
+      
     # If the minimum rate can be met (i.e. at conf=0.5) but not at the specified confidence, start by allocating by the
     # proportion of CONF_RATE above MIN_RATE
-    if( (unique(x1$AFF_D) < sum(x1$CONF_D)) & (unique(x1$AFF_D) > sum(x1$MIN_D)) ) {
-      
+    if( (unique(x1$BUDGET) < x1[, sum(CONF_D * CPD)]) & (unique(x1$BUDGET) >  x1[, sum(MIN_D * CPD)]) ) {
+    
       opt_days_afforded <- F
-      warning(
-        paste0(adp, " : Minimum rate of ", MIN_RATE, " afforded but not at ", conf, " confidence level.")
-        , call. = F
-      )
       
-      x1[, CONF_RATE_PROP := (CONF_D-MIN_D)/sum(CONF_D-MIN_D)     # Get the proportions that days were allocated          
-      ][, CONF_D := MIN_D + (AFF_D-TOT_MIN_D)*CONF_RATE_PROP      # Apply the proportion to estimate days observed
-      ][, CONF_N := CONF_D / TRP_DUR                              # Calculate trips observed
-      ][, CONF_RATE_NEW := CONF_N/STRATA_N]                       # Calculate ballparked rate afforded
+      # TODO Does using the proportion of days above MIN_D only work if CPD is the same for all strata?
+      # Using the proportion of funds allocated to each stratum above MIN_RATE to achieve CONF_RATE, calculate CONF_NEW 
+      # as the 
       
-      # Get the confidence interval achieved for all strata, and grab the highest one from which to work down until we 
-      # fall under AFF_D
+      x1[, MIN_COST := (MIN_D * CPD)]    # Cost of affording minimum rate
+      x1[, CONF_COST := (CONF_D * CPD)]  # cost of affording confidence rate
+      x1[, CONF_COST_PROP := (CONF_COST - MIN_COST) / sum(CONF_COST - MIN_COST)] # Proportion of funds above min_rate allocated to achieving conf
+      x1[, LEFT_OVER := BUDGET - sum(MIN_COST)]   # Calculate total funds left over after affording minimum rate
+      x1[, CONF_RATE_NEW := MIN_RATE + (LEFT_OVER * CONF_COST_PROP / CPD / TRP_DUR / STRATA_N)]
+
+      # Get the confidence level achieved for all strata, and grab the highest one from which to work down until we 
+      # fall under AFF_D. Using the highest confidence level means we'll start close to but still over budget, e.g., 
+      # a conservative ballpark estimate that will save considerable time in the upcoming loop.
       conf_new <- round(max(x1[, .(CONF_NEW = pbinom(
-        q = ceiling(MIN_RATE * STRATA_N), size = STRATA_N, prob = CONF_RATE_NEW, lower.tail=F)), 
+        q = ceiling(MIN_RATE * STRATA_N), size = STRATA_N, prob = CONF_RATE_NEW, lower.tail = F)), 
         by = .(STRATA)]$CONF_NEW), 4)
       if(conf_new < 0.5) conf_new <- 0.5           # If the estimate for conf_new is below 0.5, set it to 0.5.
       GO <- T
@@ -778,7 +1267,7 @@ allo_min_plus_opt <- function(x, conf, tm, MIN_RATE = 0.15, ob_budget){
         x1[, CONF_RATE_NEW := find_conf_rate(STRATA_N, MIN_RATE, conf_new), by = STRATA
         ][, CONF_N := CONF_RATE_NEW * STRATA_N
         ][, CONF_D := CONF_N * TRP_DUR]
-        if(  sum(x1$CONF_D) > unique(x1$AFF_D) ){
+        if(  sum(x1[, CONF_D * CPD]) > unique(x1$BUDGET) ){
           conf_new <- conf_new - 0.0001                            # If too many days purchased, reduce confidence level
         } else {
           GO <- F                                                  # Once we fall under AFF_D, stop
@@ -786,13 +1275,20 @@ allo_min_plus_opt <- function(x, conf, tm, MIN_RATE = 0.15, ob_budget){
       }
       x1[, ':=' (CONF = conf_new, CONF_RATE = CONF_RATE_NEW)        # Update and clean up
       ][, TOT_CONF_D := sum(CONF_D)
-      ][, c("CONF_RATE_PROP", "CONF_RATE_NEW") := NULL]
+      ][, c("MIN_COST", "CONF_COST", "CONF_COST_PROP", "LEFT_OVER") := NULL]
+      
+      warning(
+        paste0(adp, " : Minimum rate of ", MIN_RATE, " afforded but only at ", round(conf_new, 4), " confidence level."), 
+        call. = F, immediate. = T
+      )
+      
+      
     }
-    
+
     # Calculate number of optimized days afforded
     x1[, C_N := CPD * PRIOR_MTD                               # Average Cost of observing one trip within stratum
     ][, MIN_C := sum(CPD * TRP_DUR * CONF_N), by = .(ADP)     # total cost of affording hurdle
-    ][, OPT_BUD := OB_BUDGET - MIN_C                          # budget remaining for optimization after affording hurdle
+    ][, OPT_BUD := BUDGET - MIN_C                             # budget remaining for optimization after affording hurdle
     ][, OPT_STRATA_N := STRATA_N - CONF_N                     # trips after accounting for trips below the hurdle
     ][, STRATA := as.factor(STRATA)] 
     x1 <- weights[x1, on =.(ADP, STRATA)]                     # Merge in optimization metrics
@@ -805,10 +1301,10 @@ allo_min_plus_opt <- function(x, conf, tm, MIN_RATE = 0.15, ob_budget){
     ][, W_hopt := N_h_S_h_div_sqrtC / sumN_h_S_h_div_sqrtC
     ][, METRIC := "dscd_hlbt_chnk"]                          # coercing the metric column to blended, which happens next 
     x1 <- x1[, .(
-      ADP, STRATA, STRATA_N, TRP_DUR, PRIOR_MTD, CPD, MIN_RATE, CONF, CONF_RATE, AFF_D, CPD, TOT_MIN_D, TOT_CONF_D,
+      ADP, STRATA, STRATA_N, TRP_DUR, PRIOR_MTD, CPD, BUDGET, MIN_RATE, CONF, CONF_RATE, CPD, TOT_MIN_D, TOT_CONF_D,
       OPT_BUD, MIN_N, MIN_D, CONF_N, CONF_D, METRIC, W_hopt)]
     x1 <- x1[, lapply(.SD, mean), .SDcols=c("W_hopt"), by = .(
-      ADP, STRATA, STRATA_N, TRP_DUR, PRIOR_MTD, MIN_RATE, CONF, CONF_RATE, AFF_D, CPD, TOT_MIN_D, TOT_CONF_D, 
+      ADP, STRATA, STRATA_N, TRP_DUR, PRIOR_MTD, BUDGET, MIN_RATE, CONF, CONF_RATE, CPD, TOT_MIN_D, TOT_CONF_D, 
       OPT_BUD, MIN_N, MIN_D, CONF_N, CONF_D,  METRIC)]
     setkey(x1, ADP, STRATA)
     
@@ -816,27 +1312,32 @@ allo_min_plus_opt <- function(x, conf, tm, MIN_RATE = 0.15, ob_budget){
     x1[, RAW_OPT_N := OPT_BUD / CPD * W_hopt / TRP_DUR]               # Initial estimate of optimized trips afforded 
     if(opt_days_afforded == F) x1[, OPT_N := 0] else x1[, OPT_N := RAW_OPT_N]
     x1[, OPT_D := OPT_N * TRP_DUR                                     # Estimate optimized days afforded
-    ][, OB_D := CONF_D + OPT_D                                        # Total observed days
-    ][, OB_N := CONF_N + OPT_N                                        # Total observed trips
-    ][, OB_RATE := OB_N / STRATA_N]                                   # Monitoring rate
+    ][, MON_D := CONF_D + OPT_D                                        # Total observed days
+    ][, MON_N := CONF_N + OPT_N                                        # Total observed trips
+    ][, MON_RATE := MON_N / STRATA_N]                                   # Monitoring rate
     
     # If the minimum rate was not afforded, revert to equal rates. 
-    if( unique(x1$AFF_D) < unique(x1$TOT_MIN_D) ){
+    if( unique(x1$BUDGET) < x1[, sum(MIN_D * CPD)] ){
       warning(
         paste0(adp, " : Minimum rate of ", MIN_RATE, " not afforded. Resorting to 'Equal Rates' allocation."), 
-        call. = F)
+        call. = F, immediate. = T)
       
-      opt_days_afforded <- F
-      conf_attempt <- copy(x1)[, .(STRATA, METRIC, W_hopt, CONF, CONF_RATE, CONF_N, CONF_D, TOT_CONF_D)]
-      x1 <- allo_equal(x1, ob_budget)[conf_attempt, on = .(STRATA)] 
+      conf_attempt <- copy(x1)[, .(
+        STRATA, METRIC, W_hopt, CONF = NA_real_, CONF_RATE = NA_real_,
+        CONF_N = NA_real_, CONF_D = NA_real_, TOT_CONF_D = NA_real_
+      )]
+      x1 <- allo_equal(x1, unique(x1$BUDGET))[conf_attempt, on = .(STRATA)] 
     }
     
     x1[, .(
       ADP, STRATA, STRATA_N, TRP_DUR, PRIOR_MTD, CPD, MIN_RATE, CONF, CONF_RATE, METRIC, W_hopt, MIN_N, MIN_D, 
-      TOT_MIN_D, CONF_N, CONF_D, TOT_CONF_D, OB_RATE, OB_N, OPT_N, OB_D)]
+      TOT_MIN_D, CONF_N, CONF_D, TOT_CONF_D, MON_RATE, MON_N, MON_D, OPT_N)]
   })
   
+  # Prepare outputs
   out_dt <- setkey(rbindlist(adp_list), ADP, STRATA)
+  if(em_carve_off) out_dt <- rbind(out_dt, out_dt_em, fill = T)
+  setkey(out_dt, ADP, STRATA)
   out_dt
   
 }
@@ -912,10 +1413,99 @@ calculate_interspersion <- function(box_res, sample_rate_vec, omit_strata = c(NU
   
 }
 
+# A gear-specific version (for when ps_cols = "GEAR" using define_boxes_gear)
+calculate_interspersion_gs <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
+  # omit_strata <- NULL
+  # omit_strata <- "ZERO"
+  # box_res <- box_mixed_gs; omit_strata = "ZERO"
+  
+  group_cols <- c(box_res$params$year_col, box_res$params$stratum_cols)
+  ps_cols <- box_res$params$ps_cols
+  year_col <- box_res$params$year_col
+  
+  # Use 'omit_strata' to omit any unmonitored strata
+  if(!is.null(omit_strata)) {
+    keep_strata <- !apply(sapply(omit_strata, function(x) names(box_res$box_smry) %like% x), 1, any)
+  } else {
+    keep_strata <- rep(T, times = length(box_res$box_smry))
+  }
+  
+  # For for a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
+  # (0-1), and then multiply it by that post-stratum's total weight of component trips centered on the post-stratum.
+  
+  # For each sample rate...
+  ispn_lst <- lapply(
+    sample_rate_vec,
+    function(x) {
+      # x <- 0.15
+
+      # For each stratum...
+      sapply(
+        box_res$box_smry[keep_strata],
+        function(y) {
+          # y <- box_res$box_smry[keep_strata][[19]]  # 2022.OB_FIXED
+          # y <- box_res$box_smry[keep_strata][[20]]  # 2022.OB_TRW
+          # lengths(box_res$box_smry[keep_strata])  # Note that some strata have more than one post-stratum group!
+          # y[[1]]
+          # y[[2]]
+          
+          # For each post-stratum's BOX_ID, use BOX_nbr to calculate the probability that the box is sampled,
+          # and then multiply that by BOX_w to get the expected number of sampled trips in the box. Sum across
+          # all boxes to get expected number of sampled trips in stratum.
+          # x is the sample rate, y[,4] is 'BOX_nbr' and y[, 3] is 'BOX_w'. Referencing by column is faster.
+          # sapply(y, function(z) sum((1 - ((1 - x)^z[,4])) * z[,3]))
+          # z <- y[[1]]
+          
+          #  sapply(y, function(z) sum(z[, 3]))  # total PS_ID weight
+          #  sapply(y, function(z) sum((1 - ((1 - x)^z[,4])) * z[,3]) /  sum(z[, 3]))  # PS_ID-specific interspersion
+
+          #  mean(sapply(y, function(z) sum((1 - ((1 - x)^z[,4])) * z[,3]) /  sum(z[, 3])) )  # Unweighted (treat PS_ID equally, average without weighting)
+          # Interspersion weighted by the size of the post-strata
+          # weighted.mean(
+          #   x = sapply(y, function(z) sum((1 - ((1 - x)^z[,4])) * z[,3]) /  sum(z[, 3])), 
+          #   w = sapply(y, function(z) sum(z[, 3]))  # total PS_ID weight)
+          # ) 
+          
+          a <- do.call(rbind, y)
+          sum((1 - ((1 - x)^a[,4])) * a[,3])   # Just doing the sum across is the same as the weighted average!
+          # FIXME I don't need to split post-strata into additional lists unless I want to weight post-strata separately!
+          # I think that within a stratum, we want to weight by each trip's interspersion.
+          # We don't want to weight interspersion of HAL and POT post-strata equally regardless of how many trips are in each.
+          
+        }
+      )
+    }
+  )
+  
+  # Package the results, converting to data.table
+  ispn_lst <- lapply(ispn_lst, function(z)  data.frame(GROUP_COLS = names(z), sum_pw = z))
+  names(ispn_lst) <- sample_rate_vec
+  ispn_dt <- rbindlist(ispn_lst, idcol = "SAMPLE_RATE")[
+  ][, SAMPLE_RATE := as.numeric(SAMPLE_RATE)
+  ][, (group_cols) := tstrsplit(GROUP_COLS, split = "[.]")
+  ][, GROUP_COLS := NULL]
+  ispn_dt[, (year_col) := lapply(.SD, as.integer), .SDcol = year_col]
+  
+  ispn_dt <- box_res$strata_n_dt[
+  ][ispn_dt, on = group_cols
+  ][, ISPN := sum_pw / STRATA_N][]
+  
+  setcolorder(ispn_dt, c("SAMPLE_RATE", group_cols, "ISPN"))
+  
+  ispn_res <- list(
+    ispn_dt = ispn_dt,
+    strata_n_dt = box_res$strata_n_dt,
+    params = box_res$params
+  )
+  
+  ispn_res
+  
+}
 
 # Combines Interspersion and CV_scaling into an index. Allocates such that all strata have the same index, and determines cost.
 # This function is mostly unchanged from the original (just some renaming)
 calculate_index <- function(ispn_res, trip_cost_dt) {
+  # ispn_res <- copy(box_mixed_bsai_goa_gs_insp); trip_cost_dt <- copy(trip_cost_dt_fg_combined_bsai_goa_cwb)
   
   group_cols <- c(ispn_res$params$year_col, ispn_res$params$stratum_cols)
   stratum_cols <- ispn_res$params$stratum_cols
@@ -948,7 +1538,11 @@ calculate_index <- function(ispn_res, trip_cost_dt) {
   
   index_rates <- rbindlist(Map(
     function(y1, y2) {
+      # y1 <- index_vectors[[5]]; y2 <- split(x1, by = year_col)[[5]] # 2022
+      
+      
       rbindlist(lapply(y1, function(z) {
+        # z <- y1[950]
         z1 <- data.table(INDEX = z)
         y2[, .SD[z1, on = .(INDEX), roll = "nearest"], keyby = group_cols]
       }))
@@ -974,6 +1568,22 @@ calculate_index <- function(ispn_res, trip_cost_dt) {
   index_out
 }
 
+# A quick function that searches for rates from the proximity allocation method given a budget.
+prox_rates_from_budget <- function(index_res, budget) {
+  # index_res <- copy(box_fixed_bsai_goa_gs_index); budget <- 4.5e6
+  
+  group_cols <- unname(unlist(index_res$params[c("year_col", "stratum_cols")]))
+  budget_dt <- data.table(INDEX_COST = budget)
+  index_res$rates[, .SD[budget_dt, on = .(INDEX_COST), roll = "nearest"], keyby = group_cols]
+}
+
+prox_rates_smry <- function(rates_res) {
+  # rates_res <- copy(prox_rates_from_budget(box_fixed_bsai_goa_gs_index, 4.5e6))
+  
+  rates_res[ADP == 2022]
+  
+}
+
 
 ## Cost-Weighted Boxes -------------------------------------------------------------------------------------------------
 
@@ -982,6 +1592,8 @@ calculate_cwb_Ph <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
   # omit_strata <- NULL
   # omit_strata <- "ZERO"
   # x <- 0.15; y <- box_res$box_smry[[1]]
+  # box_res <- copy(box_mixed)
+  
   
   group_cols <- c(box_res$params$year_col, box_res$params$stratum_cols)
   year_col <- box_res$params$year_col
@@ -1052,21 +1664,73 @@ allo_cwb <- function(x, target_budget) {
   ][, `nh/n` := `NP/c_h` / sum(`NP/c_h`), by = .(ADP)        # # Calculate the optimal sample size (equation 5.23)
   ][, n := (target_budget * sum(`NP/c_h`)) / sum(STRATA_N * Ph * sqrt(CPT)), by = .(ADP)   # calculate afforded total sample size (equation 5.24)
   ][, nh := `nh/n` * n       # Calculate the optimal sample size of each stratum n_h using n_h/n * n
-  ][, fh := nh / STRATA_N]   # using n_h / N_h, calculate allocated sample rate (sample fraction)
+  ][, fh := nh / STRATA_N][]   # using n_h / N_h, calculate allocated sample rate (sample fraction)
   setkey(x, ADP, STRATA)
   x
 }
 
 # Adjusts results of allo_cwb to get the assumed sample rate (SAMPLE_RATE) for Ph to approach the allocated rate fh
-allo_cwb_half_diff <- function(x, Ph_dt, target_budget) {
+allo_cwb_half_diff <- function(x, cwb_prop, target_budget) {
+  
+  Ph_dt <- copy(cwb_prop$Ph_dt)
+  year_strata <- unlist(cwb_prop$params[c("year_col", "stratum_cols")], use.names = F)
+  
   x <- copy(x)
   x[, SAMPLE_RATE := round(SAMPLE_RATE + (round(fh,3) - SAMPLE_RATE)/2, 3)]  # Adjust the sample rate to half the difference with N_h/N
-  x[, Ph := Ph_dt[x, Ph, on = .(STRATA, ADP, SAMPLE_RATE)]]     #update Ph values using new sample rates
-  chunk_numbers(x, target_budget)
-  print(x)
+  x[, Ph := Ph_dt[x, Ph, on = c(year_strata, "SAMPLE_RATE")]][]     #update Ph values using new sample rates
+  allo_cwb(x, target_budget)
+  x
 }
 
-
+# This loop repeatedly allocates according to CWB until the assumed rates approximate the allocated rates
+allo_cwb_loop <- function(cwb_prop, trip_costs, budget) {
+  # cwb_prop <- copy(cwb_prop), trip_costs <- copy(trip_cost_dt)
+  # cwb_prop <- copy(cwb_prop_bsai_goa); trip_costs <- copy(trip_cost_dt_bsai_goa_cwb)
+  # cwb_prop <- copy(cwb_prop_fg_combined); trip_costs <- copy(trip_cost_dt_fgcombined)
+  # budget <- 4.5e6
+  
+  year_strata <- unlist(cwb_prop$params[c("year_col", "stratum_cols")], use.names = F)
+  
+  # Start with 15% across the board
+  init_rates <- unique(copy(cwb_prop$Ph_dt))[SAMPLE_RATE == 0.150][!(STRATA %like% "ZERO")]
+  init_rates[, CPT := trip_costs[init_rates, CPT, on = c(year_strata)]]     
+  
+  # Make the initial allocation assuming 15%
+  old_step <- allo_cwb(init_rates, target_budget = budget)
+  old_diff <- Inf
+  new_diff <- old_step[, abs(sum(fh - SAMPLE_RATE))]
+  old_var <- Inf
+  new_var <- old_step[, var(fh - SAMPLE_RATE)]
+  GO <- T
+  i <- 0
+  steps <- matrix(nrow = 20, ncol=2)
+  colnames(steps) <- c("abs_diff", "var")
+  
+  # Keep halving differences between assumed SAMPLE_RATE and allocate rate 'fh'
+  while(GO) {
+    i <- i + 1
+    new_step <- allo_cwb_half_diff(old_step, cwb_prop, budget)
+    new_diff <- new_step[, abs(sum(fh - SAMPLE_RATE))]
+    new_var <- new_step[, var(fh - SAMPLE_RATE)]
+    
+    # Once there are no improvements, stop the loop
+    
+    steps[i,] <- c(new_diff, new_var)
+    
+    if(new_var < old_var){
+        
+      old_step <- copy(new_step)
+      old_diff <- new_diff
+      old_var <- new_var
+    } else GO <- F
+  }
+  
+  list(
+    rates = old_step,
+    steps = steps[!is.na(steps[,1]), , drop = F]
+  )
+  
+}
 #======================================================================================================================#
 # Evaluation Functions -------------------------------------------------------------------------------------------------
 #======================================================================================================================#
@@ -1128,6 +1792,7 @@ calculate_dmn_interspersion <- function(box_res, selection_rates, donor_strata =
   dmn_ispn_dt <- rbindlist(dmn_ispn_lst, idcol = "DMN_COLS")
   dmn_ispn_dt[, (dmn_cols) := tstrsplit(DMN_COLS, split = "[.]")][, DMN_COLS := NULL][]
   setorderv(dmn_ispn_dt, c(dmn_cols, year_col, stratum_cols))
+  setkeyv(dmn_ispn_dt, c(year_col, stratum_cols, dmn_cols))
   
   dmn_ispn_res <- list(dmn_ispn_dt = dmn_ispn_dt, params = box_res$params)
   if(!is.null(box_res$dmn$geom_dmn_df)) {
@@ -1214,7 +1879,7 @@ calculate_dmn_interspersion2 <- function(box_res, selection_rates, donor_strata 
 }
 
 # New version with donor and acceptor table
-calculate_dmn_interspersion3 <- function(box_def, selection_rates, stratum_dt, acceptor_donor_lst) {
+calculate_dmn_interspersion3 <- function(box_def, selection_rates, acceptor_donor_lst) {
   
   # box_def <- copy(box_res_fmp); selection_rates <- copy(rates_4.5M_fmp); 
   
@@ -1222,6 +1887,8 @@ calculate_dmn_interspersion3 <- function(box_def, selection_rates, stratum_dt, a
   stratum_cols <- box_def$params$stratum_cols
   dmn_cols <- box_def$params$dmn_cols
 
+  stratum_dt <- box_def$dmn$strata_dt
+  
   # Example acceptor_donor_lst to use when stratifying by FMP, only OB strata apply to other strata
   # TODO But how do I know to put these in this particular format?
   # Have to make sure that all stratum.names are separated by "." and that all are present in dataset?
