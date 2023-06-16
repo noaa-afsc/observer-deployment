@@ -1,0 +1,220 @@
+---
+title: "Preliminary Rates"
+author: "Geoff_Mayhew"
+date: "2023-06-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(data.table)
+library(magrittr)  # for pipiing
+library(flextable)
+
+```
+
+
+```{r load data}
+load("rates_test.rdata")
+
+replace_hyphen <- function(x){
+  # x <- rates_lst$MPO$bsai_goa
+  x1 <- copy(x)
+  x1[, STRATA := gsub("[-]", "*", STRATA)]  
+  x1
+}
+
+```
+
+
+# Rates with a $4.5M budget  
+
+- '*BSAI_GOA*' means strata were additionally stratified by BSAI or GOA (by majority of retained catch).
+- '*Fixed*' means all HAL and POT gear trips in the pool were combined into one fixed-gear stratum.
+- '*gear-specific*' means that interspersion was calculated in a gear-specific manner (applies to *Fixed* stratitifications), such that only trips with the same gear type were allowed to neighbor (contrasted with allowing POT and HAL trips in the same fixed-gear stratum to neighbor).
+- '*Mixed*' is still in progress, but means we would have a separate stratum for trips fishing both HAL and POT gear, separate from trips that fish solely with HAL or POT gear.
+
+
+# Allocation Methods {.tabset .tabset-pills}
+
+## Equal
+
+Applying equal rates to all strata. This was not repeated for all of our stratification variants.
+
+```{r equal}
+rates_lst$EQUAL$EQUAL %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(4:6, 8:9), digits = 2) %>% colformat_double(j = c(7), digits = 4) %>%
+  hline(i = 6 * (1:4)) %>% bold(j = c(1:2, 7))
+```
+
+## Min+Opt (status quo) {.tabset .tabset-pills}
+
+Applying the minimum + optimum allocation scheme to HAL, POT, and TRW strata only, carving off funds each year to achieve a 30% fixed-gear EM monitoring rate and a 1/3 shoreside sampling rate for EM_TRW. A 95% confidence level of achieving the 15% minimum was initially set. '*CONF*' is either blank (reverted to equal rates), equal to 0.95 (achieved), or between 0 and 0.95 (the highest confidence level afforded). If the confidence level was achieved, the number of 'optimized trips' ('*OPT_N*') are given.
+
+### Current
+```{r mpo_sq_current}
+rates_lst$MPO_SQ$sq %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(4:6, 8:10), digits = 2) %>% colformat_double(j = c(7, 11:13), digits = 4) %>%
+  hline(i = 6 * (1:4)) %>% bold(j = c(1:2, 7))
+```
+
+### BSAI_GOA
+```{r mpo_sq_bsai_goa}
+rates_lst$MPO_SQ$bsai_goa  %>% replace_hyphen() %>%
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(4:6, 8:10), digits = 2) %>% colformat_double(j = c(7, 11:13), digits = 4) %>%
+  hline(i = 11 * (1:4)) %>% bold(j = c(1:2, 7))
+```
+
+### Fixed
+```{r mpo_sq_fixed}
+rates_lst$MPO_SQ$fixed  %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(4:6, 8:10), digits = 2) %>% colformat_double(j = c(7, 11:13), digits = 4) %>%
+  hline(i = 4 * (1:4)) %>% bold(j = c(1:2, 7))
+```
+
+### Fixed + BSAI_GOA
+```{r mpo_sq_fixed_bsai_goa}
+rates_lst$MPO_SQ$fixed_bsai_goa  %>% replace_hyphen() %>%
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(4:6, 8:10), digits = 2) %>% colformat_double(j = c(7, 11:13), digits = 4) %>%
+  hline(i = 7 * (1:4)) %>% bold(j = c(1:2, 7))
+```
+
+## Min+Opt (for all strata) {.tabset .tabset-pills}
+
+Applying the minimum + optimum allocation scheme to all strata (including fixed-gear EM and trawl EM). Again, a 95% confidence level of achieving the 15% minimum was initially set. '*CONF*' is either blank (reverted to equal rates), equal to 0.95 (achieved), or between 0 and 0.95 (the highest confidence level afforded)
+
+### Current
+```{r mpo_current}
+rates_lst$MPO$sq  %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(4:6, 8:10), digits = 2) %>% colformat_double(j = c(7, 11:13), digits = 4) %>%
+  hline(i = 6 * (1:4)) %>% bold(j = c(1:2, 7))
+```
+
+### BSAI_GOA
+```{r mpo_bsai_goa}
+rates_lst$MPO$bsai_goa  %>% replace_hyphen() %>%
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(4:6, 8:10), digits = 2) %>% colformat_double(j = c(7, 11:13), digits = 4) %>%
+  hline(i = 11 * (1:4))
+```
+
+### Fixed
+```{r mpo_fixed}
+rates_lst$MPO$fixed  %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(4:6, 8:10), digits = 2) %>% colformat_double(j = c(7, 11:13), digits = 4) %>%
+  hline(i = 4 * (1:4))
+```
+
+### Fixed + BSAI_GOA
+```{r mpo_fixed_bsai_goa}
+rates_lst$MPO$fixed_bsai_goa  %>% replace_hyphen() %>%
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(4:6, 8:10), digits = 2) %>% colformat_double(j = c(7, 11:13), digits = 4) %>%
+  hline(i = 7 * (1:4))
+```
+
+## Cost-Weighted Boxes {.tabset .tabset-pills}
+
+'*fh*' is the selection rate allocated. 
+'*SAMPLE_RATE*' is the sample rate that is assumed beforehand to determine *Ph* (the proportion of boxes expected to NOT to be neighboring a sampled trip), and should be very close to *fh*.
+
+### Current
+```{r cwb_current}
+rates_lst$CWB$sq  %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 2, big.mark = "") %>% colformat_double(j = c(6:10), digits = 2) %>%  colformat_double(j = c(1, 4, 11), digits = 4) %>% 
+  hline(i = 6 * (1:4)) %>% bold(j = c(2:3, 11))
+```
+
+### BSAI_GOA
+```{r cwb_bsai_goa}
+rates_lst$CWB$bsai_goa  %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 2, big.mark = "") %>% colformat_double(j = c(7:11), digits = 2) %>%  colformat_double(j = c(1, 5, 12), digits = 4) %>% 
+  hline(i = 11 * (1:4)) %>% bold(j = c(2:4, 12))
+```
+
+### Fixed
+```{r cwb_fixed}
+rates_lst$CWB$fixed  %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 2, big.mark = "") %>% colformat_double(j = c(6:10), digits = 2) %>%  colformat_double(j = c(1, 4, 11), digits = 4) %>% 
+  hline(i = 4 * (1:4)) %>% bold(j = c(2:3, 11))
+```
+
+### Fixed + BSAI_GOA
+```{r cwb_fixed_bsai_goa}
+rates_lst$CWB$fixed_bsai_goa  %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 2, big.mark = "") %>% colformat_double(j = c(7:11), digits = 2) %>%  colformat_double(j = c(1, 5, 12), digits = 4) %>% 
+  hline(i = 7 * (1:4))  %>% bold(j = c(2:4, 12))
+```
+
+## Proximity  {.tabset .tabset-pills}
+
+'*ISPN*' is the proportino of trips in the stratum neighboring a monitored trip (*sum_pw* / *STRATA_N*).
+'*sum_pw*' is the expected number of trips in the stratum neighboring a monitored trip.
+'*INDEX*' = *ISPN* / *CV_SCALING* (not always exact, bust the closest within a 0.0001 change in monitoring rate).
+
+### Current
+```{r prox_current}
+rates_lst$PROX$sq  %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(6:7, 11), digits = 2) %>%  colformat_double(j = c(3:4, 8:10), digits = 4) %>% 
+  hline(i = 6 * (1:4)) %>% bold(j = c(1:3))
+```
+
+### BSAI_GOA
+```{r prox_bsai_goa}
+rates_lst$PROX$bsai_goa %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(7:8, 12), digits = 2) %>%  colformat_double(j = c(5:6, 9:11), digits = 4) %>% 
+  hline(i = 11 * (1:4)) %>% bold(j = c(1:4))
+```
+
+### Fixed
+```{r prox_fixed}
+rates_lst$PROX$fixed %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(6:7, 11), digits = 2) %>%  colformat_double(j = c(3:4, 8:10), digits = 4) %>% 
+  hline(i = 4 * (1:4)) %>% bold(j = c(1:3))
+```
+
+### Fixed (gear-specific)
+```{r prox_fixed_gs}
+rates_lst$PROX$fixed_gs %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(6:7, 11), digits = 2) %>%  colformat_double(j = c(3:4, 8:10), digits = 4) %>% 
+  hline(i = 4 * (1:4)) %>% bold(j = c(1:3))
+```
+
+### Fixed + BSAI_GOA
+
+```{r prox_fixed_bsai_goa}
+rates_lst$PROX$fixed_bsai_goa %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(7:8, 12), digits = 2) %>%  colformat_double(j = c(5:6, 9:11), digits = 4) %>% 
+  hline(i = 7 * (1:4)) %>% bold(j =c(1:4))
+```
+
+### Fixed + BSAI_GOA (gear-specific)
+
+```{r prox_fixed_bsai_goa_gs}
+rates_lst$PROX$fixed_bsai_goa_gs %>% 
+  flextable() %>% padding(padding = 1) %>% autofit()  %>% fontsize(size = 8, part = "all") %>% 
+  colformat_int(j = 1, big.mark = "") %>% colformat_double(j = c(7:8, 12), digits = 2) %>%  colformat_double(j = c(5:6, 9:11), digits = 4) %>% 
+  hline(i = 7 * (1:4)) %>% bold(j = c(1:4))
+```
+
+# Still in progress
+
+- Getting gear-specific interspersion for the cost-weighted boxes allocation X 'fixed' stratum definition
+- Getting the 'mixed' stratum definition (should be quick, mostly just need to make quick assumptions of per-trip costs)
+- Running these rates through the interspersion evaluation. 
