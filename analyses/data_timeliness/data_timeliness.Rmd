@@ -21,8 +21,7 @@ options(scipen = 9999)
 ```{r get_data}
 em_trip_end <- dbGetQuery(channel_afsc, "
 select distinct e.odds_trip_number,
-decode(e.gear_type, 'LONGLINE', 'EM HAL', 'POT', 'EM POT') as strata,
-t.trip_end_date_time as trip_end
+trunc(max(t.trip_end_date_time)) as trip_end
 from norpac.odds_logged_trip_summary_v e
 join norpac.odds_em_request_status h on h.status_year = e.year 
 join norpac.odds_monitor i on i.trip_plan_log_seq = e.odds_trip_number
@@ -31,17 +30,34 @@ where e.year = 2022
 and e.observer_status_code <> 'NO'
 and e.trip_status in ('COMPLETED', 'PENDING')
 and i.sample_plan_seq in (13)
+group by e.odds_trip_number
 order by e.odds_trip_number")
 
 em_data_available <- dbGetQuery(channel_akro, "
-select h.ODDS_TRIP_NUMBER, trunc(min(r.EFFECTIVE_DATE)) data_available
+select r.year_pk as year, h.ODDS_TRIP_NUMBER, 
+-- sampling strata information
+case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end as coverage_type,
+decode(ss.sampling_strata_code,
+'EM_H', 'EM HAL',
+'EM_P', 'EM POT',
+'H'   , 'EM HAL',
+'P'   , 'EM POT') as strata,
+trunc(min(r.EFFECTIVE_DATE)) data_available
 from AKFISH_REPORT.CATCH_REPORT_SOURCE r
 join AKFISH_REPORT.CATCH_REPORT_SPECIES_FACT f on r.CATCH_REPORT_SOURCE_PK = f.CATCH_REPORT_SOURCE_PK
 join AKFISH_REPORT.EM_HAUL h on f.EM_HAUL_PK = h.EM_HAUL_PK
 join AKFISH_REPORT.CALENDAR_DATE c on f.REPORT_DATE_PK = c.CALENDAR_DATE_PK
+join akfish_report.sampling_strata ss on ss.sampling_strata_pk = f.sampling_strata_pk
 where r.year_pk >= 2021 
 and r.CATCH_REPORT_TYPE_CODE = 'EM'
-group by h.ODDS_TRIP_NUMBER
+and ss.sampling_strata_code != 'N/A'
+group by r.year_pk, h.ODDS_TRIP_NUMBER,
+case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end,
+decode(ss.sampling_strata_code,
+'EM_H', 'EM HAL',
+'EM_P', 'EM POT',
+'H'   , 'EM HAL',
+'P'   , 'EM POT')
 order by h.ODDS_TRIP_NUMBER")
 
 ob_trips <- dbGetQuery(channel_afsc, 
@@ -53,18 +69,44 @@ ob_trips <- dbGetQuery(channel_afsc,
    and con.employer_code = 'AIS'
    and t.did_fishing_occur_flag = 'Y'")
 
-ob_hauls <- dbGetQuery(channel_afsc, 
-  "select h.seq_number, h.cruise, h.permit, h.trip_seq, h.haul_seq, 
-   decode(g.description, 'Pelagic Trawl', 'TRW', 'Non Pelagic Trawl', 'TRW', 'Pot or Trap', 'POT', 'Longliner', 'HAL') strata, 
-   min(h.date_changed) as data_in
-   from norpac.atl_haul_h h
-   join norpac.atl_lov_gear_type g on g.gear_type_code = h.gear_type_code and g.geartype_form = h.geartype_form
-   join norpac.ols_observer_cruise cru on cru.cruise = h.cruise
-   join norpac.ols_observer_contract con on con.contract_number = cru.contract_number
-   where extract(year from deploy_date_time) = 2022
-   and con.employer_code = 'AIS'
-   group by h.seq_number, h.cruise, h.permit, h.trip_seq, h.haul_seq, 
-   decode(g.description, 'Pelagic Trawl', 'TRW', 'Non Pelagic Trawl', 'TRW', 'Pot or Trap', 'POT', 'Longliner', 'HAL')")
+ob_hauls <- dbGetQuery(channel_akro, 
+  "select r.year_pk as year, h.cruise, to_char(v.vessel_id) as permit, h.trip_seq,
+  -- sampling strata information
+case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end as coverage_type,
+decode(ss.sampling_strata_code,
+'EM_H', 'EM HAL',
+'EM_P', 'EM POT',
+'EM_TrawlFullCoverage', 'EM TRW EFP',
+'EM_TrawlPartialCoverage', 'EM TRW EFP',
+'EM_TrawlPartialCoverageTen', 'EM TRW EFP',
+'F', 'FULL',
+'H', 'HAL',
+'N', 'ZERO',
+'P', 'POT',
+'TR', 'TRW') as strata,
+trunc(min(r.EFFECTIVE_DATE)) data_available
+from AKFISH_REPORT.CATCH_REPORT_SOURCE r
+join AKFISH_REPORT.CATCH_REPORT_SPECIES_FACT f on r.CATCH_REPORT_SOURCE_PK = f.CATCH_REPORT_SOURCE_PK
+join AKFISH_REPORT.OBSERVER_HAUL h on f.OBSERVER_HAUL_PK = h.OBSERVER_HAUL_PK
+join AKFISH_REPORT.CALENDAR_DATE c on f.REPORT_DATE_PK = c.CALENDAR_DATE_PK
+join akfish_report.sampling_strata ss on ss.sampling_strata_pk = f.sampling_strata_pk
+join akfish_report.vessel v on v.vessel_pk = f.vessel_pk
+where r.year_pk >= 2021 
+and r.CATCH_REPORT_TYPE_CODE = 'OBS'
+and ss.sampling_strata_code != 'N/A'
+group by r.year_pk, h.cruise, v.vessel_id, h.trip_seq,
+case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end,
+decode(ss.sampling_strata_code,
+'EM_H', 'EM HAL',
+'EM_P', 'EM POT',
+'EM_TrawlFullCoverage', 'EM TRW EFP',
+'EM_TrawlPartialCoverage', 'EM TRW EFP',
+'EM_TrawlPartialCoverageTen', 'EM TRW EFP',
+'F', 'FULL',
+'H', 'HAL',
+'N', 'ZERO',
+'P', 'POT',
+'TR', 'TRW')")
 ```
 
 ```{r wrangle_data}
@@ -73,46 +115,47 @@ em_data_timeliness <- em_trip_end %>%
                       em_data_available, 
                       by = "ODDS_TRIP_NUMBER"
                       ) %>% 
+                      # TODO: decide how to handle trips that have no end date
+                      filter(!is.na(TRIP_END)) %>% 
                       # TODO: decide how to handle trips that weren't reviewed
-                      filter(!is.na(DATA_AVAILABLE)) %>% 
-                      select(TRIP_NUMBER = ODDS_TRIP_NUMBER, STRATA, TRIP_END, DATA_AVAILABLE) %>% 
+                      filter(!is.na(DATA_AVAILABLE)) %>%
+                      select(YEAR, TRIP_NUMBER = ODDS_TRIP_NUMBER, STRATA, TRIP_END, DATA_AVAILABLE) %>% 
                       mutate(TRIP_END = as.Date(TRIP_END),
                              DATA_AVAILABLE = as.Date(DATA_AVAILABLE),
-                             time_to_availability = as.numeric(DATA_AVAILABLE - TRIP_END))
+                             time_to_availability = as.numeric(difftime(DATA_AVAILABLE, TRIP_END, units = "days")))
                       
-
 ob_data_timeliness <- ob_trips %>% 
                       inner_join(
-                      ob_hauls %>% 
-                      group_by(CRUISE, PERMIT, TRIP_SEQ, STRATA) %>% 
-                      summarise(DATA_IN = min(DATA_IN[HAUL_SEQ == max(HAUL_SEQ)]), .groups = "drop"),
+                      ob_hauls,
                       by = c("CRUISE", "PERMIT", "TRIP_SEQ")
                       ) %>% 
+                      # TODO: decide how to handle trips that have no end date
+                      filter(!is.na(TRIP_END)) %>% 
                       mutate(TRIP_NUMBER = paste0(CRUISE, PERMIT, TRIP_SEQ), 
                              TRIP_END = as.Date(TRIP_END),
-                             # TODO: use AKRO query to make this equivalent to EM (data available day after AFSC)
-                             DATA_AVAILABLE = as.Date(DATA_IN)) %>% 
-                      select(TRIP_NUMBER, STRATA, TRIP_END, DATA_AVAILABLE) %>%  
-                      mutate(time_to_availability = as.numeric(DATA_AVAILABLE - TRIP_END))
+                             DATA_AVAILABLE = as.Date(DATA_AVAILABLE)) %>% 
+                      select(YEAR, TRIP_NUMBER, STRATA, TRIP_END, DATA_AVAILABLE) %>%  
+                      mutate(time_to_availability = as.numeric(difftime(DATA_AVAILABLE, TRIP_END, units = "days")))
 
-data_timeliness <- rbind(em_data_timeliness, ob_data_timeliness)
+data_timeliness <- rbind(em_data_timeliness, ob_data_timeliness) %>% 
+                   mutate(time_to_availability = ifelse(time_to_availability < 0, 0, time_to_availability))
 ```
 
 ```{r figure}
 times_smry <- data_timeliness %>%
-              group_by(STRATA) %>%
+              group_by(YEAR, STRATA) %>%
               summarise('25th percentile' = round(as.vector(quantile(time_to_availability, 0.25))),
                         median = round(as.vector(quantile(time_to_availability, 0.50))),
                         '75th percentile' = round(as.vector(quantile(time_to_availability, 0.75))),
                         mean = round(mean(time_to_availability)), .groups = "drop") %>%
-              melt(id.vars=c("STRATA"), measure.vars=c("25th percentile", "median", "75th percentile", "mean")) %>%
+              melt(id.vars=c("YEAR", "STRATA"), measure.vars=c("25th percentile", "median", "75th percentile", "mean")) %>%
               mutate(label = formatC(value, width=max(nchar(value))))
 
 times_figure <- ggplot(data_timeliness, aes(x=time_to_availability)) +
-                facet_grid(STRATA ~ ., scales="free_y") +
+                facet_grid(STRATA ~ YEAR, scales="free_y") +
                 geom_histogram(bins=20, fill="gray70") +
-                geom_vline(data=filter(times_smry, variable == "median"), aes(xintercept=value), linetype=2) +
-                geom_text(data=filter(times_smry, variable == "median"), aes(x=value, y=Inf, label=paste(label, "days")), angle=90, hjust=1.1, vjust=-.25, size=8) +
+                geom_vline(data = filter(times_smry, variable == "mean"), aes(xintercept=value), linetype=2) +
+                geom_text(data = filter(times_smry, variable == "mean"), aes(x=value, y=Inf, label=paste(variable, label, sep = ": ")), angle=90, hjust=1.1, vjust=-.25) +
                 labs(x="Days", y="Count") +
                 theme_bw() +
                 theme(text=element_text(size=26))
