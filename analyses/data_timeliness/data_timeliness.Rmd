@@ -1,5 +1,5 @@
 ---
-title: "Data Timeliness Evaluation Metric"
+title: "Data Timeliness as an Evaluation Metric"
 output: html_document
 date: "`r Sys.Date()`"
 editor_options: 
@@ -7,6 +7,7 @@ editor_options:
 ---
 
 ```{r start, include=FALSE}
+library(data.table)
 library(reshape2)
 library(ROracle)
 library(tidyverse)
@@ -122,7 +123,7 @@ em_data_timeliness <- em_trip_end %>%
                       select(YEAR, TRIP_NUMBER = ODDS_TRIP_NUMBER, STRATA, TRIP_END, DATA_AVAILABLE) %>% 
                       mutate(TRIP_END = as.Date(TRIP_END),
                              DATA_AVAILABLE = as.Date(DATA_AVAILABLE),
-                             time_to_availability = as.numeric(difftime(DATA_AVAILABLE, TRIP_END, units = "days")))
+                             data_timeliness = as.numeric(difftime(DATA_AVAILABLE, TRIP_END, units = "days")))
                       
 ob_data_timeliness <- ob_trips %>% 
                       inner_join(
@@ -135,31 +136,63 @@ ob_data_timeliness <- ob_trips %>%
                              TRIP_END = as.Date(TRIP_END),
                              DATA_AVAILABLE = as.Date(DATA_AVAILABLE)) %>% 
                       select(YEAR, TRIP_NUMBER, STRATA, TRIP_END, DATA_AVAILABLE) %>%  
-                      mutate(time_to_availability = as.numeric(difftime(DATA_AVAILABLE, TRIP_END, units = "days")))
+                      mutate(data_timeliness = as.numeric(difftime(DATA_AVAILABLE, TRIP_END, units = "days")))
 
 data_timeliness <- rbind(em_data_timeliness, ob_data_timeliness) %>% 
-                   mutate(time_to_availability = ifelse(time_to_availability < 0, 0, time_to_availability))
+                   mutate(data_timeliness = ifelse(data_timeliness < 0, 0, data_timeliness))
 ```
 
+# Calculating Data Timeliness
+Data timeliness was calculated as the time between a trip ending and data being available to the Catch Accounting System. We used the time at which data were available to the CAS, rather than the time at which data were submitted to the AFSC, as the former could be measured more consistently across EM and observed strata. Data from 2022 were used to calculate strata-specific data timeliness.  
 ```{r figure}
 times_smry <- data_timeliness %>%
               group_by(YEAR, STRATA) %>%
-              summarise('25th percentile' = round(as.vector(quantile(time_to_availability, 0.25))),
-                        median = round(as.vector(quantile(time_to_availability, 0.50))),
-                        '75th percentile' = round(as.vector(quantile(time_to_availability, 0.75))),
-                        mean = round(mean(time_to_availability)), .groups = "drop") %>%
+              summarise('25th percentile' = round(as.vector(quantile(data_timeliness, 0.25)), 2),
+                        median = round(as.vector(quantile(data_timeliness, 0.50)), 2),
+                        '75th percentile' = round(as.vector(quantile(data_timeliness, 0.75)), 2),
+                        mean = round(mean(data_timeliness), 2), .groups = "drop") %>%
               melt(id.vars=c("YEAR", "STRATA"), measure.vars=c("25th percentile", "median", "75th percentile", "mean")) %>%
-              mutate(label = formatC(value, width=max(nchar(value))))
+              mutate(label = format(value, nsmall = 2))
 
-times_figure <- ggplot(data_timeliness, aes(x=time_to_availability)) +
+times_figure <- ggplot(data_timeliness, aes(x=data_timeliness)) +
                 facet_grid(STRATA ~ YEAR, scales="free_y") +
                 geom_histogram(bins=20, fill="gray70") +
                 geom_vline(data = filter(times_smry, variable == "mean"), aes(xintercept=value), linetype=2) +
                 geom_text(data = filter(times_smry, variable == "mean"), aes(x=value, y=Inf, label=paste(variable, label, sep = ": ")), angle=90, hjust=1.1, vjust=-.25) +
-                labs(x="Days", y="Count") +
+                labs(x="Data timeliness (days)", y="Count") +
                 theme_bw() +
                 theme(text=element_text(size=26))
 
-ggsave(filename = "output_figures/data_timeliness.png", width = 16, height = 9, units = 'in')
+times_figure
+
+if(!file.exists("output_figures/data_timeliness.png")){
+  ggsave(filename = "output_figures/data_timeliness.png", width = 16, height = 9, units = 'in')}
+```
+
+# Creating a Function
+Stratum-specific mean data timeliness was then embedded in a function that will
+```{r table}
+strata_timeliness <- times_smry %>% 
+                     filter(variable == "mean") %>% 
+                     select(STRATA, data_timeliness = value)
+
+val <- dbGetQuery(channel_akro, "select * from akfish_sf.valhalla where adp = 2022")
+
+data       <- setDT(val)
+strata     <- setDT(strata_timeliness)
+
+evaluate_data_timeliness <- function(data, strata_timeliness){
+
+dt <- strata_timeliness[data, on = .(STRATA)]
+dt <- unique(dt[, .(TRIP_ID, STRATA, data_timeliness)])
+
+if(nrow(dt[is.na(data_timeliness)]) > 1){
+  warning("NAs detected in data timeliness detected.")
+}
+  
+return(round(mean(dt$data_timeliness, na.rm = TRUE), 2))  
+}
+
+evaluate_data_timeliness(data, strata)
 ```
 
