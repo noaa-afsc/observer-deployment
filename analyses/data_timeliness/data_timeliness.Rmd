@@ -21,7 +21,7 @@ options(scipen = 9999)
 
 ```{r get_data}
 em_trip_end <- dbGetQuery(channel_afsc, "
-select distinct e.odds_trip_number,
+select distinct e.year, e.odds_trip_number,
 trunc(max(t.trip_end_date_time)) as trip_end
 from norpac.odds_logged_trip_summary_v e
 join norpac.odds_em_request_status h on h.status_year = e.year 
@@ -31,11 +31,11 @@ where e.year = 2022
 and e.observer_status_code <> 'NO'
 and e.trip_status in ('COMPLETED', 'PENDING')
 and i.sample_plan_seq in (13)
-group by e.odds_trip_number
+group by e.year, e.odds_trip_number
 order by e.odds_trip_number")
 
 em_data_available <- dbGetQuery(channel_akro, "
-select r.year_pk as year, h.ODDS_TRIP_NUMBER, 
+select h.ODDS_TRIP_NUMBER, 
 -- sampling strata information
 case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end as coverage_type,
 decode(ss.sampling_strata_code,
@@ -52,7 +52,7 @@ join akfish_report.sampling_strata ss on ss.sampling_strata_pk = f.sampling_stra
 where r.year_pk >= 2021 
 and r.CATCH_REPORT_TYPE_CODE = 'EM'
 and ss.sampling_strata_code != 'N/A'
-group by r.year_pk, h.ODDS_TRIP_NUMBER,
+group by h.ODDS_TRIP_NUMBER,
 case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end,
 decode(ss.sampling_strata_code,
 'EM_H', 'EM HAL',
@@ -62,16 +62,15 @@ decode(ss.sampling_strata_code,
 order by h.ODDS_TRIP_NUMBER")
 
 ob_trips <- dbGetQuery(channel_afsc, 
-  "select t.cruise, t.permit, t.trip_seq, t.end_date as trip_end
+  "select extract(year from t.start_date) as year, t.cruise, t.permit, t.trip_seq, t.end_date as trip_end
    from norpac.atl_fma_trip t
    join norpac.ols_observer_cruise cru on cru.cruise = t.cruise
    join norpac.ols_observer_contract con on con.contract_number = cru.contract_number
    where extract(year from t.start_date) = 2022
-   and con.employer_code = 'AIS'
    and t.did_fishing_occur_flag = 'Y'")
 
 ob_hauls <- dbGetQuery(channel_akro, 
-  "select r.year_pk as year, h.cruise, to_char(v.vessel_id) as permit, h.trip_seq,
+  "select h.cruise, to_char(v.vessel_id) as permit, h.trip_seq,
   -- sampling strata information
 case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end as coverage_type,
 decode(ss.sampling_strata_code,
@@ -95,7 +94,7 @@ join akfish_report.vessel v on v.vessel_pk = f.vessel_pk
 where r.year_pk >= 2021 
 and r.CATCH_REPORT_TYPE_CODE = 'OBS'
 and ss.sampling_strata_code != 'N/A'
-group by r.year_pk, h.cruise, v.vessel_id, h.trip_seq,
+group by h.cruise, v.vessel_id, h.trip_seq,
 case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end,
 decode(ss.sampling_strata_code,
 'EM_H', 'EM HAL',
