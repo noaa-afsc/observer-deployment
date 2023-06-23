@@ -39,10 +39,10 @@ select h.ODDS_TRIP_NUMBER,
 -- sampling strata information
 case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end as coverage_type,
 decode(ss.sampling_strata_code,
-'EM_H', 'EM HAL',
-'EM_P', 'EM POT',
-'H'   , 'EM HAL',
-'P'   , 'EM POT') as strata,
+'EM_H', 'EM_HAL',
+'EM_P', 'EM_POT',
+'H'   , 'EM_HAL',
+'P'   , 'EM_POT') as strata,
 trunc(min(r.EFFECTIVE_DATE)) data_available
 from AKFISH_REPORT.CATCH_REPORT_SOURCE r
 join AKFISH_REPORT.CATCH_REPORT_SPECIES_FACT f on r.CATCH_REPORT_SOURCE_PK = f.CATCH_REPORT_SOURCE_PK
@@ -55,10 +55,10 @@ and ss.sampling_strata_code != 'N/A'
 group by h.ODDS_TRIP_NUMBER,
 case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end,
 decode(ss.sampling_strata_code,
-'EM_H', 'EM HAL',
-'EM_P', 'EM POT',
-'H'   , 'EM HAL',
-'P'   , 'EM POT')
+'EM_H', 'EM_HAL',
+'EM_P', 'EM_POT',
+'H'   , 'EM_HAL',
+'P'   , 'EM_POT')
 order by h.ODDS_TRIP_NUMBER")
 
 ob_trips <- dbGetQuery(channel_afsc, 
@@ -74,11 +74,11 @@ ob_hauls <- dbGetQuery(channel_akro,
   -- sampling strata information
 case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end as coverage_type,
 decode(ss.sampling_strata_code,
-'EM_H', 'EM HAL',
-'EM_P', 'EM POT',
-'EM_TrawlFullCoverage', 'EM TRW EFP',
-'EM_TrawlPartialCoverage', 'EM TRW EFP',
-'EM_TrawlPartialCoverageTen', 'EM TRW EFP',
+'EM_H', 'EM_HAL',
+'EM_P', 'EM_POT',
+'EM_TrawlFullCoverage', 'EM_TRW_EFP',
+'EM_TrawlPartialCoverage', 'EM_TRW_EFP',
+'EM_TrawlPartialCoverageTen', 'EM_TRW_EFP',
 'F', 'FULL',
 'H', 'HAL',
 'N', 'ZERO',
@@ -97,11 +97,11 @@ and ss.sampling_strata_code != 'N/A'
 group by h.cruise, v.vessel_id, h.trip_seq,
 case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end,
 decode(ss.sampling_strata_code,
-'EM_H', 'EM HAL',
-'EM_P', 'EM POT',
-'EM_TrawlFullCoverage', 'EM TRW EFP',
-'EM_TrawlPartialCoverage', 'EM TRW EFP',
-'EM_TrawlPartialCoverageTen', 'EM TRW EFP',
+'EM_H', 'EM_HAL',
+'EM_P', 'EM_POT',
+'EM_TrawlFullCoverage', 'EM_TRW_EFP',
+'EM_TrawlPartialCoverage', 'EM_TRW_EFP',
+'EM_TrawlPartialCoverageTen', 'EM_TRW_EFP',
 'F', 'FULL',
 'H', 'HAL',
 'N', 'ZERO',
@@ -118,9 +118,9 @@ akro_offloads <- dbGetQuery(channel_akro,
 -- sampling strata information
 case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end as coverage_type,
 decode(ss.sampling_strata_code,
-'EM_TrawlFullCoverage', 'EM TRW EFP',
-'EM_TrawlPartialCoverage', 'EM TRW EFP',
-'EM_TrawlPartialCoverageTen', 'EM TRW EFP') as strata,
+'EM_TrawlFullCoverage', 'EM_TRW_EFP',
+'EM_TrawlPartialCoverage', 'EM_TRW_EFP',
+'EM_TrawlPartialCoverageTen', 'EM_TRW_EFP') as strata,
 trunc(min(r.EFFECTIVE_DATE)) data_available
 from AKFISH_REPORT.CATCH_REPORT_SOURCE r
 join AKFISH_REPORT.CATCH_REPORT_SPECIES_FACT f on r.CATCH_REPORT_SOURCE_PK = f.CATCH_REPORT_SOURCE_PK
@@ -134,9 +134,9 @@ and ss.sampling_strata_code in ('EM_TrawlFullCoverage', 'EM_TrawlPartialCoverage
 group by r.el_report_id,
 case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end,
 decode(ss.sampling_strata_code,
-'EM_TrawlFullCoverage', 'EM TRW EFP',
-'EM_TrawlPartialCoverage', 'EM TRW EFP',
-'EM_TrawlPartialCoverageTen', 'EM TRW EFP')")
+'EM_TrawlFullCoverage', 'EM_TRW_EFP',
+'EM_TrawlPartialCoverage', 'EM_TRW_EFP',
+'EM_TrawlPartialCoverageTen', 'EM_TRW_EFP')")
 ```
 
 ```{r wrangle_data}
@@ -204,12 +204,12 @@ times_figure <- ggplot(data_timeliness, aes(x=data_timeliness)) +
                 geom_text(data = filter(times_smry, variable == "mean"), aes(x=value, y=Inf, label=paste(variable, label, sep = ": ")), angle=90, hjust=1.1, vjust=-.25) +
                 labs(x="Data timeliness (days)", y="Count") +
                 theme_bw() +
-                theme(text=element_text(size=26))
+                theme(text=element_text(size=20))
 
 times_figure
 
 if(!file.exists("output_figures/data_timeliness.png")){
-  ggsave(filename = "output_figures/data_timeliness.png", width = 16, height = 9, units = 'in')}
+  ggsave(filename = "output_figures/data_timeliness.png", width = 9, height = 14, units = 'in')}
 ```
 
 # Creating a Function
@@ -226,8 +226,8 @@ strata     <- setDT(strata_timeliness)
 
 evaluate_data_timeliness <- function(data, strata_timeliness){
 
-dt <- strata_timeliness[data, on = .(STRATA)]
-dt <- unique(dt[, .(TRIP_ID, STRATA, data_timeliness)])
+dt <- strata_timeliness[data, on = .(COVERAGE_TYPE, STRATA)]
+dt <- unique(dt[, .(TRIP_ID, COVERAGE_TYPE, STRATA, data_timeliness)])
 
 if(nrow(dt[is.na(data_timeliness)]) > 1){
   warning("NAs detected in data timeliness detected.")
