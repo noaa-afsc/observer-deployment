@@ -229,17 +229,13 @@ strata     <- setDT(strata_timeliness)
 
 evaluate_data_timeliness <- function(data, strata_timeliness){
 
-dt <- strata_timeliness[data, on = .(COVERAGE_TYPE, STRATA)]
-dt <- unique(dt[, .(TRIP_ID, COVERAGE_TYPE, STRATA, data_timeliness)])
+dt <- rbind(merge(data[STRATA != "ZERO"], strata_timeliness, by = c("COVERAGE_TYPE", "STRATA")), 
+            merge(data[STRATA == "ZERO"], strata_timeliness, by.x = c("COVERAGE_TYPE", "AGENCY_GEAR_CODE"), by.y = c("COVERAGE_TYPE", "STRATA"), all.x = TRUE))
 
-# TODO: NAs produced by zero coverage
-if(nrow(dt[is.na(data_timeliness)]) > 1){
-  warning("NAs detected in data timeliness detected.")
-}
-  
 return(round(mean(dt$data_timeliness, na.rm = TRUE), 2))  
 }
 
 evaluate_data_timeliness(data, strata)
+evaluate_data_timeliness(copy(data)[, STRATA := "HAL"], strata)
 ```
 
