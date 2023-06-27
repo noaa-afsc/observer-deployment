@@ -182,7 +182,10 @@ offload_data_timeliness <- afsc_offloads %>%
                                   data_timeliness = as.numeric(difftime(DATA_AVAILABLE, TRIP_END, units = "days")))
 
 data_timeliness <- rbind(em_data_timeliness, ob_data_timeliness, offload_data_timeliness) %>% 
-                   mutate(data_timeliness = ifelse(data_timeliness < 0, 0, data_timeliness))
+                   mutate(data_timeliness = ifelse(data_timeliness < 0, 0, data_timeliness)) %>% 
+                   group_by(TRIP_NUMBER) %>% 
+                   filter(n_distinct(COVERAGE_TYPE) == 1 & n_distinct(STRATA) == 1) %>% 
+                   ungroup()
 ```
 
 # Calculating Data Timeliness
@@ -229,6 +232,7 @@ evaluate_data_timeliness <- function(data, strata_timeliness){
 dt <- strata_timeliness[data, on = .(COVERAGE_TYPE, STRATA)]
 dt <- unique(dt[, .(TRIP_ID, COVERAGE_TYPE, STRATA, data_timeliness)])
 
+# TODO: NAs produced by zero coverage
 if(nrow(dt[is.na(data_timeliness)]) > 1){
   warning("NAs detected in data timeliness detected.")
 }
