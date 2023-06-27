@@ -189,22 +189,19 @@ data_timeliness <- rbind(em_data_timeliness, ob_data_timeliness, offload_data_ti
 ```
 
 # Calculating Data Timeliness
-Data timeliness was calculated as the time between a trip ending and data being available to the Catch Accounting System. We used the time at which data were available to the CAS, rather than the time at which data were submitted to the AFSC, as the former could be measured more consistently across EM and observed strata. Data from 2022 were used to calculate strata-specific data timeliness.  
-```{r figure}
+For most trips, I calculated data timeliness as the time between a trip ending and data being available to the Catch Accounting System. For trawl EM, I used offload end date instead of trip end date, as I was unable to link trip end date to trawl EM offloads. I used the time at which data were available to the CAS, rather than the time at which data were submitted to the AFSC, as I could measure the former more consistently across EM and observed strata. I used data from 2022 to calculate stratum-specific data timeliness.  
+```{r figure, fig.width=9, fig.height=14}
 times_smry <- data_timeliness %>%
-              group_by(YEAR, COVERAGE_TYPE, STRATA) %>%
-              summarise('25th percentile' = round(as.vector(quantile(data_timeliness, 0.25)), 2),
-                        median = round(as.vector(quantile(data_timeliness, 0.50)), 2),
-                        '75th percentile' = round(as.vector(quantile(data_timeliness, 0.75)), 2),
-                        mean = round(mean(data_timeliness), 2), .groups = "drop") %>%
-              melt(id.vars=c("YEAR", "COVERAGE_TYPE", "STRATA"), measure.vars=c("25th percentile", "median", "75th percentile", "mean")) %>%
-              mutate(label = format(value, nsmall = 2))
+                     group_by(YEAR, COVERAGE_TYPE, STRATA) %>%
+                     summarise(days = 7,
+                               one_week_quantile = ecdf(data_timeliness)(7), .groups = "drop") %>%
+              mutate(label = scales::percent(one_week_quantile))
 
 times_figure <- ggplot(data_timeliness, aes(x=data_timeliness)) +
                 facet_grid(STRATA ~ YEAR + COVERAGE_TYPE, scales="free_y") +
                 geom_histogram(bins=20, fill="gray70") +
-                geom_vline(data = filter(times_smry, variable == "mean"), aes(xintercept=value), linetype=2) +
-                geom_text(data = filter(times_smry, variable == "mean"), aes(x=value, y=Inf, label=paste(variable, label, sep = ": ")), angle=90, hjust=1.1, vjust=-.25) +
+                geom_vline(data = times_smry, aes(xintercept = days), color = "red", lty = 2) +
+                geom_text(data = times_smry, aes(x = 7, y = Inf, label = label), angle = 90, hjust = 1.1, vjust = -.25) +
                 labs(x="Data timeliness (days)", y="Count") +
                 theme_bw() +
                 theme(text=element_text(size=20))
@@ -215,27 +212,38 @@ if(!file.exists("output_figures/data_timeliness.png")){
   ggsave(filename = "output_figures/data_timeliness.png", width = 9, height = 14, units = 'in')}
 ```
 
+Dashed red lines represent a data timeliness of one week, and the percentage shown for each stratum is the percentage of trips that had a timeliness of one week or less.  
+
 # Creating a Function
-Stratum-specific mean data timeliness was then embedded in a function that will
+I created a function that uses the stratum-specific proportion of trips that have a timeliness of one week or less to estimate the proportion of all trips within a data set (monitored and unmonitored) that have a timeliness of one week or less. 
 ```{r table}
-strata_timeliness <- times_smry %>% 
-                     filter(variable == "mean") %>% 
-                     select(COVERAGE_TYPE, STRATA, data_timeliness = value)
+strata_timeliness <- setDT(times_smry)[, .(COVERAGE_TYPE, STRATA, one_week_quantile)]
 
-val <- dbGetQuery(channel_akro, "select * from akfish_sf.valhalla where adp = 2022")
+strata_timeliness
+```
 
-data       <- setDT(val)
-strata     <- setDT(strata_timeliness)
+```{r function}
+data <- setDT(dbGetQuery(channel_akro, "select * from akfish_sf.valhalla where adp = 2022"))
 
 evaluate_data_timeliness <- function(data, strata_timeliness){
 
 dt <- rbind(merge(data[STRATA != "ZERO"], strata_timeliness, by = c("COVERAGE_TYPE", "STRATA")), 
             merge(data[STRATA == "ZERO"], strata_timeliness, by.x = c("COVERAGE_TYPE", "AGENCY_GEAR_CODE"), by.y = c("COVERAGE_TYPE", "STRATA"), all.x = TRUE))
 
-return(round(mean(dt$data_timeliness, na.rm = TRUE), 2))  
-}
+dt[AGENCY_GEAR_CODE == "JIG", one_week_quantile := 1]
 
-evaluate_data_timeliness(data, strata)
-evaluate_data_timeliness(copy(data)[, STRATA := "HAL"], strata)
+dt <- unique(dt[, .(TRIP_ID, one_week_quantile)])
+
+return(round(sum(dt[['one_week_quantile']]) / nrow(dt), 4))  
+}
 ```
 
+Unmonitored trips receive the same timeliness as monitored trips within a stratum, since data from monitored trips will be used to generate estimates for unmonitored trips. As an example, the function estimates that 0.7792 of trips in 2022 had a timeliness of one week or less.  
+```{r example_1, echo = TRUE}
+evaluate_data_timeliness(data, strata_timeliness)
+```
+
+This can be compared to a fictitious data set in which all trips were in the HAL stratum:  
+```{r example_2, echo = TRUE}
+evaluate_data_timeliness(copy(data)[, STRATA := "HAL"], strata_timeliness)
+```
