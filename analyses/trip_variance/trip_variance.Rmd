@@ -129,7 +129,7 @@ vline(j=c(2,8:9)) %>%
 autofit()
 ```
 
-This table shows that, compared to Equal Rates, the standard errors associated with the 15% + Opt 0.95 allocation strategy are 74 fish (or 4.1%) lower for Chinook PSC, 21 metric tons (or 18.8%) lower for halibut PSC, 2 metric tons (or 0.2%) higher for groundfish discards, and 1,769 crab (or 6.6%) higher for crab PSC. It's important to note that crab PSC were not used as an optimization metric in 2022, meaning that the rates set in 2022 were not influenced by crab.  
+This table shows that, compared to Equal Rates, the standard errors associated with the 15% + Opt 0.95 allocation strategy are 74 fish (or 4.1%) lower for Chinook PSC, 21 metric tons (or 18.8%) lower for halibut PSC, 2 metric tons (or 0.2%) higher for groundfish discards, and 1,769 crab (or 6.6%) higher for crab PSC. It's important to note that crab PSC was not used as an optimization metric in 2022, meaning that the rates set in 2022 were not influenced by crab.  
 
 The total standard error for each allocation strategy and metric combination is the square root of the summed stratum-level variances, and is therefore not equal to the sum of the standard errors for each stratum. Although the simplifying assumptions built into this evaluation result in standard errors that are not equal to those we would expect out of the Catch Accounting System, the standard errors produced here do show the relative impact that changes to selection rates have on uncertainty at the trip-level, which is the level at which observer and EM deployment is planned. Catch estimates and CVs help provide scale, but only standard error is used as a performance metric. In presenting standard error as a performance metric, we could choose to score relative to the Equal Rates design, with low scores being better:   
 ```{r score}
@@ -140,4 +140,16 @@ mutate(Score = round(Total / Total[`Allocation scheme` == "Equal Rates"], 2)) %>
 select(-Total) %>%
 flextable() %>%
 autofit()
+```
+
+I wrote a function that estimates the trip-level mean, variance, and standard error when given a data set of effort, the PSC and discards associated with that effort, and the trip column that those two data sets should be joined on:  
+```{r function}
+effort <- copy(efrt)[ADP == 2022]
+effort <- unique(work.data[, .(TRIP_ID, OBSERVED_FLAG)])[effort, on = .(TRIP_ID)]
+
+source("common_functions/evaluate_trip_variance.R")
+```
+
+```{r example, echo=TRUE}
+evaluate_trip_variance(effort, trips_melt, trip_col = "TRIP_ID")
 ```
