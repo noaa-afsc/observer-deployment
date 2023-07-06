@@ -230,7 +230,13 @@ Unmonitored trips receive the same timeliness as monitored trips within a stratu
 evaluate_data_timeliness(data, strata_timeliness)
 ```
 
-This can be compared to a fictitious data set in which all trips were in the HAL stratum:  
+This can be compared to a design in which data from fixed-gear EM strata are available in half the time it currently takes them to reach CAS:  
 ```{r example_2, echo = TRUE}
-evaluate_data_timeliness(copy(data)[, STRATA := "HAL"], strata_timeliness)
+evaluate_data_timeliness(data, copy(strata_timeliness)[STRATA %in% c("EM_HAL", "EM_POT"), mean_data_timeliness := round(mean_data_timeliness/2, 2)])
 ```
+
+Or we could choose to return mean data timeliness for partial coverage strata only:    
+```{r example_3, echo = TRUE}
+evaluate_data_timeliness(data[COVERAGE_TYPE == "PARTIAL"], strata_timeliness)
+```
+  
