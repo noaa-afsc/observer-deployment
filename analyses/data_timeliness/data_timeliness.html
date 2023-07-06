@@ -403,10 +403,15 @@ estimates a mean data timeliness of 26.79 days for all non-jig trips
 that occurred in 2022:</p>
 <pre class="r"><code>evaluate_data_timeliness(data, strata_timeliness)</code></pre>
 <pre><code>## [1] 26.79</code></pre>
-<p>This can be compared to a fictitious data set in which all trips were
-in the HAL stratum:</p>
-<pre class="r"><code>evaluate_data_timeliness(copy(data)[, STRATA := &quot;HAL&quot;], strata_timeliness)</code></pre>
-<pre><code>## [1] 2.25</code></pre>
+<p>This can be compared to a design in which data from fixed-gear EM
+strata are available in half the time it currently takes them to reach
+CAS:</p>
+<pre class="r"><code>evaluate_data_timeliness(data, copy(strata_timeliness)[STRATA %in% c(&quot;EM_HAL&quot;, &quot;EM_POT&quot;), mean_data_timeliness := round(mean_data_timeliness/2, 2)])</code></pre>
+<pre><code>## [1] 15.37</code></pre>
+<p>Or we could choose to return mean data timeliness for partial
+coverage strata only:</p>
+<pre class="r"><code>evaluate_data_timeliness(data[COVERAGE_TYPE == &quot;PARTIAL&quot;], strata_timeliness)</code></pre>
+<pre><code>## [1] 36.41</code></pre>
 </div>
 
 
