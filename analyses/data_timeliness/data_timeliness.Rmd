@@ -189,19 +189,18 @@ data_timeliness <- rbind(em_data_timeliness, ob_data_timeliness, offload_data_ti
 ```
 
 # Calculating Data Timeliness
-For most trips, I calculated data timeliness as the time between a trip ending and data being available to the Catch Accounting System. For trawl EM, I used offload end date instead of trip end date, as I was unable to link trip end date to trawl EM offloads. I used the time at which data were available to the CAS, rather than the time at which data were submitted to the AFSC, as I could measure the former more consistently across EM and observed strata. I used data from 2022 to calculate stratum-specific data timeliness.  
+For most trips, I calculated data timeliness as the time between a trip ending and data being available to the Catch Accounting System. For trawl EM, I used offload end date instead of trip end date, as I was unable to link trip end date to trawl EM offloads. I used the time at which data were available to the CAS, rather than the time at which data were submitted to the AFSC, as I could measure the former more consistently across EM and observed strata. I used data from 2022 to calculate stratum-specific data timeliness. Dashed red lines and their associated annotations show mean data timeliness for each stratum:    
 ```{r figure, fig.width=9, fig.height=14}
 times_smry <- data_timeliness %>%
-                     group_by(YEAR, COVERAGE_TYPE, STRATA) %>%
-                     summarise(days = 7,
-                               one_week_quantile = ecdf(data_timeliness)(7), .groups = "drop") %>%
-              mutate(label = scales::percent(one_week_quantile))
+              group_by(YEAR, COVERAGE_TYPE, STRATA) %>%
+              summarise(mean_data_timeliness = round(mean(data_timeliness), 2), .groups = "drop") %>% 
+              mutate(label = paste(format(mean_data_timeliness, nsmall = 2)))
 
-times_figure <- ggplot(data_timeliness, aes(x=data_timeliness)) +
+times_figure <- ggplot(data_timeliness, aes(x = data_timeliness)) +
                 facet_grid(STRATA ~ YEAR + COVERAGE_TYPE, scales="free_y") +
-                geom_histogram(bins=20, fill="gray70") +
-                geom_vline(data = times_smry, aes(xintercept = days), color = "red", lty = 2) +
-                geom_text(data = times_smry, aes(x = 7, y = Inf, label = label), angle = 90, hjust = 1.1, vjust = -.25) +
+                geom_histogram(bins = 20, fill="gray70") +
+                geom_vline(data = times_smry, aes(xintercept = mean_data_timeliness), color = "red", lty = 2) +
+                geom_text(data = times_smry, aes(x = mean_data_timeliness, y = Inf, label = label), angle = 90, hjust = 1.2, vjust = -.25) +
                 labs(x="Data timeliness (days)", y="Count") +
                 theme_bw() +
                 theme(text=element_text(size=20))
@@ -212,12 +211,10 @@ if(!file.exists("output_figures/data_timeliness.png")){
   ggsave(filename = "output_figures/data_timeliness.png", width = 9, height = 14, units = 'in')}
 ```
 
-Dashed red lines represent a data timeliness of one week, and the percentage shown for each stratum is the percentage of trips that had a timeliness of one week or less.  
-
 # Creating a Function
-I created a function that uses the stratum-specific proportion of trips that have a timeliness of one week or less to estimate the proportion of all trips within a data set (monitored and unmonitored) that have a timeliness of one week or less. 
+I created a function that uses stratum-specific mean data timeliness to estimate the mean data timeliness of all (monitored and unmonitored) non-jig trips within a data set.   
 ```{r table}
-strata_timeliness <- setDT(times_smry)[, .(COVERAGE_TYPE, STRATA, one_week_quantile)]
+strata_timeliness <- setDT(times_smry)[, .(COVERAGE_TYPE, STRATA, mean_data_timeliness)]
 
 strata_timeliness
 ```
@@ -228,7 +225,7 @@ data <- setDT(dbGetQuery(channel_akro, "select * from akfish_sf.valhalla where a
 source("common_functions/evaluate_data_timeliness.R")
 ```
 
-Unmonitored trips receive the same timeliness as monitored trips within a stratum, since data from monitored trips will be used to generate estimates for unmonitored trips. As an example, the function estimates that 0.7792 of trips in 2022 had a timeliness of one week or less.  
+Unmonitored trips receive the same timeliness as monitored trips within a stratum, since data from monitored trips will be used to generate estimates for unmonitored trips. As an example, the function estimates a mean data timeliness of 26.79 days for all non-jig trips that occurred in 2022:  
 ```{r example_1, echo = TRUE}
 evaluate_data_timeliness(data, strata_timeliness)
 ```
