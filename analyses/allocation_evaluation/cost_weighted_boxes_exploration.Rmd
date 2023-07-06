@@ -16,7 +16,7 @@ library(flextable)          # Cleaner tables for Rmarkdown
 library(officer)            # Better formatting of flextable
 library(dplyr)              # Data wrangling for flextable
 
-load("cost_weighted_boxes_exploration_Rmd.Rdata")
+load("cost_weighted_boxes_exploration_Rmd.Rdata") # https://drive.google.com/file/d/1JK-8v7McDsGGbw3geON3tsXNsCjbMFvV/view?usp=drive_link
 ```
 
 This allocation method intends to allocate sampling to all monitored partial coverage strata (i.e., both observed and electronic monitoring) in consideration of the probability of getting at least one monitored trip in each domain (defined by space and time within each stratum) as well as monitoring costs. It is essentially a spin on Cochran's 'optimal allocation' (chapter 5.5 in Cochran 1977) which can be used to minimize the combined variance of a specified metric given each stratum's sampling costs. Cochran's equation 5.23 shows this as:
