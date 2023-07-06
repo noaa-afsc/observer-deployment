@@ -142,7 +142,7 @@ flextable() %>%
 autofit()
 ```
 
-I wrote a function that estimates the trip-level mean, variance, and standard error when given a data set of effort, the PSC and discards associated with that effort, and the trip column that those two data sets should be joined on:  
+I wrote a function that estimates the trip-level mean, variance, standard error, and CV when given a data set of effort, the PSC and discards associated with that effort, and the trip column that those two data sets should be joined on:  
 ```{r function}
 effort <- copy(efrt)[ADP == 2022]
 effort <- unique(work.data[, .(TRIP_ID, OBSERVED_FLAG)])[effort, on = .(TRIP_ID)]
