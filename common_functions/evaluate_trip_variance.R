@@ -29,5 +29,5 @@ evaluate_trip_variance <- function(effort, trips_melt, trip_col = "TRIP_ID"){
   data[, var := N^2 * (N-n)/N * 1/n * var]
   
   # Return the mean, variance, and standard error for each metric
-  return(data[, .(mean = sum(mean), variance = sum(var), standard_error = sqrt(sum(var))), keyby = .(metric)])
+  return(data[, .(mean = round(sum(mean)), variance = round(sum(var)), standard_error = round(sqrt(sum(var))), cv = round(sqrt(sum(var)) / sum(mean), 4)), keyby = .(metric)])
 }
