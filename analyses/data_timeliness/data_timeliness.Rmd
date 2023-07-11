@@ -181,7 +181,7 @@ data_timeliness <- rbind(em_data_timeliness, ob_data_timeliness, offload_data_ti
 ```
 
 # Calculating Data Timeliness
-For most trips, I calculated data timeliness as the time between a trip ending and data being available to the Catch Accounting System. For trawl EM, I used offload end date instead of trip end date, as I was unable to link trip end date to trawl EM offloads. I used the time at which data were available to the CAS, rather than the time at which data were submitted to the AFSC, as I could measure the former more consistently across EM and observed strata. I used data from 2022 to calculate stratum-specific data timeliness. Dashed red lines and their associated annotations show mean data timeliness for each stratum:    
+For most trips, I calculated data timeliness as the time between a trip ending and data being available to the Catch Accounting System. For trawl EM, I used offload end date instead of trip end date, as I was unable to link trip end date to trawl EM offloads. I used the time at which data were available to the CAS, rather than the time at which data were submitted to the AFSC, as I could measure the former more consistently across EM and observed strata. I used data from 2022 to calculate stratum-specific data timeliness. Trips from which data were not available were excluded. Dashed red lines and their associated annotations show mean data timeliness for each stratum:    
 ```{r figure, fig.width=9, fig.height=14}
 times_smry <- data_timeliness %>%
               group_by(YEAR, COVERAGE_TYPE, STRATA) %>%
@@ -207,6 +207,8 @@ if(!file.exists("output_figures/data_timeliness.png")){
 I created a function that uses stratum-specific mean data timeliness to estimate the mean data timeliness of all (monitored and unmonitored) non-jig trips within a data set.   
 ```{r table}
 strata_timeliness <- setDT(times_smry)[, .(COVERAGE_TYPE, STRATA, mean_data_timeliness)]
+
+save(strata_timeliness, file = "source_data/strata_timeliness.RData")
 
 strata_timeliness
 ```
