@@ -1,28 +1,35 @@
-evaluate_trip_variance <- function(effort, trips_melt, trip_col = "TRIP_ID"){
+evaluate_trip_variance <- function(effort, work.data, trips_melt, rates, effort_wd_join = "wd_TRIP_ID"){
   
   # Rename columns
-  metrics <- copy(trips_melt)[, ':=' (TRIP_ID = get(trip_col), STRATA = strata_ID, METRIC = Metric, VALUE = Value)]
+  metrics <- trips_melt[, .(TRIP_ID, METRIC = Metric, VALUE = Value)]
   
   # Convert optimization metrics to wide format
-  metrics <- dcast(metrics[, .(TRIP_ID, STRATA, METRIC, VALUE)], TRIP_ID + STRATA ~ METRIC, value.var = "VALUE")
+  metrics <- dcast(metrics[, .(TRIP_ID, METRIC, VALUE)], TRIP_ID ~ METRIC, value.var = "VALUE")
+  
+  # Get the original monitoring status of trips in the effort object
+  wd <- unique(work.data[, .(TRIP_ID, OBSERVED_FLAG)])
+  colnames(wd)[colnames(wd) == "TRIP_ID"] <- effort_wd_join
+  effort <- wd[effort, on = c(effort_wd_join)]
   
   # Join optimization metric values with the most recent year of trips
-  data <- metrics[effort, on = .(TRIP_ID, STRATA), nomatch=0]
-  
-  # Total number of trips and number of monitored trips per stratum
-  data[, ':=' (N = uniqueN(TRIP_ID), n = uniqueN(TRIP_ID[OBSERVED_FLAG == "Y"])), keyby = .(STRATA)]
-  
+  colnames(metrics)[colnames(metrics) == "TRIP_ID"] <- effort_wd_join
+  data <- metrics[effort, on = c(effort_wd_join)]
+
+  # Total number of trips and expected number of monitored trips per stratum
+  data <- unique(rates[, .(ADP, STRATUM_COL, SAMPLE_RATE)])[data, on = .(ADP, STRATUM_COL), nomatch=0]
+  data <- data[, ':=' (N = uniqueN(TRIP_ID), n = round(uniqueN(TRIP_ID) * SAMPLE_RATE)), keyby = .(STRATUM_COL)]
+
   # Sum metrics by columns of interest
-  data <- data[, .(chnk_psc = sum(chnk_psc), hlbt_psc = sum(hlbt_psc), discard = sum(discard), crab_psc = sum(crab_psc)), by = .(TRIP_ID, STRATA, OBSERVED_FLAG, N, n)]
+  data <- data[, .(chnk_psc = sum(chnk_psc), hlbt_psc = sum(hlbt_psc), discard = sum(discard), crab_psc = sum(crab_psc)), by = .(TRIP_ID, STRATUM_COL, OBSERVED_FLAG, N, n)]
   
   # Calculate trip-level mean and variance of monitored trips
-  mean <- data[, lapply(.SD, function(x) mean(x[OBSERVED_FLAG=="Y"], na.rm = TRUE)), .SDcols = c("chnk_psc", "hlbt_psc", "discard", "crab_psc"), keyby = c("STRATA", "N", "n")]
-  var <- data[, lapply(.SD, function(x) var(x[OBSERVED_FLAG=="Y"], na.rm = TRUE)), .SDcols = c("chnk_psc", "hlbt_psc", "discard", "crab_psc"), keyby = c("STRATA", "N", "n")]
+  mean <- data[, lapply(.SD, function(x) mean(x[OBSERVED_FLAG=="Y"], na.rm = TRUE)), .SDcols = c("chnk_psc", "hlbt_psc", "discard", "crab_psc"), keyby = c("STRATUM_COL", "N", "n")]
+  var <- data[, lapply(.SD, function(x) var(x[OBSERVED_FLAG=="Y"], na.rm = TRUE)), .SDcols = c("chnk_psc", "hlbt_psc", "discard", "crab_psc"), keyby = c("STRATUM_COL", "N", "n")]
   
-  mean <- melt(mean, id.vars = c("STRATA", "N", "n"), variable.name = "metric", value.name = "mean")
-  var <- melt(var, id.vars = c("STRATA", "N", "n"), variable.name = "metric", value.name = "var")
+  mean <- melt(mean, id.vars = c("STRATUM_COL", "N", "n"), variable.name = "metric", value.name = "mean")
+  var <- melt(var, id.vars = c("STRATUM_COL", "N", "n"), variable.name = "metric", value.name = "var")
   
-  data <- merge(mean, var, by = c("STRATA", "N", "n", "metric"))
+  data <- merge(mean, var, by = c("STRATUM_COL", "N", "n", "metric"))
   
   # Estimate the stratum-level mean and variance  
   data[, mean := N * mean]
