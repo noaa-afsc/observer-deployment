@@ -111,7 +111,8 @@ decode(ss.sampling_strata_code,
 afsc_offloads <- dbGetQuery(channel_afsc, 
 "select distinct extract(year from delivery_end_date) as year, landing_report_id, delivery_end_date
 from norpac.atl_offload
-where extract(year from delivery_end_date) = 2022")
+where extract(year from delivery_end_date) = 2022
+and landing_report_id is not null")
 
 akro_offloads <- dbGetQuery(channel_akro, 
 "select r.el_report_id as landing_report_id,
@@ -129,6 +130,7 @@ join AKFISH_REPORT.CALENDAR_DATE c on f.REPORT_DATE_PK = c.CALENDAR_DATE_PK
 join akfish_report.sampling_strata ss on ss.sampling_strata_pk = f.sampling_strata_pk
 join akfish_report.vessel v on v.vessel_pk = f.vessel_pk
 where r.year_pk >= 2021 
+and r.el_report_id is not null
 and r.CATCH_REPORT_TYPE_CODE = 'EM_OFFLOAD'
 and ss.sampling_strata_code in ('EM_TrawlFullCoverage', 'EM_TrawlPartialCoverage', 'EM_TrawlPartialCoverageTen')
 group by r.el_report_id,
@@ -141,14 +143,10 @@ decode(ss.sampling_strata_code,
 
 ```{r wrangle_data}
 em_data_timeliness <- em_trip_end %>% 
-                      left_join(
+                      inner_join(
                       em_data_available, 
                       by = "ODDS_TRIP_NUMBER"
                       ) %>% 
-                      # TODO: decide how to handle trips that have no end date
-                      filter(!is.na(TRIP_END)) %>% 
-                      # TODO: decide how to handle trips that weren't reviewed
-                      filter(!is.na(DATA_AVAILABLE)) %>%
                       select(YEAR, TRIP_NUMBER = ODDS_TRIP_NUMBER, COVERAGE_TYPE, STRATA, TRIP_END, DATA_AVAILABLE) %>% 
                       mutate(TRIP_END = as.Date(TRIP_END),
                              DATA_AVAILABLE = as.Date(DATA_AVAILABLE),
@@ -159,8 +157,6 @@ ob_data_timeliness <- ob_trips %>%
                       ob_hauls,
                       by = c("CRUISE", "PERMIT", "TRIP_SEQ")
                       ) %>% 
-                      # TODO: decide how to handle trips that have no end date
-                      filter(!is.na(TRIP_END)) %>% 
                       mutate(TRIP_NUMBER = paste0(CRUISE, PERMIT, TRIP_SEQ), 
                              TRIP_END = as.Date(TRIP_END),
                              DATA_AVAILABLE = as.Date(DATA_AVAILABLE)) %>% 
@@ -168,14 +164,10 @@ ob_data_timeliness <- ob_trips %>%
                       mutate(data_timeliness = as.numeric(difftime(DATA_AVAILABLE, TRIP_END, units = "days")))
 
 offload_data_timeliness <- afsc_offloads %>% 
-                           left_join(
+                           inner_join(
                            akro_offloads, 
                            by = "LANDING_REPORT_ID"
                            ) %>% 
-                           # TODO: decide how to handle trips that have no end date
-                           filter(!is.na(LANDING_REPORT_ID)) %>% 
-                           # TODO: decide how to handle trips that weren't reviewed
-                           filter(!is.na(DATA_AVAILABLE)) %>% 
                            select(YEAR, TRIP_NUMBER = LANDING_REPORT_ID, COVERAGE_TYPE, STRATA, TRIP_END = DELIVERY_END_DATE, DATA_AVAILABLE) %>% 
                            mutate(TRIP_END = as.Date(TRIP_END),
                                   DATA_AVAILABLE = as.Date(DATA_AVAILABLE),
