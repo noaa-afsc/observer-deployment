@@ -182,25 +182,24 @@ data_timeliness <- rbind(em_data_timeliness, ob_data_timeliness, offload_data_ti
 
 # Calculating Data Timeliness
 For most trips, I calculated data timeliness as the time between a trip ending and data being available to the Catch Accounting System. For trawl EM, I used offload end date instead of trip end date, as I was unable to link trip end date to trawl EM offloads. I used the time at which data were available to the CAS, rather than the time at which data were submitted to the AFSC, as I could measure the former more consistently across EM and observed strata. I used data from 2022 to calculate stratum-specific data timeliness. Trips from which data were not available were excluded. Dashed red lines and their associated annotations show mean data timeliness for each stratum:    
-```{r figure, fig.width=9, fig.height=14}
+```{r figure, fig.width=6, fig.height=5}
 times_smry <- data_timeliness %>%
               group_by(YEAR, COVERAGE_TYPE, STRATA) %>%
               summarise(mean_data_timeliness = round(mean(data_timeliness), 2), .groups = "drop") %>% 
               mutate(label = paste(format(mean_data_timeliness, nsmall = 2)))
 
-times_figure <- ggplot(data_timeliness, aes(x = data_timeliness)) +
-                facet_grid(STRATA ~ YEAR + COVERAGE_TYPE, scales="free_y") +
+times_figure <- ggplot(filter(data_timeliness, COVERAGE_TYPE != "FULL"), aes(x = data_timeliness)) +
+                facet_wrap(sub("_EFP", "", sub("_", " ", STRATA)) ~ ., scales="free_y", ncol = 2, dir = "v") +
                 geom_histogram(bins = 20, fill="gray70") +
-                geom_vline(data = times_smry, aes(xintercept = mean_data_timeliness), color = "red", lty = 2) +
-                geom_text(data = times_smry, aes(x = mean_data_timeliness, y = Inf, label = label), angle = 90, hjust = 1.2, vjust = -.25) +
+                geom_vline(data = filter(times_smry, COVERAGE_TYPE != "FULL"), aes(xintercept = mean_data_timeliness), color = "red", lty = 2) +
+                geom_text(data = filter(times_smry, COVERAGE_TYPE != "FULL"), aes(x = mean_data_timeliness, y = Inf, label = label), angle = 90, hjust = 1.2, vjust = -.25) +
                 labs(x="Data timeliness (days)", y="Count") +
-                theme_bw() +
-                theme(text=element_text(size=20))
+                theme_bw()
 
 times_figure
 
 if(!file.exists("output_figures/data_timeliness.png")){
-  ggsave(filename = "output_figures/data_timeliness.png", width = 9, height = 14, units = 'in')}
+  ggsave(filename = "output_figures/data_timeliness.png", width = 6, height = 5, units = 'in')}
 ```
 
 # Creating a Function
