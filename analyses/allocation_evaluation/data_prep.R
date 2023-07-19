@@ -444,7 +444,7 @@ pc_effort_dt[, POOL := ifelse(STRATA %like% "EM", "EM", ifelse(STRATA == "ZERO",
 #======================================================================================================================#
 # FIXME    LANDING_DATE missing for some trips!
 
-# pc_effort_dt[is.na(LANDING_DATE), .(N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)] # 141 trips total
+# pc_effort_dt[is.na(LANDING_DATE), .(N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)] # 96 trips total
 # pc_effort_dt[PERMIT %in% PartialCPs$VESSEL_ID & ADP %in% c(2015:2016), .(N = uniqueN(TRIP_ID)), by = .(is.na(LANDING_DATE))]
 # unique(work.data[TRIP_ID %in% pc_effort_dt[is.na(LANDING_DATE), unique(TRIP_ID)], .(TRIP_ID, REPORT_ID, MANAGEMENT_PROGRAM_CODE)])
 # All off of the trips missing LANDING_DATE are from partial coverage CPs (but some trips by those vessels DO have )
