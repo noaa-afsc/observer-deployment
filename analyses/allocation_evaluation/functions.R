@@ -1161,7 +1161,9 @@ find_conf_rate <- function(strata_n, min_rate, conf){
 # is 95% confidence that random selection will result in >= hurdle rate. If the 15% minimum can be afforded but cannot
 # be achieved at the specified confidence level, it will allocate at the highest confidence level afforded..
 # TODO add term to specify which optimization metrics to use.
-allo_min_plus_opt <- function(allo_lst, em_carve_off, conf, MIN_RATE = 0.15, budget){
+allo_min_plus_opt <- function(allo_lst, em_carve_off, conf, MIN_RATE = 0.15, budget, metrics = c("discard", "chnk_psc", "hlbt_psc")){
+  # allo_lst <- copy(allo_lst); em_carve_off <- F; conf <- 0.95; MIN_RATE <- 0.15; budget <- 4.5e6; metrics <- c("discard", "chnk_psc", "hlbt_psc")
+  
   # conf <- 0.95; MIN_RATE <- 0.15; budget <- 4.5e6
   
   # 'em_carve_off' must be TRUE or FALSE
@@ -1193,7 +1195,7 @@ allo_min_plus_opt <- function(allo_lst, em_carve_off, conf, MIN_RATE = 0.15, bud
     
     out_dt_em <- out_dt[STRATA %like% "EM"]
     out_dt_em[
-    ][, MON_RATE := ifelse(STRATA == "EM_TRW", 1/3, 0.3)
+    ][, MON_RATE := ifelse(STRATA %like% "EM_TRW", 1/3, 0.3)
     ][, MON_N := STRATA_N * MON_RATE
     ][, MON_D := MON_N * TRP_DUR] 
     # Calculate estimated total cost of EM strata by ADP
@@ -1212,7 +1214,9 @@ allo_min_plus_opt <- function(allo_lst, em_carve_off, conf, MIN_RATE = 0.15, bud
   out_dt <- out_dt[!(STRATA %like% "ZERO")]
   
   # Prepare allocation weights from trips_melt (variance of metrics for each stratum and ADP year)
-  weights <- allo_lst$tm[STRATA %in% unique(out_dt$STRATA)  , .(S2_h = var(Value), N_h = .N), keyby = .(ADP, Metric, STRATA)]
+  weights <- allo_lst$tm[
+    STRATA %in% unique(out_dt$STRATA) & Metric %in% metrics, 
+    .(S2_h = var(Value), N_h = .N), keyby = .(ADP, Metric, STRATA)]
   
   # For each ADP year...
   adp_years <- unique(out_dt$ADP)
@@ -1299,15 +1303,19 @@ allo_min_plus_opt <- function(allo_lst, em_carve_off, conf, MIN_RATE = 0.15, bud
     ][, sumN_h_S_hC := sum(N_h_S_hC), by = .(ADP, Metric)
     ][, TTL_OPT_N := (OPT_BUD * sumN_h_S_h_div_sqrtC) / sumN_h_S_hC      # Total number of optimized trips across strata
     ][, W_hopt := N_h_S_h_div_sqrtC / sumN_h_S_h_div_sqrtC
-    ][, METRIC := "dscd_hlbt_chnk"]                          # coercing the metric column to blended, which happens next 
+    ][, METRIC := paste(metrics, collapse = "+")]                          # coercing the metric column to blended, which happens next 
+    
+    # Save the weights from the individual metrics
+    metrics <- x1[, .(ADP, STRATA, STRATA_N, CONF_RATE, Metric, S_h, OPT_STRATA_N, C_N, N_h_S_h_div_sqrtC, sumN_h_S_h_div_sqrtC, W_hopt, TTL_OPT_N)]
+
     x1 <- x1[, .(
       ADP, STRATA, STRATA_N, TRP_DUR, PRIOR_MTD, CPD, BUDGET, MIN_RATE, CONF, CONF_RATE, CPD, TOT_MIN_D, TOT_CONF_D,
       OPT_BUD, MIN_N, MIN_D, CONF_N, CONF_D, METRIC, W_hopt)]
-    x1 <- x1[, lapply(.SD, mean), .SDcols=c("W_hopt"), by = .(
+    x1 <- x1[, lapply(.SD, mean), .SDcols = c("W_hopt"), by = .(
       ADP, STRATA, STRATA_N, TRP_DUR, PRIOR_MTD, BUDGET, MIN_RATE, CONF, CONF_RATE, CPD, TOT_MIN_D, TOT_CONF_D, 
       OPT_BUD, MIN_N, MIN_D, CONF_N, CONF_D,  METRIC)]
     setkey(x1, ADP, STRATA)
-    
+
     # Now apply the blended weightings 
     x1[, RAW_OPT_N := OPT_BUD / CPD * W_hopt / TRP_DUR]               # Initial estimate of optimized trips afforded 
     if(opt_days_afforded == F) x1[, OPT_N := 0] else x1[, OPT_N := RAW_OPT_N]
@@ -1329,15 +1337,22 @@ allo_min_plus_opt <- function(allo_lst, em_carve_off, conf, MIN_RATE = 0.15, bud
       x1 <- allo_equal(x1, unique(x1$BUDGET))[conf_attempt, on = .(STRATA)] 
     }
     
-    x1[, .(
-      ADP, STRATA, STRATA_N, TRP_DUR, PRIOR_MTD, CPD, MIN_RATE, CONF, CONF_RATE, METRIC, W_hopt, MIN_N, MIN_D, 
-      TOT_MIN_D, CONF_N, CONF_D, TOT_CONF_D, MON_RATE, MON_N, MON_D, OPT_N)]
+    list(
+      out = x1[, .(
+        ADP, STRATA, STRATA_N, TRP_DUR, PRIOR_MTD, CPD, MIN_RATE, CONF, CONF_RATE, METRIC, W_hopt, MIN_N, MIN_D, 
+        TOT_MIN_D, CONF_N, CONF_D, TOT_CONF_D, MON_RATE, MON_N, MON_D, OPT_N)],
+      metrics = metrics
+    )
+
   })
   
   # Prepare outputs
-  out_dt <- setkey(rbindlist(adp_list), ADP, STRATA)
+  metrics_dt <- rbindlist(lapply(adp_list, "[[", "metrics") )
+  out_dt <- setkey(rbindlist(lapply(adp_list, "[[", "out")), ADP, STRATA)
   if(em_carve_off) out_dt <- rbind(out_dt, out_dt_em, fill = T)
   setkey(out_dt, ADP, STRATA)
+  setattr(out_dt, "metrics", metrics_dt)
+  
   out_dt
   
 }
@@ -1655,6 +1670,78 @@ calculate_cwb_Ph <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
   Ph_res
   
 }
+
+
+# Gear-specific version:
+# TODO Should be able to work around having a second function here - using do.call(rbind, x)
+# before calculating Ph works for length=1 lists as well.
+calculate_cwb_Ph_gs <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
+  # omit_strata <- NULL
+  # omit_strata <- "ZERO"
+  # x <- 0.15; y <- box_res$box_smry[[1]]
+  # box_res <- copy(box_fixed_gs)
+  
+  group_cols <- c(box_res$params$year_col, box_res$params$stratum_cols)
+  year_col <- box_res$params$year_col
+  
+  # Use 'omit_strata' to omit any unmonitored strata
+  if(!is.null(omit_strata)) {
+    keep_strata <- !apply(sapply(omit_strata, function(x) names(box_res$box_smry) %like% x), 1, any)
+  } else {
+    keep_strata <- rep(T, times = length(box_res$box_smry))
+  }
+  
+  # For for a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
+  # (0-1), and then multiply it by that post-stratum's total weight of component trips centered on the post-stratum.
+  
+  # For each sample rate...
+  Ph_lst <- lapply(
+    sample_rate_vec,
+    function(x) {
+      
+      # For each stratum...
+      sapply(
+        box_res$box_smry[keep_strata],
+        function(y) {
+          
+          # For each stratum's BOX_ID, use BOX_nbr to calculate the probability that the box is sampled,
+          # and then multiply that by BOX_w to get the expected number of sampled trips in the box. Sum across
+          # all boxes to get expected number of sampled trips in stratum.
+          # x is the sample rate, y[,4] is 'BOX_nbr' and y[, 3] is 'BOX_w'. Referencing by column is faster.
+          
+          z <- do.call(rbind, y)           # Flatten the list of post-strata
+          sum(((1 - x)^z[,4])) / nrow(z)   # Calculate the expected proportion of boxes not near a sampled trip.
+          
+
+          # sum((1 - ((1 - x)^y[,"BOX_nbr"])) * y[,"BOX_w"])
+          
+        }
+      )
+    }
+  )
+  
+  # Package the results, converting to data.table
+  Ph_lst <- lapply(Ph_lst, function(z)  data.frame(GROUP_COLS = names(z), Ph = z))
+  names(Ph_lst) <- sample_rate_vec
+  Ph_dt <- rbindlist(Ph_lst, idcol = "SAMPLE_RATE")[
+  ][, SAMPLE_RATE := as.numeric(SAMPLE_RATE)
+  ][, (group_cols) := tstrsplit(GROUP_COLS, split = "[.]")
+  ][, GROUP_COLS := NULL]
+  Ph_dt[, (year_col) := lapply(.SD, as.integer), .SDcol = year_col]
+  Ph_dt <- box_res$strata_n_dt[Ph_dt, on = group_cols]
+  
+  setcolorder(Ph_dt, c("SAMPLE_RATE", group_cols, "Ph"))
+  
+  Ph_res <- list(
+    Ph_dt = Ph_dt,
+    strata_n_dt = box_res$strata_n_dt,
+    params = box_res$params
+  )
+  
+  Ph_res
+  
+}
+
 
 # Allocates using an assumed sample rate (SAMPLE_RATE) to determine Ph and monitoring costs. 
 # The assumed sample rate may not be equivalent to the allocated sample rate, which is what repeated uses of 
@@ -1980,6 +2067,121 @@ calculate_dmn_interspersion3 <- function(box_def, selection_rates, acceptor_dono
   
 }
   
+# A newer version that allows for NULL entries in acceptor_donor_lst
+calculate_dmn_interspersion4 <- function(box_def, selection_rates, acceptor_donor_lst) {
+  
+  # TODO Manually add the fill for the pools!
+  # box_def <- copy(box_sq); selection_rates <- copy(eval_rates$CURRENT.PROX); 
+  
+  if(F) {
+    
+    box_def$dmn$strata_dt      # Get STRATUM_ID
+    # With OB as only donors (including TRW_EM to itself as it is observer-based)
+    acceptor_donor_lst <-  c(
+      rep(list(4:5), times = 2),                # 1-2: OB to FG_EM
+      list(3),                                  # 3:   EM_TRW donates to itself (still an observer!)
+      rep(list(4:5), times = 2),                # 4-5: OB_HAL and OB_POT
+      list(6),                                  # 6:   OB: OB_TRW
+      list(4:5)                                 # 7:   OB to ZERO
+    )
+    
+    # With non-OB Donors
+    acceptor_donor_lst <-  c(
+      rep(list(1:2), times = 2),                # 1-2: FG_EM to itself
+      rep(list(NULL), times = 5)                # No other comparisons
+    )
+    
+  }
+  
+  # Testing with FMP
+  if(F) {
+    acceptor_donor_lst <- copy(ob_adl)
+  }
+  
+  
+  year_col <- box_def$params$year_col
+  stratum_cols <- box_def$params$stratum_cols
+  dmn_cols <- box_def$params$dmn_cols
+  
+  stratum_dt <- box_def$dmn$strata_dt
+  
+  # If 'geom' is present, get HEX_ID geometries
+  if(!is.null(box_def$dmn$geom_dmn_df)) hex_id_geom <- box_def$dmn$geom_dmn_df %>% select(HEX_ID, geometry) %>% unique()
+  
+  # Merge in the specified sample rates
+  dmn_dat <- copy(box_def$dmn$box_dmn_smry_dt)
+  dmn_dat[, STRATUM_ID := stratum_dt[dmn_dat, STRATUM_ID, on = stratum_cols]]  # Merge in STRATUM_ID
+  dmn_dat[, SAMPLE_RATE := selection_rates[dmn_dat, SAMPLE_RATE, on = c(year_col, stratum_cols)]]
+  # For each domain, calculate the probability that it will be sampled give the sample rate and number of neighbors
+  dmn_dat[, BOX_SAMPLE_PROB :=  1 - (1 - SAMPLE_RATE)^BOX_DMN_nbr]
+  
+  out <- vector(mode = "list", length = nrow(stratum_dt))
+  
+  # For each acceptor stratum...
+  for(i in 1:length(out)) {
+    # i <- 1
+    
+    
+    
+    if( nrow(stratum_dt[ acceptor_donor_lst[[i]] ]) == 0 ) {
+      # If there are no donors, skip
+      out[[i]] <- NULL
+    } else {
+      
+      focus_stratum <- stratum_dt[i, ..stratum_cols]
+      
+      # Subset the data to include the acceptor and its donors, then split by domain
+      focus_dmn_lst <- split(unique(rbind(
+        dmn_dat[focus_stratum, on = stratum_cols],
+        dmn_dat[stratum_dt[acceptor_donor_lst[[i]], ..stratum_cols], on = stratum_cols]
+      )), by = dmn_cols)
+      
+      out[[i]] <- rbindlist(lapply(focus_dmn_lst, function(x) {
+        # x <- focus_dmn_lst[[1]]
+        
+        # Subset acceptor boxes, excluding any that have no trips (weight of 0)
+        acceptor_dt <- x[focus_stratum, on = stratum_cols][BOX_DMN_w > 0]
+        acceptor_dt[, c("SAMPLE_RATE", "BOX_SAMPLE_PROB", "STRATUM_ID") := NULL]
+        
+        donor_dt_cols <- c(year_col, "STRATUM_ID",  "BOX_ID", "BOX_SAMPLE_PROB")
+        donor_dt <- x[stratum_dt[acceptor_donor_lst[[i]]], on = stratum_cols][, ..donor_dt_cols]
+        
+        # Merge in donor probabilities to acceptor by BOX_ID. 
+        donor_sample_probs <- merge(acceptor_dt, donor_dt, by = c(year_col, "BOX_ID"), all.x = T)
+        # Then, for each BOX, find the probability that at least one trip by any neighboring donor is sampled 
+        # which is (1 - probability that no neighboring donor trips are sampled)
+        donor_sample_probs[, .(BOX_DONOR_SAMPLE_PROB = 1 - prod(1 - BOX_SAMPLE_PROB)), by = c(year_col, stratum_cols, dmn_cols, "BOX_ID", "HEX_ID", "TIME", "BOX_DMN_n", "BOX_DMN_w")]
+        
+      }))
+      
+    }
+
+    # For the acceptor's domains, combine the box sample probabilities by all donors
+ 
+  }
+  
+  out <- rbindlist(out)
+  out  # This is a raw output that has probabilities separated by year, stratum, and domain. In practice, we will
+  # likely combine strata into pools (e.g., all HAL trips within EM_HAL and EM_POT or all HAL trips within OB_HAL and OB_POT)
+  
+  
+  # TODO Make summaries that groups by POOL and dmn_cols, with and without splitting by BSAI_GOA
+  
+  # Group by pool! (Include this in stratum_dt, so that this group and dmn_cols are combined)
+  
+  # Identify Pool
+  pool_dt <- copy(out)
+  pool_dt[, POOL := fcase(STRATA %like% "EM", "EM", STRATA %like% "OB", "OB", STRATA %like% "ZERO", "ZERO")][]
+  
+  list(
+    RAW = out,
+    POOLED = pool_dt,
+    params = box_def$params,
+    geom = hex_id_geom
+  )
+  
+}
+
 
 dmn_interspersion_smry <- function(dmn_res_pool_dt) {
   
@@ -2005,6 +2207,108 @@ dmn_interspersion_smry <- function(dmn_res_pool_dt) {
   )
   
 }
+
+# This is a wrapper for the domain interspersion figs to generate summary figures
+dmn_interspersion_figs <- function(box_def, selection_rates, ob_adl, nonob_adl) {
+  # ob_adl is the acceptor_donor_lst where OB is the donor to all pools (also TRW-EM to itself)
+  # nonob_adl is the acceptor_donor_lst where fixed-gear EM applies to itself
+
+  # TEST for current
+  if(F) {
+    box_def <- copy(box_sq); selection_rates <- eval_rates$EQUAL.EQUAL; 
+    
+    ob_adl <- c(
+      rep(list(4:5), times = 2),                # 1-2: EM_HAL and EM_POT 
+      list(3),                                  # 3: EM_TRW
+      rep(list(4:5), times = 2),                # 4-5: OB Fixed Gear
+      list(6),                                  # 6: OB Trawl                         
+      list(4:5)                                 # 7: ZERO           
+    )
+    
+    nonob_adl <- c(
+      rep(list(1:2), times = 2),                # 1-2: Fixed-gear EM to itself
+      rep(list(NULL), times = 5)                # 4-7: No other donors
+    )
+  }
+  
+  # TEST for FMP
+  if(F) {
+    box_def <- copy(box_fmp); selection_rates <- eval_rates$FMP.PROX_FMP; 
+    
+    ob_adl <- c(
+      rep(list(6:9), times = 4),                # 1-4:   EM_HAL and EM_POT 
+      list(5),                                  # 5:     EM_TRW
+      rep(list(6:9), times = 4),                # 6-9:   OB Fixed Gear
+      rep(list(10:11), times = 2),              # 10-11: OB Trawl                         
+      rep(list(6:9), times = 2)                 # 12-13: ZERO           
+    )
+    
+    nonob_adl <- c(
+      rep(list(1:4), times = 4),               # 1-4: Fixed-gear EM to itself
+      rep(list(NULL), times = 9)               # 5-13: No other donors
+    )
+  }
+  
+  dmn_insp_plot_theme <- list(
+    scale_x_continuous(limits = c(0,1), breaks = seq(0, 1, 0.2)),
+    scale_y_discrete(limits = rev),
+    theme(
+      legend.position = "none",
+      strip.text.x = element_text(margin = margin(b = 0.1, t = 0.1))),
+    labs(x = "Domain Interspersion", y = "Gear Type")
+  )
+  
+  dmn_insp_OB <- calculate_dmn_interspersion4(
+    box_def = box_def,
+    selection_rates = selection_rates,
+    acceptor_donor_lst = ob_adl
+  )
+  
+  dmn_insp_nonOB <- calculate_dmn_interspersion4(
+    box_def = box_def,
+    selection_rates = selection_rates,
+    acceptor_donor_lst = nonob_adl
+  )
+  
+  dmn_smry_OB  <- dmn_interspersion_smry(dmn_insp_OB)
+  dmn_smry_nonOB  <- dmn_interspersion_smry(dmn_insp_nonOB)
+
+  dmn_smry_OB$OVERALL[, FILL := fcase(
+    POOL == "EM" & GEAR %in% c("HAL", "POT"), "dodgerblue",
+    POOL == "EM" & GEAR == "TRW", "dodgerblue4",
+    POOL == "OB", "chartreuse3",
+    POOL == "ZERO", "darkorchid4"
+  )]
+  
+  dmn_smry_OB$BSAI_GOA[, FILL := fcase(
+    POOL == "EM" & GEAR %in% c("HAL", "POT"), "dodgerblue",
+    POOL == "EM" & GEAR == "TRW", "dodgerblue4",
+    POOL == "OB", "chartreuse3",
+    POOL == "ZERO", "darkorchid4"
+  )]
+  
+  dmn_plot_overall <- ggplot(dmn_smry_OB$OVERALL, aes(y = GEAR, x = POOL_DMN_INTERSPERSION)) + 
+    facet_grid(ADP ~ POOL) + geom_col(aes(fill = I(FILL))) + dmn_insp_plot_theme +
+    geom_point(data = dmn_smry_nonOB$OVERALL, shape = 23, fill = "yellow", stroke = 1) + 
+    geom_text(aes(label = round(BOX_DMN_w)), x = 0.15, hjust = 1, size = 3, color = "white")
+  
+  dmn_plot_fmp <- ggplot(dmn_smry_OB$BSAI_GOA, aes(y = GEAR, x = POOL_DMN_INTERSPERSION)) +
+    facet_grid(ADP ~ POOL + BSAI_GOA) + geom_col(aes(fill = I(FILL))) + dmn_insp_plot_theme + 
+    geom_point(data = dmn_smry_nonOB$BSAI_GOA, shape = 23, fill = "yellow", stroke = 1) + 
+    geom_text(aes(label = round(BOX_DMN_w)), x = 0.3, hjust = 1, size = 3, color = "white")
+  
+  # Final outputs
+  list(
+    DMN_INSP_OB = dmn_insp_OB,
+    DMN_INSP_NONOB = dmn_insp_nonOB,
+    DMN_INSP_OB_SMRY = dmn_smry_OB,
+    DMN_INSP_NONOB_SMRY = dmn_smry_nonOB,
+    DMN_PLOT_OVERALL = dmn_plot_overall,
+    DMN_PLOT_FMP = dmn_plot_fmp
+  )
+
+}
+
 
 # Low-res AK map used in interspersion_plot. shp_land needs to be loaded first!
 ak_low_res <- shp_land %>% st_simplify(dTolerance = 10000) %>% filter(!st_is_empty(shp_land)) %>% select(geometry)
