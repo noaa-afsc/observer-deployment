@@ -169,7 +169,7 @@ offload_data_timeliness <- afsc_offloads %>%
                            select(YEAR, TRIP_NUMBER = OFFLOAD_JOIN, COVERAGE_TYPE, STRATA, TRIP_END = DELIVERY_END_DATE, DATA_AVAILABLE = DATE_OF_ENTRY) %>% 
                            mutate(TRIP_END = as.Date(TRIP_END),
                                   DATA_AVAILABLE = as.Date(DATA_AVAILABLE),
-                                  data_timeliness = as.numeric(difftime(DATA_AVAILABLE, TRIP_END, units = "days")))
+                                  data_timeliness = as.numeric(difftime(DATA_AVAILABLE, TRIP_END, units = "days")) + 1)
 
 data_timeliness <- rbind(em_data_timeliness, ob_data_timeliness, offload_data_timeliness) %>% 
                    mutate(data_timeliness = ifelse(data_timeliness < 0, 0, data_timeliness)) %>% 
@@ -216,7 +216,7 @@ data <- setDT(dbGetQuery(channel_akro, "select * from akfish_sf.valhalla where a
 source("common_functions/evaluate_data_timeliness.R")
 ```
 
-Unmonitored trips receive the same timeliness as monitored trips within a stratum, since data from monitored trips will be used to generate estimates for unmonitored trips. As an example, the function estimates a mean data timeliness of 26.52 days for all non-jig trips that occurred in 2022:  
+Unmonitored trips receive the same timeliness as monitored trips within a stratum, since data from monitored trips will be used to generate estimates for unmonitored trips. As an example, the function estimates a mean data timeliness of 26.68 days for all non-jig trips that occurred in 2022:  
 ```{r example_1, echo = TRUE}
 evaluate_data_timeliness(data, strata_timeliness)
 ```
