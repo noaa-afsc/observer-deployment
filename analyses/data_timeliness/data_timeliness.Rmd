@@ -109,36 +109,34 @@ decode(ss.sampling_strata_code,
 'TR', 'TRW')")
 
 afsc_offloads <- dbGetQuery(channel_afsc, 
-"select distinct extract(year from delivery_end_date) as year, landing_report_id, delivery_end_date
-from norpac.atl_offload
-where extract(year from delivery_end_date) = 2022
-and landing_report_id is not null")
+"select distinct extract(year from delivery_end_date) as year, to_char(offload_join) offload_join, delivery_end_date, date_of_entry
+from obsint.offload_em_trawl_received_v
+where extract(year from delivery_end_date) = 2022")
 
 akro_offloads <- dbGetQuery(channel_akro, 
-"select r.el_report_id as landing_report_id,
--- sampling strata information
-case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end as coverage_type,
-decode(ss.sampling_strata_code,
-'EM_TrawlFullCoverage', 'EM_TRW_EFP',
-'EM_TrawlPartialCoverage', 'EM_TRW_EFP',
-'EM_TrawlPartialCoverageTen', 'EM_TRW_EFP') as strata,
-trunc(min(r.EFFECTIVE_DATE)) data_available
-from AKFISH_REPORT.CATCH_REPORT_SOURCE r
-join AKFISH_REPORT.CATCH_REPORT_SPECIES_FACT f on r.CATCH_REPORT_SOURCE_PK = f.CATCH_REPORT_SOURCE_PK
-join AKFISH_REPORT.OBSERVER_OFFLOAD o on f.OBSERVER_OFFLOAD_PK = o.OBSERVER_OFFLOAD_PK
-join AKFISH_REPORT.CALENDAR_DATE c on f.REPORT_DATE_PK = c.CALENDAR_DATE_PK
-join akfish_report.sampling_strata ss on ss.sampling_strata_pk = f.sampling_strata_pk
-join akfish_report.vessel v on v.vessel_pk = f.vessel_pk
-where r.year_pk >= 2021 
-and r.el_report_id is not null
-and r.CATCH_REPORT_TYPE_CODE = 'EM_OFFLOAD'
-and ss.sampling_strata_code in ('EM_TrawlFullCoverage', 'EM_TrawlPartialCoverage', 'EM_TrawlPartialCoverageTen')
-group by r.el_report_id,
-case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end,
-decode(ss.sampling_strata_code,
-'EM_TrawlFullCoverage', 'EM_TRW_EFP',
-'EM_TrawlPartialCoverage', 'EM_TRW_EFP',
-'EM_TrawlPartialCoverageTen', 'EM_TRW_EFP')")
+"with j as (
+    -- sub query to only include active offloads
+    select distinct offload_join
+    from akfish_report.catch_report_source
+    where expire_date is null
+    and catch_report_type_code = 'EM_OFFLOAD'
+    and year_pk = 2022
+    ), q as (
+    select to_char(r.offload_join) offload_join,
+    -- sampling strata information
+    case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end as coverage_type,
+    decode(ss.sampling_strata_code,
+    'EM_TrawlFullCoverage', 'EM_TRW_EFP',
+    'EM_TrawlPartialCoverage', 'EM_TRW_EFP',
+    'EM_TrawlPartialCoverageTen', 'EM_TRW_EFP') as strata
+    from akfish_report.catch_report_source r
+    join akfish_report.catch_report_species_fact f on f.catch_report_source_pk = r.catch_report_source_pk
+    join akfish_report.sampling_strata ss on ss.sampling_strata_pk = f.sampling_strata_pk
+    where r.catch_report_type_code = 'EM_OFFLOAD'
+      and r.year_pk = 2022
+      and r.offload_join in (select * from j)
+      and ss.sampling_strata_code != 'N/A'
+) select distinct * from q")
 ```
 
 ```{r wrangle_data}
@@ -166,9 +164,9 @@ ob_data_timeliness <- ob_trips %>%
 offload_data_timeliness <- afsc_offloads %>% 
                            inner_join(
                            akro_offloads, 
-                           by = "LANDING_REPORT_ID"
+                           by = "OFFLOAD_JOIN"
                            ) %>% 
-                           select(YEAR, TRIP_NUMBER = LANDING_REPORT_ID, COVERAGE_TYPE, STRATA, TRIP_END = DELIVERY_END_DATE, DATA_AVAILABLE) %>% 
+                           select(YEAR, TRIP_NUMBER = OFFLOAD_JOIN, COVERAGE_TYPE, STRATA, TRIP_END = DELIVERY_END_DATE, DATA_AVAILABLE = DATE_OF_ENTRY) %>% 
                            mutate(TRIP_END = as.Date(TRIP_END),
                                   DATA_AVAILABLE = as.Date(DATA_AVAILABLE),
                                   data_timeliness = as.numeric(difftime(DATA_AVAILABLE, TRIP_END, units = "days")))
@@ -218,7 +216,7 @@ data <- setDT(dbGetQuery(channel_akro, "select * from akfish_sf.valhalla where a
 source("common_functions/evaluate_data_timeliness.R")
 ```
 
-Unmonitored trips receive the same timeliness as monitored trips within a stratum, since data from monitored trips will be used to generate estimates for unmonitored trips. As an example, the function estimates a mean data timeliness of 26.79 days for all non-jig trips that occurred in 2022:  
+Unmonitored trips receive the same timeliness as monitored trips within a stratum, since data from monitored trips will be used to generate estimates for unmonitored trips. As an example, the function estimates a mean data timeliness of 26.52 days for all non-jig trips that occurred in 2022:  
 ```{r example_1, echo = TRUE}
 evaluate_data_timeliness(data, strata_timeliness)
 ```
