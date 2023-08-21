@@ -1,0 +1,160 @@
+---
+title: "Between-Trip Variance Evaluation Metric"
+output: html_document
+date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r start, include=FALSE}
+# Get packages
+library(data.table)
+library(flextable)
+library(scales)
+library(tidyverse)
+
+# Get data
+load("source_data/2024_Draft_ADP_data.rdata")
+rm(list=setdiff(ls(), c("trips_melt", "efrt", "work.data")))
+load("source_data/sandbox.rdata")
+
+# Settings
+knitr::opts_chunk$set(echo = FALSE)
+options(scipen = 9999)
+```
+
+```{r wrangle}
+# Convert optimization metrics to wide format
+metrics <- dcast(trips_melt[, .(TRIP_ID, STRATA = strata_ID, METRIC = Metric, VALUE = Value)], TRIP_ID + STRATA ~ METRIC, value.var = "VALUE")
+
+# Join optimization metric values with the most recent year of partial coverage trips
+dat <- metrics[efrt[ADP == 2022 & POOL != "ZE"], on = .(TRIP_ID, STRATA)]
+
+# Total number of trips per stratum
+dat[, N := uniqueN(TRIP_ID), keyby = .(STRATA)]
+
+# Get observed trip status
+dat <- unique(work.data[, .(TRIP_ID, OBSERVED_FLAG)])[dat, on = .(TRIP_ID)]
+
+# Sum metrics by columns of interest
+dat <- dat[, .(chnk_psc = sum(chnk_psc), hlbt_psc = sum(hlbt_psc), discard = sum(discard), crab_psc = sum(crab_psc)), by = .(TRIP_ID, STRATA, OBSERVED_FLAG, N)]
+
+# Calculate trip-level mean and variance of monitored trips
+mean <- dat[, lapply(.SD, function(x) mean(x[OBSERVED_FLAG=="Y"])), .SDcols = c("chnk_psc", "hlbt_psc", "discard", "crab_psc"), keyby = c("STRATA", "N")]
+var <- dat[, lapply(.SD, function(x) var(x[OBSERVED_FLAG=="Y"])), .SDcols = c("chnk_psc", "hlbt_psc", "discard", "crab_psc"), keyby = c("STRATA", "N")]
+
+mean <- melt(mean, id.vars = c("STRATA", "N"), variable.name = "metric", value.name = "mean")
+var <- melt(var, id.vars = c("STRATA", "N"), variable.name = "metric", value.name = "var")
+
+dat <- merge(mean, var, by = c("STRATA", "N", "metric"))
+
+rm(mean, var)
+
+# Join with the full range of sample sizes for each stratum  
+dat <- dat[, .(n = 2:N), by = .(STRATA, metric)][dat, on = .(STRATA, metric)]
+
+# Estimate the stratum-level mean and variance  
+dat[, mean := N * mean]
+dat[, var := N^2 * (N-n)/N * 1/n * var]
+
+# Recode metric names
+dat[, metric := recode(metric, "chnk_psc" = "Chinook PSC", "hlbt_psc" = "Halibut PSC", "discard" = "Groundfish discards", "crab_psc" = "Crab PSC")]
+
+# Calculate monitoring rate
+dat[, monitoring_rate := n/N]
+```
+
+In constructing the between-trip variance evaluation metric, we start by generating estimates of variance at the stratum-level for each of the current optimization metrics using the equation $N^2\frac{N - n}{N} \frac{1}{n} \frac{\sum_{i=1}^{n} (x-\bar{x})^2}{n-1}$:  
+```{r var_plot}
+ggplot(dat, aes(x = n, y = var)) +
+  geom_line() +
+  facet_grid(metric ~ STRATA, scales = "free") +
+  scale_y_continuous(labels = comma) +
+  labs(x = "Sample size", y = "Variance") +
+  theme_bw() +
+  theme(text=element_text(size=9))
+```
+
+However, it is often easier to speak in terms of standard error, which is the square root of the variance:  
+```{r se_plot}
+ggplot(dat, aes(x = n, y = sqrt(var))) +
+  geom_line() +
+  facet_grid(metric ~ STRATA, scales = "free") +
+  scale_y_continuous(labels = comma) +
+  labs(x = "Sample size", y = "Standard error") +
+  theme_bw() +
+  theme(text=element_text(size=9))
+```
+
+The data used for these estimates excludes zero coverage trips and includes zeros for trips that did not encounter any chinook PSC, halibut PSC, groundfish discards, or crab PSC. An assumption built into this approach is that all four metrics are measured without error at the trip-level, even though that is only true of chinook PSC. If we wanted to see what standard errors would result from two of the allocation schemes proposed in the Draft 2022 ADP (NMFS 2021), we could look at the selection rates that were proposed:  
+```{r example_rates, message = FALSE}
+adp_rates <- data.table(STRATA = c("EM_HAL", "EM_POT", "EM_TRW_EFP", "HAL", "POT", "TRW"),
+                        `Equal Rates` = c(30.00, 30.00, 33.33, 19.44, 19.44, 19.44),
+                        `15% + Opt 0.95` = c(30.00, 30.00, 33.33, 18.21, 17.48, 28.10),
+                         check.names = FALSE)
+
+reshape2::melt(adp_rates, id.vars = "STRATA", variable.name = "Allocation scheme") %>% 
+pivot_wider(names_from = STRATA, values_from = value) %>% 
+flextable() %>% 
+autofit()
+```
+
+And the standard errors associated with those selection rates:  
+```{r example_errors}
+est_adp <- dat %>% 
+           left_join(adp_rates, by = "STRATA") %>% 
+           melt(id.vars = c("STRATA", "metric", "N", "n", "monitoring_rate", "mean", "var"), measure.vars = c("Equal Rates", "15% + Opt 0.95"), variable.name = "Allocation scheme", value.name = "adp_rate") %>% 
+           filter(round(adp_rate/100 * N) == n)
+
+est_adp <- est_adp %>% 
+           select(STRATA, `Allocation scheme`, Metric = metric, var) %>% 
+           pivot_wider(names_from = STRATA, values_from = var) %>% 
+           mutate(Total  = rowSums(select_if(., is.numeric), na.rm = TRUE)) %>% 
+           mutate_if(is.numeric, sqrt) %>%
+           left_join(
+           est_adp %>% 
+           select(STRATA, `Allocation scheme`, Metric = metric, mean) %>% 
+           group_by(`Allocation scheme`, Metric) %>% 
+           summarise(`Catch Estimate` = sum(mean), .groups = "drop"),
+           by = join_by(`Allocation scheme`, Metric)
+           ) %>% 
+           mutate(CV = format(round(Total / `Catch Estimate`, 2), nsmall = 2)) %>% 
+           mutate_if(is.numeric, round) %>%
+           arrange(Metric, `Allocation scheme`) 
+
+est_adp %>% 
+flextable() %>% 
+add_header_row(values = c("", "Standard error", ""), colwidths = c(2, 7, 2), top = TRUE) %>% 
+align(i = 1, align = "center", part = "header") %>% 
+vline(j=c(2,8:9)) %>% 
+autofit()
+```
+
+This table shows that, compared to Equal Rates, the standard errors associated with the 15% + Opt 0.95 allocation strategy are 74 fish (or 4.1%) lower for Chinook PSC, 21 metric tons (or 18.8%) lower for halibut PSC, 2 metric tons (or 0.2%) higher for groundfish discards, and 1,769 crab (or 6.6%) higher for crab PSC. It's important to note that crab PSC was not used as an optimization metric in 2022, meaning that the rates set in 2022 were not influenced by crab.  
+
+The total standard error for each allocation strategy and metric combination is the square root of the summed stratum-level variances, and is therefore not equal to the sum of the standard errors for each stratum. Although the simplifying assumptions built into this evaluation result in standard errors that are not equal to those we would expect out of the Catch Accounting System, the standard errors produced here do show the relative impact that changes to selection rates have on uncertainty at the trip-level, which is the level at which observer and EM deployment is planned. The analyst team chose CV as the metric:   
+```{r score}
+est_adp %>%
+select(`Allocation scheme`, Metric, CV) %>%
+flextable() %>%
+autofit()
+```
+
+I wrote a function that estimates the trip-level mean, variance, standard error, and CV when given a data set of effort, a data set containing the original monitoring status of each trip, a data set containing the PSC and discards associated with the effort, the rates at which the effort will be sampled, and the trip column that data sets should be joined on:  
+```{r function}
+source("common_functions/evaluate_trip_variance.R")
+```
+
+```{r example_1, echo=TRUE}
+effort <- copy(efrt)[ADP == 2022 & POOL != "ZE"][, ':=' (STRATUM_COL = STRATA)]
+rates <- adp_rates[, .(ADP = 2022, STRATUM_COL = STRATA, SAMPLE_RATE = `15% + Opt 0.95`/100)]
+
+evaluate_trip_variance(effort, work.data, trips_melt, rates, effort_wd_join = "TRIP_ID")
+```
+
+```{r example_2, echo=TRUE}
+effort <- copy(pc_effort.current[POOL != "ZE"])
+rates <- rates_2022$CURRENT.MPO_SQ
+  
+evaluate_trip_variance(effort, work.data, trips_melt, rates, effort_wd_join = "wd_TRIP_ID")
+```
