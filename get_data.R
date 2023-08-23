@@ -112,8 +112,14 @@ FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT as vessel_id, length a
                     FROM norpac.atl_lov_vessel")
 
 # * Valhalla ----
-# Pull data from each of the four years prior to ADPyear.
+# Pull data from prior years
 work.data <- dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla"))
+
+# Load data from current year
+load("source_data/2023-08-23cas_valhalla.RData")
+
+# Append data from current year to data from prior year
+work.data <- rbind(work.data, valhalla)
 
 # Convert dates using as.Date to avoid timestamp issues
 work.data <- mutate(work.data, TRIP_TARGET_DATE = as.Date(TRIP_TARGET_DATE), LANDING_DATE = as.Date(LANDING_DATE))
