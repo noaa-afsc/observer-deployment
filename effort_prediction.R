@@ -3,16 +3,16 @@ if(!require("data.table"))   install.packages("data.table", repos='http://cran.u
 if(!require("ggplot2"))   install.packages("ggplot2", repos='http://cran.us.r-project.org')
 
 # user inputs
-ADPyear  <- 2023
+ADPyear  <- 2024
 
 # get data object produced by get_data.R
-load(paste0("data/", ADPyear, "_Final_ADP_data.rdata"))
+load(paste0("source_data/", ADPyear, "_Draft_ADP_data.rdata"))
 
 # get list of trawl EM EFP vessels (from Josh Keaton)
-efp_list <- fread("data/efp_list_2022-11-03.csv")
+efp_list <- fread("source_data/efp_list_2023-08-17.csv")
 
 # calculate cumulative effort by stratum and species using valhalla from the past four years
-cumulative.trips.target <- copy(work.data)[CVG_NEW == "PARTIAL" & AGENCY_GEAR_CODE!="JIG"]
+cumulative.trips.target <- copy(work.data)[ADP >= ADPyear - 4 & CVG_NEW == "PARTIAL" & AGENCY_GEAR_CODE!="JIG"]
 
 # simplify species and fmp labels
 cumulative.trips.target[, TRIP_TARGET_CODE:=ifelse(!(TRIP_TARGET_CODE %in% c("P", "B", "C", "I", "S")), "Other", TRIP_TARGET_CODE)
@@ -104,6 +104,7 @@ p4 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) 
 # "GOA Halibut EM_POT",
 # "GOA Halibut HAL",
 # "GOA Halibut ZERO",
+# "GOA Pollock EM_TRW_EFP",
 # "GOA Pollock TRW",
 # "GOA Sablefish EM_HAL",
 # "GOA Sablefish EM_POT",
@@ -189,6 +190,7 @@ dec.oct.ratio <- rbind(
                                                         "GOA Other HAL",
                                                         "GOA Other TRW",
                                                         "GOA Other ZERO",
+                                                        "GOA Pollock EM_TRW_EFP",
                                                         "GOA Pacific Cod TRW",
                                                         "BSAI Halibut EM_POT",
                                                         "BSAI Halibut ZERO",
