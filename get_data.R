@@ -33,50 +33,8 @@ PSC <-
                    AND el_report_id is not null
                    GROUP BY year, el_report_id, species_group_code"))
 
-# * Voluntary full coverage ----
-#   Requests to join must be made prior to October 15  
-BSAIVoluntary <-
-  dbGetQuery(channel_afsc,
-             if(ADP_version == "Draft"){
-               paste(
-                 " -- From Andy Kingham
-                 SELECT extract(year from ovsp.end_date) as year, 
-                 ovsp.*,
-                 lv.name,
-                 lv.permit as vessel_id,
-                 aos.DATE_OPTED,
-                 DECODE(aos.opt_in_out, 'R', 'Requested, Approved', 'D', 'Denied', 'A', 'Appealed, Approved') opt_in_out_status
-                 FROM norpac.odds_vessel_sample_plan ovsp
-                 JOIN norpac.atl_lov_vessel lv
-                 ON lv.vessel_seq = ovsp.vessel_seq
-                 JOIN norpac.odds_eligible_opt_strata eos
-                 ON eos.VESSEL_SEQ = ovsp.VESSEL_SEQ
-                 AND eos.sample_plan_seq = ovsp.sample_plan_seq
-                 JOIN norpac.odds_annual_opt_strata aos
-                 ON aos.ELIGIBLE_OPT_SEQ = eos.ELIGIBLE_OPT_SEQ 
-                 WHERE ovsp.SAMPLE_PLAN_SEQ = 8
-                 AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 2, "
-                 AND aos.year_eligible = ", ADPyear - 1, "")} else
-                   paste(
-                     " -- From Andy Kingham
-                     SELECT extract(year from ovsp.end_date) as year,
-                     ovsp.*,
-                     lv.name,
-                     lv.permit as vessel_id,
-                     aos.DATE_OPTED,
-                     DECODE(aos.opt_in_out, 'R', 'Requested, Approved', 'D', 'Denied', 'A', 'Appealed, Approved') opt_in_out_status
-                     FROM norpac.odds_vessel_sample_plan ovsp
-                     JOIN norpac.atl_lov_vessel lv
-                     ON lv.vessel_seq = ovsp.vessel_seq
-                     JOIN norpac.odds_eligible_opt_strata eos
-                     ON eos.VESSEL_SEQ = ovsp.VESSEL_SEQ
-                     AND eos.sample_plan_seq = ovsp.sample_plan_seq
-                     JOIN norpac.odds_annual_opt_strata aos
-                     ON aos.ELIGIBLE_OPT_SEQ = eos.ELIGIBLE_OPT_SEQ 
-                     WHERE ovsp.SAMPLE_PLAN_SEQ = 8
-                     AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 1, "
-                     AND aos.year_eligible = ", ADPyear, "")
-                   )
+# * PCTC ----
+pctc <- if(ADP_version == "Draft"){read.csv("source_data/pctc_list_2023-08-18.csv")}
 
 # * Partial Coverage CPs ----
 #   Requests to join must be made prior to July 1  
@@ -260,8 +218,8 @@ work.data <- mutate(work.data, CVG_NEW = NA)
 # Mandatory full coverage
 work.data <- mutate(work.data, CVG_NEW = ifelse(COVERAGE_TYPE == "FULL" & STRATA %in% c("FULL", "EM_TRW_EFP", "VOLUNTARY"), "FULL", CVG_NEW))
 
-# Voluntary full coverage: opted in for ADPyear
-work.data <- mutate(work.data, CVG_NEW = ifelse(VESSEL_ID %in% BSAIVoluntary$VESSEL_ID &
+# PCTC
+work.data <- mutate(work.data, CVG_NEW = ifelse(VESSEL_ID %in% pctc$VESSEL_ID &
                                                 FMP %in% c("BS", "AI", "BSAI") &
                                                 AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & 
                                                 PROCESSING_SECTOR == "S",
