@@ -60,7 +60,7 @@ max.date <- max(cumulative.trips.target[ADP==ADPyear-1, JULIAN_DATE])
 
 ## GOA
 p1 <- ggplot(cumulative.trips.target[FMP == "GOA"], aes(JULIAN_DATE, C_TRIPS)) +
-      geom_line(aes(color=as.character(ADP)), size=1.2) + 
+      geom_line(aes(color=as.character(ADP)), linewidth=1.2) + 
       geom_vline(xintercept = max.date, color="red") +
       geom_vline(xintercept = 366) +
       facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
@@ -69,7 +69,7 @@ p1 <- ggplot(cumulative.trips.target[FMP == "GOA"], aes(JULIAN_DATE, C_TRIPS)) +
 
 ## BSAI
 p2 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) +
-      geom_line(aes(color=as.character(ADP)), size=1.2) + 
+      geom_line(aes(color=as.character(ADP)), linewidth=1.2) + 
       geom_vline(xintercept = max.date, color="red") +
       geom_vline(xintercept = 366) +
       facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
@@ -80,7 +80,7 @@ p2 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) 
 
 ## GOA
 p3 <- ggplot(cumulative.trips.target[FMP == "GOA"], aes(JULIAN_DATE, C_TRIPS)) +
-      geom_line(aes(color=as.character(ADP)), size=1.2) + 
+      geom_line(aes(color=as.character(ADP)), linewidth=1.2) + 
       geom_vline(xintercept = max.date, color="red") +
       geom_vline(xintercept = 366) +
       coord_cartesian(xlim = c(max.date-20, 366)) +
@@ -90,7 +90,7 @@ p3 <- ggplot(cumulative.trips.target[FMP == "GOA"], aes(JULIAN_DATE, C_TRIPS)) +
 
 ## BSAI
 p4 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) +
-      geom_line(aes(color=as.character(ADP)), size=1.2) + 
+      geom_line(aes(color=as.character(ADP)), linewidth=1.2) + 
       geom_vline(xintercept = max.date, color="red") +
       geom_vline(xintercept = 366) +
       coord_cartesian(xlim = c(max.date-20, 366)) +
@@ -228,7 +228,7 @@ cumulative.trips.target <- rbind(
 # plot cumulative trips by year and stratum for EM_HAL
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
 p5 <- ggplot(cumulative.trips.target[STRATA=="EM_HAL" & C_TRIPS>1, ], aes(JULIAN_DATE, C_TRIPS)) + # for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-      geom_line(aes(color=as.character(ADP)), size=1.5) + 
+      geom_line(aes(color=as.character(ADP)), linewidth=1.5) + 
       geom_vline(xintercept = max.date, color="red") +
       geom_vline(xintercept = 366) +
       facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
@@ -238,7 +238,7 @@ p5 <- ggplot(cumulative.trips.target[STRATA=="EM_HAL" & C_TRIPS>1, ], aes(JULIAN
 # plot cumulative trips by year and stratum for EM_POT
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
 p6 <- ggplot(cumulative.trips.target[STRATA=="EM_POT" & C_TRIPS>1, ], aes(JULIAN_DATE, C_TRIPS)) + # for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-      geom_line(aes(color=as.character(ADP)), size=1.5) + 
+      geom_line(aes(color=as.character(ADP)), linewidth=1.5) + 
       geom_vline(xintercept = max.date, color="red") +
       geom_vline(xintercept = 366) +
       facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
@@ -248,7 +248,7 @@ p6 <- ggplot(cumulative.trips.target[STRATA=="EM_POT" & C_TRIPS>1, ], aes(JULIAN
 # plot cumulative trips by year and stratum for HAL
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
 p7 <- ggplot(cumulative.trips.target[STRATA=="HAL" & C_TRIPS>1, ], aes(JULIAN_DATE, C_TRIPS)) + # for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-      geom_line(aes(color=as.character(ADP)), size=1.5) + 
+      geom_line(aes(color=as.character(ADP)), linewidth=1.5) + 
       geom_vline(xintercept = max.date, color="red") +
       geom_vline(xintercept = 366) +
       facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
@@ -258,7 +258,7 @@ p7 <- ggplot(cumulative.trips.target[STRATA=="HAL" & C_TRIPS>1, ], aes(JULIAN_DA
 # plot cumulative trips by year and stratum for POT
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
 p8 <- ggplot(cumulative.trips.target[STRATA=="POT" & C_TRIPS>1, ], aes(JULIAN_DATE, C_TRIPS)) + # for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-      geom_line(aes(color=as.character(ADP)), size=1.5) + 
+      geom_line(aes(color=as.character(ADP)), linewidth=1.5) + 
       geom_vline(xintercept = max.date, color="red") +
       geom_vline(xintercept = 366) +
       facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
@@ -268,7 +268,7 @@ p8 <- ggplot(cumulative.trips.target[STRATA=="POT" & C_TRIPS>1, ], aes(JULIAN_DA
 # plot cumulative trips by year and stratum for TRW
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
 p9 <- ggplot(cumulative.trips.target[STRATA=="TRW" & C_TRIPS>1, ], aes(JULIAN_DATE, C_TRIPS)) + # for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-      geom_line(aes(color=as.character(ADP)), size=1.5) + 
+      geom_line(aes(color=as.character(ADP)), linewidth=1.5) + 
       geom_vline(xintercept = max.date, color="red") +
       geom_vline(xintercept = 366) +
       facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
@@ -278,7 +278,7 @@ p9 <- ggplot(cumulative.trips.target[STRATA=="TRW" & C_TRIPS>1, ], aes(JULIAN_DA
 # plot cumulative trips by year and stratum for ZERO
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
 p10 <- ggplot(cumulative.trips.target[STRATA=="ZERO" & C_TRIPS>1, ], aes(JULIAN_DATE, C_TRIPS)) + # for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-       geom_line(aes(color=as.character(ADP)), size=1.5) + 
+       geom_line(aes(color=as.character(ADP)), linewidth=1.5) + 
        geom_vline(xintercept = max.date, color="red") +
        geom_vline(xintercept = 366) +
        facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
