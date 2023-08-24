@@ -83,19 +83,11 @@ BSAIVoluntary <-
 
 # * Partial Coverage CPs ----
 #   Requests to join must be made prior to July 1  
-#   F/V Trident doesn't have an FFP and operates solely in state waters 
+#   F/V Trident (VESSEL_ID == 662) doesn't have an FFP and operates solely in state waters 
 #   so therefore it's not subject to observer coverage. For accounting purposes, 
 #   we treat it like one of these small CPs, so it's on this list.
 #   For more info on this, see Alicia Miller.  
-PartialCPs <- dbGetQuery(channel_akro,
-                         paste("select distinct ev.vessel_id, ev.begin_date, v.name as vessel_name, e.name as elibibility
-                               from akfish.eligible_vessel ev
-                               join akfish.eligibility e on e.id = ev.eligibility_id
-                               join akfish_report.vessel v on v.vessel_id = ev.vessel_id
-                               where e.name = 'CP PARTIAL COVERAGE'
-                               and ev.end_date is null
-                               and v.end_date is null
-                               and v.expire_date is null"))
+PartialCPs <- data.frame(VESSEL_ID = c(662, 4581, 6039))
 
 # * Fixed-gear EM research ---- 
 em_research <- 
