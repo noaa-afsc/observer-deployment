@@ -615,6 +615,9 @@ fg_em[, FLAG := ifelse(PERMIT %in% em_research$VESSEL_ID, "RESEARCH", "NONE")]
 fg_em <- rbind(fg_em, setDT(copy(em_requests))[, .(VESSEL_NAME, PERMIT=VESSEL_ID)], fill = TRUE)
 fg_em[, FLAG := ifelse(PERMIT %in% em_requests$VESSEL_ID, "REQUEST", FLAG)]
 
+# Make vessel list unique
+fg_em <- unique(fg_em)
+
 # Counts of vessels listed in EM
 fg_em[, .N, by=FLAG]  
 
