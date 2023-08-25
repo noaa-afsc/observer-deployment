@@ -286,6 +286,11 @@ arrange(COVERAGE_TYPE, CVG_NEW, STRATA)
 # Partial coverage strata
 work.data <- mutate(work.data, CVG_NEW = ifelse(is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA %in% c("EM", "EM Voluntary", "EM_HAL", "EM_POT", "EM_TenP", "EM_TRW_EFP", "HAL", "POT", "t", "T", "TenH", "TenP", "TenTR", "TRIP", "TRW", "VESSEL", "ZERO", "ZERO_EM_RESEARCH"), "PARTIAL", CVG_NEW))
 
+# Split trips that fished both full and partial coverage
+work.data[, N := uniqueN(CVG_NEW), by = .(TRIP_ID)
+          ][N > 1, TRIP_ID := ifelse(CVG_NEW != "FULL", paste(TRIP_ID, 1), paste(TRIP_ID, 2))
+            ][, N := NULL]
+
 # Check for remaining NAs in CVG_NEW
 filter(work.data, is.na(CVG_NEW)) %>% 
 distinct(ADP, COVERAGE_TYPE, CVG_NEW, STRATA) %>% 
@@ -334,7 +339,8 @@ under_forties
 under_forties <- filter(under_forties, FMAVL < 40 | is.na(FMAVL))
 
 # Flip STRATA_NEW to ZERO for vessels that are < 40 according to fma
-work.data <- mutate(work.data, STRATA_NEW = ifelse(TRIP_ID %in% under_forties$TRIP_ID, "ZERO", STRATA_NEW))
+work.data <- mutate(work.data, CVG_NEW = ifelse(TRIP_ID %in% under_forties$TRIP_ID, "PARTIAL", CVG_NEW),
+                               STRATA_NEW = ifelse(TRIP_ID %in% under_forties$TRIP_ID, "ZERO", STRATA_NEW))
 
 # View > 40's without coverage:
 over_forties <- filter(work.data, LENGTH_OVERALL > 39 & AGENCY_GEAR_CODE != "JIG" & STRATA_NEW == "ZERO" & !(VESSEL_ID %in% em_research$VESSEL_ID)) %>% 
@@ -409,12 +415,8 @@ work.data <- copy(work.data)[TRIP_ID %in% work.data[STRATA_NEW == "EM_TRW_EFP", 
                                ][, N := NULL]
 
 # Split trips that fished both full and partial coverage
-work.data[, N := uniqueN(CVG_NEW), by = .(TRIP_ID)
-          ][N > 1, TRIP_ID := ifelse(CVG_NEW != "FULL", paste(TRIP_ID, 1), paste(TRIP_ID, 2))
-            ][, N := NULL]
-
-work.data[TRIP_ID %in% work.data[STRATA_NEW == "FULL", TRIP_ID], N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
-          ][N > 1, TRIP_ID := ifelse(STRATA_NEW != "FULL", paste(TRIP_ID, 1), paste(TRIP_ID, 2))
+work.data[, N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
+          ][N > 1, TRIP_ID := ifelse(STRATA_NEW == "FULL", paste(TRIP_ID, 1), TRIP_ID)
             ][, N := NULL]
 
 # For remaining combo strata trips, default to stratum with the most landed weight
