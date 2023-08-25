@@ -409,6 +409,10 @@ work.data <- copy(work.data)[TRIP_ID %in% work.data[STRATA_NEW == "EM_TRW_EFP", 
                                ][, N := NULL]
 
 # Split trips that fished both full and partial coverage
+work.data[, N := uniqueN(CVG_NEW), by = .(TRIP_ID)
+          ][N > 1, TRIP_ID := ifelse(CVG_NEW != "FULL", paste(TRIP_ID, 1), paste(TRIP_ID, 2))
+            ][, N := NULL]
+
 work.data[TRIP_ID %in% work.data[STRATA_NEW == "FULL", TRIP_ID], N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
           ][N > 1, TRIP_ID := ifelse(STRATA_NEW != "FULL", paste(TRIP_ID, 1), paste(TRIP_ID, 2))
             ][, N := NULL]
@@ -420,6 +424,7 @@ work.data[, N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
               ][, ':=' (N = NULL, STRATA_WEIGHT = NULL)]
 
 # Check for any remaining combo strata trips 
+unique(work.data[, .(TRIP_ID, CVG_NEW)])[, .N, by = .(TRIP_ID)][N > 1]
 unique(work.data[, .(TRIP_ID, STRATA_NEW)])[, .N, by = .(TRIP_ID)][N > 1]
 
 # * Get TRIP_IDs for PSC ----
