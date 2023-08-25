@@ -33,6 +33,9 @@ PSC <-
                    AND el_report_id is not null
                    GROUP BY year, el_report_id, species_group_code"))
 
+# * PCTC ----
+pctc <- if(ADP_version == "Draft"){read.csv("source_data/pctc_list_2023-08-18.csv")}
+
 # * Voluntary full coverage ----
 #   Requests to join must be made prior to October 15  
 BSAIVoluntary <-
@@ -76,23 +79,15 @@ BSAIVoluntary <-
                      WHERE ovsp.SAMPLE_PLAN_SEQ = 8
                      AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 1, "
                      AND aos.year_eligible = ", ADPyear, "")
-                   )
+  )
 
 # * Partial Coverage CPs ----
 #   Requests to join must be made prior to July 1  
-#   F/V Trident doesn't have an FFP and operates solely in state waters 
+#   F/V Trident (VESSEL_ID == 662) doesn't have an FFP and operates solely in state waters 
 #   so therefore it's not subject to observer coverage. For accounting purposes, 
 #   we treat it like one of these small CPs, so it's on this list.
 #   For more info on this, see Alicia Miller.  
-PartialCPs <- dbGetQuery(channel_akro,
-                         paste("select distinct ev.vessel_id, ev.begin_date, v.name as vessel_name, e.name as elibibility
-                               from akfish.eligible_vessel ev
-                               join akfish.eligibility e on e.id = ev.eligibility_id
-                               join akfish_report.vessel v on v.vessel_id = ev.vessel_id
-                               where e.name = 'CP PARTIAL COVERAGE'
-                               and ev.end_date is null
-                               and v.end_date is null
-                               and v.expire_date is null"))
+PartialCPs <- data.frame(VESSEL_ID = c(662, 4581, 6039))
 
 # * Fixed-gear EM research ---- 
 em_research <- 
@@ -144,18 +139,7 @@ em_requests <-
                    AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'"))
 
 # * Trawl EM ----
-trawl_em <- setDT(dbGetQuery(channel_akro, paste0(
-            "select distinct
-            ev.vessel_id, v.name as vessel_name, extract(year from ev.begin_date) as begin_year
-            from akfish.eligible_vessel ev
-            join akfish.eligibility e on e.id = ev.eligibility_id
-            join akfish_report.vessel v on v.vessel_id = ev.vessel_id
-            where e.name like '%Trawl EM%'
-            and v.end_date is null
-            and v.expire_date is null
-            and extract(year from ev.begin_date) < ", ADPyear + 1, "
-            and (ev.end_date is null or extract(year from ev.end_date) = ", ADPyear, ")
-            order by v.name")))
+trawl_em <- read.csv("source_data/efp_list_2023-08-17.csv")
 
 # * Vessel lengths ----
 AKROVL <- dbGetQuery(channel_afsc, "select distinct ID as vessel_id, length_overall as akrovl
@@ -165,8 +149,14 @@ FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT as vessel_id, length a
                     FROM norpac.atl_lov_vessel")
 
 # * Valhalla ----
-# Pull data from each of the four years prior to ADPyear.
+# Pull data from prior years
 work.data <- dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla"))
+
+# Load data from current year
+load("source_data/2023-08-23cas_valhalla.RData")
+
+# Append data from current year to data from prior year
+work.data <- rbind(work.data, valhalla)
 
 # Convert dates using as.Date to avoid timestamp issues
 work.data <- mutate(work.data, TRIP_TARGET_DATE = as.Date(TRIP_TARGET_DATE), LANDING_DATE = as.Date(LANDING_DATE))
@@ -260,7 +250,16 @@ work.data <- mutate(work.data, CVG_NEW = NA)
 # Mandatory full coverage
 work.data <- mutate(work.data, CVG_NEW = ifelse(COVERAGE_TYPE == "FULL" & STRATA %in% c("FULL", "EM_TRW_EFP", "VOLUNTARY"), "FULL", CVG_NEW))
 
-# Voluntary full coverage: opted in for ADPyear
+# PCTC
+work.data <- mutate(work.data, CVG_NEW = ifelse(VESSEL_ID %in% pctc$VESSEL_ID &
+                                                FMP %in% c("BS", "AI", "BSAI") &
+                                                AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & 
+                                                TRIP_TARGET_CODE == "C" &
+                                                # Only applies to A & B season
+                                                yday(as.Date(paste0(ADP,"-12-31"))) - yday(as.Date(TRIP_TARGET_DATE)) > 204,
+                                                "FULL", CVG_NEW))
+
+# Voluntary full coverage
 work.data <- mutate(work.data, CVG_NEW = ifelse(VESSEL_ID %in% BSAIVoluntary$VESSEL_ID &
                                                 FMP %in% c("BS", "AI", "BSAI") &
                                                 AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & 
@@ -312,7 +311,7 @@ work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_research$VE
 # Trawl EM ----
 work.data <- work.data %>% 
              group_by(TRIP_ID) %>% 
-             mutate(STRATA_NEW = ifelse(VESSEL_ID %in% trawl_em$VESSEL_ID & 
+             mutate(STRATA_NEW = ifelse(VESSEL_ID %in% trawl_em$PERMIT & 
                                         all(AGENCY_GEAR_CODE == "PTR") & 
                                         all(TRIP_TARGET_CODE %in% c("B", "P")),
                                         "EM_TRW_EFP",
@@ -615,6 +614,9 @@ fg_em[, FLAG := ifelse(PERMIT %in% em_research$VESSEL_ID, "RESEARCH", "NONE")]
 # Add back EM requesting vessels
 fg_em <- rbind(fg_em, setDT(copy(em_requests))[, .(VESSEL_NAME, PERMIT=VESSEL_ID)], fill = TRUE)
 fg_em[, FLAG := ifelse(PERMIT %in% em_requests$VESSEL_ID, "REQUEST", FLAG)]
+
+# Make vessel list unique
+fg_em <- unique(fg_em)
 
 # Counts of vessels listed in EM
 fg_em[, .N, by=FLAG]  
