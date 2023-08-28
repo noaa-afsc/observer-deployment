@@ -5,5 +5,5 @@ evaluate_data_timeliness <- function(data, strata_timeliness){
   
   dt <- unique(dt[, .(TRIP_ID, mean_data_timeliness)])
   
-  return(round(mean(dt[['mean_data_timeliness']]), 2))  
+  return(round(mean(dt[['mean_data_timeliness']], na.rm = TRUE), 2))  
 }
