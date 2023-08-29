@@ -15,10 +15,95 @@ load("results/draft_rates_effort.rdata")
 source("common_functions/evaluate_data_timeliness.R")
 
 # Evaluate data timeliness ----
+year                    <- 2022
+data_timeliness_results <- data.table()
 
-# * Wrangle strata_timeliness ----
-strata_timeliness <- strata_timeliness[, ":=" (STRATA = recode(STRATA, "EM_TRW_EFP" = "EM_TRW", "HAL" = "OB_HAL", "POT" = "OB_POT", "TRW" = "OB_TRW"))][COVERAGE_TYPE == "PARTIAL", .(COVERAGE_TYPE, STRATA, mean_data_timeliness)]
+# * $3.5M budget ----
+budget <- 3500000
 
-# * Join strata_timeliness to partial coverage effort
-evaluate_data_timeliness(pc_effort.CURRENT[, COVERAGE_TYPE := "PARTIAL"], strata_timeliness)
+# * * Current stratification ----
+stratification <- "CURRENT"
+data           <- unique(work.data[TRIP_ID %in% pc_effort.CURRENT[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
 
+allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+
+# * * Fixed FMP stratification ----
+stratification <- "FIXED_FMP"
+data           <- unique(work.data[TRIP_ID %in% pc_effort.FIXED_FMP[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
+
+allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+
+# * * FMP stratification ----
+stratification <- "FMP"
+data           <- unique(work.data[TRIP_ID %in% pc_effort.FMP[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
+
+allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+
+# * $4.5M budget ----
+budget <- 4500000
+
+# * * Current stratification ----
+stratification <- "CURRENT"
+data           <- unique(work.data[TRIP_ID %in% pc_effort.CURRENT[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
+
+allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+
+# * * Fixed FMP stratification ----
+stratification <- "FIXED_FMP"
+data           <- unique(work.data[TRIP_ID %in% pc_effort.FIXED_FMP[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
+
+allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+
+# * * FMP stratification ----
+stratification <- "FMP"
+data           <- unique(work.data[TRIP_ID %in% pc_effort.FMP[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
+
+allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+
+# * $5.25M budget ----
+budget <- 5250000
+
+# * * Current stratification ----
+stratification <- "CURRENT"
+data           <- unique(work.data[TRIP_ID %in% pc_effort.CURRENT[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
+
+allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+
+# * * Fixed FMP stratification ----
+stratification <- "FIXED_FMP"
+data           <- unique(work.data[TRIP_ID %in% pc_effort.FIXED_FMP[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
+
+allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+
+# * * FMP stratification ----
+stratification <- "FMP"
+data           <- unique(work.data[TRIP_ID %in% pc_effort.FMP[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
+
+allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
+allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(budget, year, stratification, allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, budget, rates, stratification, allocation)))
