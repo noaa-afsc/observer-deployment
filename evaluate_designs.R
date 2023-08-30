@@ -112,7 +112,7 @@ Allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_res
 Allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
 
 # * Format results ----
-data_timeliness_results <- data_timeliness_results[, ":=" (Category = "Data timeliness", 
+data_timeliness_results <- data_timeliness_results[, ":=" (Category = "", 
                                                            BUDGET = recode(as.character(BUDGET), "3500000" = "$3.5M", "4500000" = "$4.5M", "5250000" = "$5.25M"),
                                                            Stratification = Stratification,
                                                            Allocation = factor(Allocation, levels = levels(scorecard_dt$Allocation)),
@@ -227,7 +227,29 @@ trip_variance_results <- trip_variance_results[, ":=" (Category = "Variance (CV)
 
 scorecard_dt <- rbind(scorecard_dt, trip_variance_results)
 
+ggplot(scorecard_dt[BUDGET == "$3.5M"], aes(x = Allocation, y = variable, fill = DIFF)) +
+  facet_nested(Category ~ BUDGET + Stratification, scales = "free", space = "free", switch = "y", labeller = labeller(
+    BUDGET = function(x) paste("Budget: ", x),
+    Stratification = function(x) paste("Stratification: ", x))) +
+  geom_tile() +
+  scale_fill_gradient2(limits = c(-1, 1), na.value = muted("red")) +
+  #scale_fill_gradient2(trans = signed_sqrt) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
+  geom_text(aes(label = formatC(value, digits = 3, format = "f")), size = 2) +
+  labs(fill = "Relative Benefit", y = "Metric")
+
 ggplot(scorecard_dt[BUDGET == "$4.5M"], aes(x = Allocation, y = variable, fill = DIFF)) +
+  facet_nested(Category ~ BUDGET + Stratification, scales = "free", space = "free", switch = "y", labeller = labeller(
+    BUDGET = function(x) paste("Budget: ", x),
+    Stratification = function(x) paste("Stratification: ", x))) +
+  geom_tile() +
+  scale_fill_gradient2(limits = c(-1, 1), na.value = muted("red")) +
+  #scale_fill_gradient2(trans = signed_sqrt) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
+  geom_text(aes(label = formatC(value, digits = 3, format = "f")), size = 2) +
+  labs(fill = "Relative Benefit", y = "Metric")
+
+ggplot(scorecard_dt[BUDGET == "$5.25M"], aes(x = Allocation, y = variable, fill = DIFF)) +
   facet_nested(Category ~ BUDGET + Stratification, scales = "free", space = "free", switch = "y", labeller = labeller(
     BUDGET = function(x) paste("Budget: ", x),
     Stratification = function(x) paste("Stratification: ", x))) +
