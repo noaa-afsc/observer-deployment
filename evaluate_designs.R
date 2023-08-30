@@ -3,6 +3,7 @@
 # * Get packages ----
 library(data.table)
 library(ggh4x)
+library(scales)
 library(tidyverse)
 
 # * Get data ----
@@ -231,7 +232,7 @@ ggplot(scorecard_dt[BUDGET == "$4.5M"], aes(x = Allocation, y = variable, fill =
     BUDGET = function(x) paste("Budget: ", x),
     Stratification = function(x) paste("Stratification: ", x))) +
   geom_tile() +
-  scale_fill_gradient2() +
+  scale_fill_gradient2(limits = c(-1, 1), na.value = muted("red")) +
   #scale_fill_gradient2(trans = signed_sqrt) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
   geom_text(aes(label = formatC(value, digits = 3, format = "f")), size = 2) +
