@@ -1,4 +1,4 @@
-evaluate_trip_variance <- function(effort, work.data, trips_melt, rates, effort_wd_join = "wd_TRIP_ID"){
+evaluate_trip_variance <- function(effort, work.data, trips_melt, budget, rates, stratification, allocation, effort_wd_join = "wd_TRIP_ID"){
   
   # Rename columns
   metrics <- trips_melt[, .(TRIP_ID, METRIC = Metric, VALUE = Value)]
@@ -14,11 +14,10 @@ evaluate_trip_variance <- function(effort, work.data, trips_melt, rates, effort_
   # Join optimization metric values with the most recent year of trips
   colnames(metrics)[colnames(metrics) == "TRIP_ID"] <- effort_wd_join
   data <- metrics[effort, on = c(effort_wd_join)]
-
+  
   # Total number of trips and expected number of monitored trips per stratum
-  data <- unique(rates[, .(ADP, STRATUM_COL, SAMPLE_RATE)])[data, on = .(ADP, STRATUM_COL), nomatch=0]
-  data <- data[, ':=' (N = uniqueN(TRIP_ID), n = round(uniqueN(TRIP_ID) * SAMPLE_RATE)), keyby = .(STRATUM_COL)]
-
+  data <- unique(rates[[paste(stratification, allocation, sep = ".")]][BUDGET == budget, .(ADP, STRATUM_COL, N = STRATA_N, n)])[data, on = .(ADP, STRATUM_COL), nomatch=0]
+  
   # Sum metrics by columns of interest
   data <- data[, .(chnk_psc = sum(chnk_psc), hlbt_psc = sum(hlbt_psc), discard = sum(discard), crab_psc = sum(crab_psc)), by = .(TRIP_ID, STRATUM_COL, OBSERVED_FLAG, N, n)]
   
