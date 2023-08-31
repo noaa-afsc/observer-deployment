@@ -16,6 +16,7 @@ load("results/scorecard_dt.rdata")
 
 # * Get functions ----
 source("common_functions/evaluate_data_timeliness.R")
+source("common_functions/evaluate_trip_variance.R")
 
 # Evaluate data timeliness ----
 year                    <- 2022
@@ -124,7 +125,7 @@ data_timeliness_results <- data_timeliness_results[, ":=" (Category = "",
 
 scorecard_dt <- rbind(scorecard_dt, data_timeliness_results)
 
-# Evaluate data timeliness ----
+# Evaluate trip variance ----
 trip_variance_results <- data.table()
 
 # * $3.5M budget ----
