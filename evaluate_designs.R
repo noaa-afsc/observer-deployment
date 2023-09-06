@@ -228,35 +228,51 @@ trip_variance_results <- trip_variance_results[, ":=" (Category = "Variance (CV)
 
 scorecard_dt <- rbind(scorecard_dt, trip_variance_results)
 
+# Multiply by -1 for metrics for which larger numbers are worse
+scorecard_dt[, scaled_value := value][
+Category %in% c("Cost", "Variance (CV)") | variable %in% "Data timeliness", scaled_value := -1 * scaled_value][, 
+# Get the maximum and minimum value for each metric
+':=' (worst = min(scaled_value), best = max(scaled_value)), by = .(BUDGET, variable)][
+# Assign global values for some metrics
+Category %in% c("Cost", "Variance (CV)"), ':=' (worst = -100, best = 0)][
+Category %in% c("Interspersion (AK)", "Interspersion (FMP)", "Power to Detect\nRare Events"), ':=' (worst = 0, best = 1)][,
+# Calculate the spread between best and worst
+spread := best - worst][,                                                                                                                                                                                               
+# Find the relative difference
+DIFF := (scaled_value - worst) / spread]
+
 ggplot(scorecard_dt[BUDGET == "$3.5M"], aes(x = Allocation, y = variable, fill = DIFF)) +
   facet_nested(Category ~ BUDGET + Stratification, scales = "free", space = "free", switch = "y", labeller = labeller(
     BUDGET = function(x) paste("Budget: ", x),
     Stratification = function(x) paste("Stratification: ", x))) +
   geom_tile() +
-  scale_fill_gradient2(limits = c(-1, 1), na.value = muted("red")) +
-  #scale_fill_gradient2(trans = signed_sqrt) +
+  scale_fill_gradient2(midpoint = 0.5, breaks = c(0, 1), labels = c("Worst", "Best")) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
   geom_text(aes(label = label), size = 3) +
-  labs(fill = "Relative Benefit", y = "Metric")
+  labs(fill = "", y = "Metric")
+
+# ggsave("output_figures/evaluation_3.5.png", width = 8, height = 10, units = "in")
 
 ggplot(scorecard_dt[BUDGET == "$4.5M"], aes(x = Allocation, y = variable, fill = DIFF)) +
   facet_nested(Category ~ BUDGET + Stratification, scales = "free", space = "free", switch = "y", labeller = labeller(
     BUDGET = function(x) paste("Budget: ", x),
     Stratification = function(x) paste("Stratification: ", x))) +
   geom_tile() +
-  scale_fill_gradient2(limits = c(-1, 1), na.value = muted("red")) +
-  #scale_fill_gradient2(trans = signed_sqrt) +
+  scale_fill_gradient2(midpoint = 0.5, breaks = c(0, 1), labels = c("Worst", "Best")) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
   geom_text(aes(label = label), size = 3) +
-  labs(fill = "Relative Benefit", y = "Metric")
+  labs(fill = "", y = "Metric")
+
+# ggsave("output_figures/evaluation_4.5.png", width = 8, height = 10, units = "in")
 
 ggplot(scorecard_dt[BUDGET == "$5.25M"], aes(x = Allocation, y = variable, fill = DIFF)) +
   facet_nested(Category ~ BUDGET + Stratification, scales = "free", space = "free", switch = "y", labeller = labeller(
     BUDGET = function(x) paste("Budget: ", x),
     Stratification = function(x) paste("Stratification: ", x))) +
   geom_tile() +
-  scale_fill_gradient2(limits = c(-1, 1), na.value = muted("red")) +
-  #scale_fill_gradient2(trans = signed_sqrt) +
+  scale_fill_gradient2(midpoint = 0.5, breaks = c(0, 1), labels = c("Worst", "Best")) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
   geom_text(aes(label = label), size = 3) +
-  labs(fill = "Relative Benefit", y = "Metric")
+  labs(fill = "", y = "Metric")
+
+# ggsave("output_figures/evaluation_5.25.png", width = 8, height = 10, units = "in")
