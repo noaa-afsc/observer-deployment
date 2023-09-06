@@ -121,7 +121,7 @@ data_timeliness_results <- data_timeliness_results[, ":=" (Category = "",
                                                            value = data_timeliness)][,
                                                            BASELINE := rep(value[Stratification == "CURRENT" & Allocation == "EQUAL"], times = .N), by = .(BUDGET, variable)][,
                                                            DIFF := -1 * ((value - BASELINE) / BASELINE)][,
-                                                           .(Category, BUDGET, Stratification, Allocation, variable, value, BASELINE, DIFF)]
+                                                           .(Category, BUDGET, Stratification, Allocation, variable, value, BASELINE, DIFF, label = formatC(value, format = "f", digits = 0))]
 
 scorecard_dt <- rbind(scorecard_dt, data_timeliness_results)
 
@@ -224,7 +224,7 @@ trip_variance_results <- trip_variance_results[, ":=" (Category = "Variance (CV)
                                                        Allocation = factor(Allocation, levels = levels(scorecard_dt$Allocation)))][,
                                                        BASELINE := rep(value[Stratification == "CURRENT" & Allocation == "EQUAL"], times = .N), by = .(BUDGET, variable)][,
                                                        DIFF := -1 * ((value - BASELINE) / BASELINE)][,
-                                                       .(Category, BUDGET, Stratification, Allocation, variable, value, BASELINE, DIFF)]                                                                      
+                                                       .(Category, BUDGET, Stratification, Allocation, variable, value, BASELINE, DIFF, label = formatC(value * 100, format = "f", digits = 2))]                                                                    
 
 scorecard_dt <- rbind(scorecard_dt, trip_variance_results)
 
@@ -236,7 +236,7 @@ ggplot(scorecard_dt[BUDGET == "$3.5M"], aes(x = Allocation, y = variable, fill =
   scale_fill_gradient2(limits = c(-1, 1), na.value = muted("red")) +
   #scale_fill_gradient2(trans = signed_sqrt) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
-  geom_text(aes(label = formatC(value, digits = 3, format = "f")), size = 2) +
+  geom_text(aes(label = label), size = 3) +
   labs(fill = "Relative Benefit", y = "Metric")
 
 ggplot(scorecard_dt[BUDGET == "$4.5M"], aes(x = Allocation, y = variable, fill = DIFF)) +
@@ -247,7 +247,7 @@ ggplot(scorecard_dt[BUDGET == "$4.5M"], aes(x = Allocation, y = variable, fill =
   scale_fill_gradient2(limits = c(-1, 1), na.value = muted("red")) +
   #scale_fill_gradient2(trans = signed_sqrt) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
-  geom_text(aes(label = formatC(value, digits = 3, format = "f")), size = 2) +
+  geom_text(aes(label = label), size = 3) +
   labs(fill = "Relative Benefit", y = "Metric")
 
 ggplot(scorecard_dt[BUDGET == "$5.25M"], aes(x = Allocation, y = variable, fill = DIFF)) +
@@ -258,5 +258,5 @@ ggplot(scorecard_dt[BUDGET == "$5.25M"], aes(x = Allocation, y = variable, fill 
   scale_fill_gradient2(limits = c(-1, 1), na.value = muted("red")) +
   #scale_fill_gradient2(trans = signed_sqrt) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
-  geom_text(aes(label = formatC(value, digits = 3, format = "f")), size = 2) +
+  geom_text(aes(label = label), size = 3) +
   labs(fill = "Relative Benefit", y = "Metric")
