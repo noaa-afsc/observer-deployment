@@ -232,10 +232,9 @@ scorecard_dt <- rbind(scorecard_dt, trip_variance_results)
 scorecard_dt[, scaled_value := value][
 Category %in% c("Cost", "Variance (CV)") | variable %in% "Data timeliness", scaled_value := -1 * scaled_value][, 
 # Get the maximum and minimum value for each metric
-':=' (worst = min(scaled_value), best = max(scaled_value)), by = .(BUDGET, variable)][
+':=' (worst = min(scaled_value), best = max(scaled_value)), by = .(variable)][
 # Assign global values for some metrics
-Category %in% c("Cost", "Variance (CV)"), ':=' (worst = -100, best = 0)][
-Category %in% c("Interspersion (AK)", "Interspersion (FMP)", "Power to Detect\nRare Events"), ':=' (worst = 0, best = 1)][,
+Category %in% c("Interspersion (AK)", "Interspersion (FMP)", "Power to Detect\nRare Events", "Variance (CV)"), ':=' (worst = min(scaled_value), best = max(scaled_value)), by = .(Category)][,
 # Calculate the spread between best and worst
 spread := best - worst][,                                                                                                                                                                                               
 # Find the relative difference
@@ -246,7 +245,7 @@ ggplot(scorecard_dt[BUDGET == "$3.5M"], aes(x = Allocation, y = variable, fill =
     BUDGET = function(x) paste("Budget: ", x),
     Stratification = function(x) paste("Stratification: ", x))) +
   geom_tile() +
-  scale_fill_gradient2(midpoint = 0.5, breaks = c(0, 1), labels = c("Worst", "Best")) +
+  scale_fill_gradient2(low = muted("red", l = 40), high = muted("blue", l = 40), midpoint = 0.5, breaks = c(0, 1), labels = c("Worst", "Best")) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
   geom_text(aes(label = label), size = 3) +
   labs(fill = "", y = "Metric")
@@ -258,7 +257,7 @@ ggplot(scorecard_dt[BUDGET == "$4.5M"], aes(x = Allocation, y = variable, fill =
     BUDGET = function(x) paste("Budget: ", x),
     Stratification = function(x) paste("Stratification: ", x))) +
   geom_tile() +
-  scale_fill_gradient2(midpoint = 0.5, breaks = c(0, 1), labels = c("Worst", "Best")) +
+  scale_fill_gradient2(low = muted("red", l = 40), high = muted("blue", l = 40), midpoint = 0.5, breaks = c(0, 1), labels = c("Worst", "Best")) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
   geom_text(aes(label = label), size = 3) +
   labs(fill = "", y = "Metric")
@@ -270,7 +269,7 @@ ggplot(scorecard_dt[BUDGET == "$5.25M"], aes(x = Allocation, y = variable, fill 
     BUDGET = function(x) paste("Budget: ", x),
     Stratification = function(x) paste("Stratification: ", x))) +
   geom_tile() +
-  scale_fill_gradient2(midpoint = 0.5, breaks = c(0, 1), labels = c("Worst", "Best")) +
+  scale_fill_gradient2(low = muted("red", l = 40), high = muted("blue", l = 40), midpoint = 0.5, breaks = c(0, 1), labels = c("Worst", "Best")) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
   geom_text(aes(label = label), size = 3) +
   labs(fill = "", y = "Metric")
