@@ -238,7 +238,21 @@ Category %in% c("Interspersion (AK)", "Interspersion (FMP)", "Power to Detect\nR
 # Calculate the spread between best and worst
 spread := best - worst][,                                                                                                                                                                                               
 # Find the relative difference
-DIFF := (scaled_value - worst) / spread]
+DIFF := (scaled_value - worst) / spread][
+# Final formatting
+, ':=' (Category = as.character(Category), variable = as.character(variable), Allocation = as.character(Allocation))][
+Category == "Power to Detect\nRare Events", Category := "Power to\nDetect"][
+Category == "Variance (CV)", Category := "Trip-Level\nVariance (CV)"][
+variable == "Data timeliness", ':=' (Category = "Days", variable = "Data Timeliness")][
+variable == "chnk_psc", variable := "Chinook PSC"][
+variable == "hlbt_psc", variable := "Halibut PSC"][
+variable == "discard", variable := "Discards"][  
+variable == "crab_psc", variable := "Crab PSC"][
+Allocation == "STATUS_QUO", Allocation := "STATUS\nQUO"][,
+':=' (Category = factor(Category, levels = unique(scorecard_dt$Category)), 
+      variable = factor(variable, levels = unique(scorecard_dt$variable)[c(1:23, 27:24)]),
+      Allocation = factor(Allocation, levels = unique(scorecard_dt$Allocation)))
+]
 
 ggplot(scorecard_dt[BUDGET == "$3.5M"], aes(x = Allocation, y = variable, fill = DIFF)) +
   facet_nested(Category ~ BUDGET + Stratification, scales = "free", space = "free", switch = "y", labeller = labeller(
@@ -246,7 +260,7 @@ ggplot(scorecard_dt[BUDGET == "$3.5M"], aes(x = Allocation, y = variable, fill =
     Stratification = function(x) paste("Stratification: ", x))) +
   geom_tile() +
   scale_fill_gradient2(low = muted("red", l = 40), high = muted("blue", l = 40), midpoint = 0.5, breaks = c(0, 1), labels = c("Worst", "Best")) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom", legend.key.width = unit(1, "in")) +
   geom_text(aes(label = label), size = 3) +
   labs(fill = "", y = "Metric")
 
@@ -258,7 +272,7 @@ ggplot(scorecard_dt[BUDGET == "$4.5M"], aes(x = Allocation, y = variable, fill =
     Stratification = function(x) paste("Stratification: ", x))) +
   geom_tile() +
   scale_fill_gradient2(low = muted("red", l = 40), high = muted("blue", l = 40), midpoint = 0.5, breaks = c(0, 1), labels = c("Worst", "Best")) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom", legend.key.width = unit(1, "in")) +
   geom_text(aes(label = label), size = 3) +
   labs(fill = "", y = "Metric")
 
@@ -270,7 +284,7 @@ ggplot(scorecard_dt[BUDGET == "$5.25M"], aes(x = Allocation, y = variable, fill 
     Stratification = function(x) paste("Stratification: ", x))) +
   geom_tile() +
   scale_fill_gradient2(low = muted("red", l = 40), high = muted("blue", l = 40), midpoint = 0.5, breaks = c(0, 1), labels = c("Worst", "Best")) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5), legend.position = "bottom", legend.key.width = unit(1, "in")) +
   geom_text(aes(label = label), size = 3) +
   labs(fill = "", y = "Metric")
 
