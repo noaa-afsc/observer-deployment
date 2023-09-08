@@ -113,11 +113,11 @@ Allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_res
 Allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
 
 # * Format results ----
-data_timeliness_results <- data_timeliness_results[, ":=" (Category = "", 
+data_timeliness_results <- data_timeliness_results[, ":=" (Category = "Days", 
                                                            BUDGET = recode(as.character(BUDGET), "3500000" = "$3.5M", "4500000" = "$4.5M", "5250000" = "$5.25M"),
                                                            Stratification = Stratification,
                                                            Allocation = factor(Allocation, levels = levels(scorecard_dt$Allocation)),
-                                                           variable = "Data timeliness",
+                                                           variable = "Data Timeliness",
                                                            value = data_timeliness)][,
                                                            BASELINE := rep(value[Stratification == "CURRENT" & Allocation == "EQUAL"], times = .N), by = .(BUDGET, variable)][,
                                                            DIFF := -1 * ((value - BASELINE) / BASELINE)][,
@@ -219,7 +219,7 @@ Allocation <- "CWB";        trip_variance_results <- rbind(trip_variance_results
 Allocation <- "PROX";       trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
 
 # * Format results ----
-trip_variance_results <- trip_variance_results[, ":=" (Category = "Variance (CV)", 
+trip_variance_results <- trip_variance_results[, ":=" (Category = "Trip-Level\nVariance (CV)", 
                                                        BUDGET = recode(as.character(BUDGET), "3500000" = "$3.5M", "4500000" = "$4.5M", "5250000" = "$5.25M"),
                                                        Allocation = factor(Allocation, levels = levels(scorecard_dt$Allocation)))][,
                                                        BASELINE := rep(value[Stratification == "CURRENT" & Allocation == "EQUAL"], times = .N), by = .(BUDGET, variable)][,
@@ -230,29 +230,22 @@ scorecard_dt <- rbind(scorecard_dt, trip_variance_results)
 
 # Multiply by -1 for metrics for which larger numbers are worse
 scorecard_dt[, scaled_value := value][
-Category %in% c("Cost", "Variance (CV)") | variable %in% "Data timeliness", scaled_value := -1 * scaled_value][, 
+Category %in% c("Cost", "Days", "Trip-Level\nVariance (CV)"), scaled_value := -1 * scaled_value][, 
 # Get the maximum and minimum value for each metric
 ':=' (worst = min(scaled_value), best = max(scaled_value)), by = .(variable)][
 # Assign global values for some metrics
-Category %in% c("Interspersion (AK)", "Interspersion (FMP)", "Power to Detect\nRare Events", "Variance (CV)"), ':=' (worst = min(scaled_value), best = max(scaled_value)), by = .(Category)][,
+Category %in% c("Interspersion (AK)", "Interspersion (FMP)", "Power to Detect\nRare Events", "Trip-Level\nVariance (CV)"), ':=' (worst = min(scaled_value), best = max(scaled_value)), by = .(Category)][,
 # Calculate the spread between best and worst
 spread := best - worst][,                                                                                                                                                                                               
 # Find the relative difference
-DIFF := (scaled_value - worst) / spread][
+DIFF := (scaled_value - worst) / spread][, 
 # Final formatting
-, ':=' (Category = as.character(Category), variable = as.character(variable), Allocation = as.character(Allocation))][
-Category == "Power to Detect\nRare Events", Category := "Power to\nDetect"][
-Category == "Variance (CV)", Category := "Trip-Level\nVariance (CV)"][
-variable == "Data timeliness", ':=' (Category = "Days", variable = "Data Timeliness")][
-variable == "chnk_psc", variable := "Chinook PSC"][
-variable == "hlbt_psc", variable := "Halibut PSC"][
-variable == "discard", variable := "Discards"][  
-variable == "crab_psc", variable := "Crab PSC"][
-Allocation == "STATUS_QUO", Allocation := "STATUS\nQUO"][,
-':=' (Category = factor(Category, levels = unique(scorecard_dt$Category)), 
-      variable = factor(variable, levels = unique(scorecard_dt$variable)[c(1:23, 27:24)]),
-      Allocation = factor(Allocation, levels = unique(scorecard_dt$Allocation)))
-]
+':=' (Category = recode(Category, "Power to Detect\nRare Events" = "Power to\nDetect"),
+      variable = recode_factor(variable, "crab_psc" = "Crab PSC",
+                                         "discard"  = "Discards",
+                                         "hlbt_psc" = "Halibut PSC",
+                                         "chnk_psc" = "Chinook PSC"),
+      Allocation = recode(Allocation, "STATUS_QUO" = "STATUS\nQUO"))]
 
 ggplot(scorecard_dt[BUDGET == "$3.5M"], aes(x = Allocation, y = variable, fill = DIFF)) +
   facet_nested(Category ~ BUDGET + Stratification, scales = "free", space = "free", switch = "y", labeller = labeller(
