@@ -18,99 +18,19 @@ load("results/scorecard_dt.rdata")
 source("common_functions/evaluate_data_timeliness.R")
 source("common_functions/evaluate_trip_variance.R")
 
+# * Define scenarios ----
+Scenarios <- CJ(Year = 2022, 
+                BUDGET = c(3500000, 4500000, 5250000), 
+                Stratification = c("CURRENT", "FIXED_FMP", "FMP"), 
+                Allocation = c("EQUAL", "STATUS_QUO", "CWB", "PROX"))
+
 # Evaluate data timeliness ----
-year                    <- 2022
 data_timeliness_results <- data.table()
 
-# * $3.5M budget ----
-BUDGET <- 3500000
-
-# * * Current stratification ----
-Stratification <- "CURRENT"
-data           <- unique(work.data[TRIP_ID %in% pc_effort.CURRENT[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
-
-Allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-
-# * * Fixed FMP stratification ----
-Stratification <- "FIXED_FMP"
-data           <- unique(work.data[TRIP_ID %in% pc_effort.FIXED_FMP[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
-
-Allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-
-# * * FMP stratification ----
-Stratification <- "FMP"
-data           <- unique(work.data[TRIP_ID %in% pc_effort.FMP[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
-
-Allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-
-# * $4.5M budget ----
-BUDGET <- 4500000
-
-# * * Current stratification ----
-Stratification <- "CURRENT"
-data           <- unique(work.data[TRIP_ID %in% pc_effort.CURRENT[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
-
-Allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-
-# * * Fixed FMP stratification ----
-Stratification <- "FIXED_FMP"
-data           <- unique(work.data[TRIP_ID %in% pc_effort.FIXED_FMP[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
-
-Allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-
-# * * FMP stratification ----
-Stratification <- "FMP"
-data           <- unique(work.data[TRIP_ID %in% pc_effort.FMP[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
-
-Allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-
-# * $5.25M budget ----
-BUDGET <- 5250000
-
-# * * Current stratification ----
-Stratification <- "CURRENT"
-data           <- unique(work.data[TRIP_ID %in% pc_effort.CURRENT[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
-
-Allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-
-# * * Fixed FMP stratification ----
-Stratification <- "FIXED_FMP"
-data           <- unique(work.data[TRIP_ID %in% pc_effort.FIXED_FMP[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
-
-Allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-
-# * * FMP stratification ----
-Stratification <- "FMP"
-data           <- unique(work.data[TRIP_ID %in% pc_effort.FMP[ADP == year, wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
-
-Allocation <- "EQUAL";      data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "STATUS_QUO"; data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "CWB";        data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
-Allocation <- "PROX";       data_timeliness_results <- rbind(data_timeliness_results, data.table(BUDGET, year, Stratification, Allocation, data_timeliness = evaluate_data_timeliness(data, strata_timeliness, BUDGET, rates, Stratification, Allocation)))
+for(i in 1:nrow(Scenarios)){
+  effort                  <- unique(work.data[TRIP_ID %in% get(paste0("pc_effort.", Scenarios[i, Stratification]))[ADP == Scenarios[i, Year], wd_TRIP_ID], .(ADP, TRIP_ID, COVERAGE_TYPE, STRATA = STRATA_NEW, AGENCY_GEAR_CODE)])
+  data_timeliness_results <- rbind(data_timeliness_results, data.table(Scenarios[i], data_timeliness = evaluate_data_timeliness(effort, strata_timeliness, Scenarios[i, BUDGET], rates, Scenarios[i, Stratification], Scenarios[i, Allocation])))
+}
 
 # * Format results ----
 data_timeliness_results <- data_timeliness_results[, ":=" (Category = "Days", 
@@ -128,95 +48,10 @@ scorecard_dt <- rbind(scorecard_dt, data_timeliness_results)
 # Evaluate trip variance ----
 trip_variance_results <- data.table()
 
-# * $3.5M budget ----
-BUDGET <- 3500000
-
-# * * Current stratification ----
-Stratification <- "CURRENT"
-effort         <- pc_effort.CURRENT[ADP == year]
-
-Allocation <- "EQUAL";      trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "STATUS_QUO"; trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "CWB";        trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "PROX";       trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-
-# * * Fixed FMP stratification ----
-Stratification <- "FIXED_FMP"
-effort         <- pc_effort.FIXED_FMP[ADP == year]
-
-Allocation <- "EQUAL";      trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "STATUS_QUO"; trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "CWB";        trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "PROX";       trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-
-# * * FMP stratification ----
-Stratification <- "FMP"
-effort         <- pc_effort.FMP[ADP == year]
-
-Allocation <- "EQUAL";      trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "STATUS_QUO"; trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "CWB";        trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "PROX";       trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-
-# * $4.5M budget ----
-BUDGET <- 4500000
-
-# * * Current stratification ----
-Stratification <- "CURRENT"
-effort         <- pc_effort.CURRENT[ADP == year]
-
-Allocation <- "EQUAL";      trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "STATUS_QUO"; trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "CWB";        trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "PROX";       trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-
-# * * Fixed FMP stratification ----
-Stratification <- "FIXED_FMP"
-effort         <- pc_effort.FIXED_FMP[ADP == year]
-
-Allocation <- "EQUAL";      trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "STATUS_QUO"; trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "CWB";        trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "PROX";       trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-
-# * * FMP stratification ----
-Stratification <- "FMP"
-effort         <- pc_effort.FMP[ADP == year]
-
-Allocation <- "EQUAL";      trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "STATUS_QUO"; trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "CWB";        trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "PROX";       trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-
-# * $5.25M budget ----
-BUDGET <- 5250000
-
-# * * Current stratification ----
-Stratification <- "CURRENT"
-effort         <- pc_effort.CURRENT[ADP == year]
-
-Allocation <- "EQUAL";      trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "STATUS_QUO"; trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "CWB";        trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "PROX";       trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-
-# * * Fixed FMP stratification ----
-Stratification <- "FIXED_FMP"
-effort         <- pc_effort.FIXED_FMP[ADP == year]
-
-Allocation <- "EQUAL";      trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "STATUS_QUO"; trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "CWB";        trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "PROX";       trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-
-# * * FMP stratification ----
-Stratification <- "FMP"
-effort         <- pc_effort.FMP[ADP == year]
-
-Allocation <- "EQUAL";      trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "STATUS_QUO"; trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "CWB";        trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
-Allocation <- "PROX";       trip_variance_results <- rbind(trip_variance_results, data.table(BUDGET, year, Stratification, Allocation, evaluate_trip_variance(effort, work.data, trips_melt, BUDGET, rates, Stratification, Allocation)[, .(variable = metric, value = cv)]))
+for(i in 1:nrow(Scenarios)){
+  effort                <- get(paste0("pc_effort.", Scenarios[i, Stratification]))[ADP == Scenarios[i, Year]]
+  trip_variance_results <- rbind(trip_variance_results, data.table(Scenarios[i], evaluate_trip_variance(effort, work.data, trips_melt, Scenarios[i, BUDGET], rates, Scenarios[i, Stratification], Scenarios[i, Allocation])[, .(variable = metric, value = cv)]))
+}
 
 # * Format results ----
 trip_variance_results <- trip_variance_results[, ":=" (Category = "Trip-Level\nVariance (CV)", 
@@ -227,6 +62,8 @@ trip_variance_results <- trip_variance_results[, ":=" (Category = "Trip-Level\nV
                                                        .(Category, BUDGET, Stratification, Allocation, variable, value, BASELINE, DIFF, label = formatC(value * 100, format = "f", digits = 2))]                                                                    
 
 scorecard_dt <- rbind(scorecard_dt, trip_variance_results)
+
+# Final formatting ----
 
 # Multiply by -1 for metrics for which larger numbers are worse
 scorecard_dt[, scaled_value := value][
@@ -239,13 +76,15 @@ Category %in% c("Interspersion (AK)", "Interspersion (FMP)", "Power to Detect\nR
 spread := best - worst][,                                                                                                                                                                                               
 # Find the relative difference
 DIFF := (scaled_value - worst) / spread][, 
-# Final formatting
+# Recode columns
 ':=' (Category = recode(Category, "Power to Detect\nRare Events" = "Power to\nDetect"),
       variable = recode_factor(variable, "crab_psc" = "Crab PSC",
                                          "discard"  = "Discards",
                                          "hlbt_psc" = "Halibut PSC",
                                          "chnk_psc" = "Chinook PSC"),
       Allocation = recode(Allocation, "STATUS_QUO" = "STATUS\nQUO"))]
+
+# Figures ----
 
 ggplot(scorecard_dt[BUDGET == "$3.5M"], aes(x = Allocation, y = variable, fill = DIFF)) +
   facet_nested(Category ~ BUDGET + Stratification, scales = "free", space = "free", switch = "y", labeller = labeller(
