@@ -1,6 +1,6 @@
 # User inputs -------------------------------------------------------------
 ADPyear     <- 2024     # Enter numeric year you are doing the ADP for
-ADP_version <- "Draft"  # Enter "Draft" or "Final"
+ADP_version <- "Final"  # Enter "Draft" or "Final"
 EM_final    <- "N"      # Is the final EM list approved? Y/N (caps)
 options(scipen = 9999)  # Avoid scientific notation
 
@@ -34,13 +34,13 @@ PSC <-
                    GROUP BY year, el_report_id, species_group_code"))
 
 # * PCTC ----
-pctc <- if(ADP_version == "Draft"){read.csv("source_data/pctc_list_2023-08-18.csv")}
+pctc <- if(ADP_version == "Draft"){read.csv("source_data/pctc_list_2023-08-18.csv")} else {read.csv("source_data/pctc_list_2023-09-19.csv")}
 
 # * Voluntary full coverage ----
 #   Requests to join must be made prior to October 15  
 BSAIVoluntary <-
   dbGetQuery(channel_afsc,
-             if(ADP_version == "Draft"){
+             if(ADP_version == "Draft" | Sys.Date() < paste0(ADPyear-1, "-10-15")){
                paste(
                  " -- From Andy Kingham
                  SELECT extract(year from ovsp.end_date) as year, 
@@ -92,7 +92,7 @@ PartialCPs <- data.frame(VESSEL_ID = c(662, 4581, 6039))
 # * Fixed-gear EM research ---- 
 em_research <- 
   dbGetQuery(channel_afsc, 
-      if(ADP_version == "Draft"){
+      if(ADP_version == "Draft" | EM_final == "N"){
           paste("select distinct adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
                 from loki.em_vessels_by_adp
                 where sample_plan_seq_desc = 'Electronic Monitoring -  research not logged '
@@ -103,7 +103,6 @@ em_research <-
                 where sample_plan_seq_desc = 'Electronic Monitoring -  research not logged '
                 and adp =", ADPyear,
                 "order by adp, vessel_id")})
-
 
 # * Fixed-gear EM approvals ---- 
 em_base <-
@@ -139,7 +138,7 @@ em_requests <-
                    AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'"))
 
 # * Trawl EM ----
-trawl_em <- read.csv("source_data/efp_list_2023-08-17.csv")
+trawl_em <- read.csv("source_data/efp_list_2023-09-05.csv")
 
 # * Vessel lengths ----
 AKROVL <- dbGetQuery(channel_afsc, "select distinct ID as vessel_id, length_overall as akrovl
@@ -153,7 +152,7 @@ FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT as vessel_id, length a
 work.data <- dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla"))
 
 # Load data from current year
-load("source_data/2023-08-23cas_valhalla.RData")
+load("source_data/2023-09-19cas_valhalla.RData")
 
 # Append data from current year to data from prior year
 work.data <- rbind(work.data, valhalla)
@@ -259,7 +258,7 @@ work.data <- mutate(work.data, CVG_NEW = ifelse(VESSEL_ID %in% pctc$VESSEL_ID &
                                                 yday(as.Date(paste0(ADP,"-12-31"))) - yday(as.Date(TRIP_TARGET_DATE)) > 204,
                                                 "FULL", CVG_NEW))
 
-# Voluntary full coverage
+# Voluntary full coverage: opted in for ADPyear
 work.data <- mutate(work.data, CVG_NEW = ifelse(VESSEL_ID %in% BSAIVoluntary$VESSEL_ID &
                                                 FMP %in% c("BS", "AI", "BSAI") &
                                                 AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & 
