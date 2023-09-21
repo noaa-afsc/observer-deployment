@@ -131,6 +131,10 @@ mpo_50_rates <- allo_min_plus_opt(allo_lst, em_carve_off = F, conf = 0.5, budget
 
 cwb_prop <- calculate_cwb_Ph(box_sq, sample_rate_vec)
 cwb_rates <- allo_cwb_loop(cwb_prop, trip_cost_dt, budget = 4.5e6)
+cwb_rates2 <- allo_cwb_loop(cwb_prop, trip_cost_dt, budget = 4.5e6, sqrt_cost = F)  # without sqrt cost weighting
+
+# cwb_rates$rates[ADP == 2022]
+# cwb_rates2$rates[ADP == 2022]
 
 ### Proximity ----
 
@@ -553,7 +557,7 @@ names(eval_rates) <- names(rates_lst)
 
 # Here is a small collection of data objects to act as a sandbox for some of our evaluations
 pc_effort.current <- copy(pc_effort_dt)[, STRATUM_COL := STRATA][ADP == 2022]
-pc_effort.fixed_fmp <- copy(pc_effort_fixed)[, STRATUM_COL := paste0(STRATA, "*", "BSAI_GOA")][ADP == 2022]
+pc_effort.fixed_fmp <- copy(pc_effort_fixed)[, STRATUM_COL := paste0(STRATA, "*", BSAI_GOA)][ADP == 2022]
 # get 2022 rates for equal rates and proximity allocation schemes for status quo and FIXED_FMP stratifications
 rates_2022 <- lapply(eval_rates, function(x) x[ADP == 2022, ])[c("CURRENT.MPO_SQ", "CURRENT.PROX", "FIXED_FMP.MPO_SQ_FIXED_FMP", "FIXED_FMP.PROX_FIXED_FMP_GS")]
 if(F)  save(pc_effort.current, pc_effort.fixed_fmp, rates_2022, allo_lst, allo_fixed_fmp_lst, file = "analyses/stratification/sandbox.Rdata")
