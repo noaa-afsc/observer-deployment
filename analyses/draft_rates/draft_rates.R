@@ -97,7 +97,7 @@ cost_params <- list(
 sample_rate_vec <- seq(from = 0.0001, to = 0.9950, by = 0.0001) 
 
 max_budget <- 7.00e6                        # This is used as a cutoff for allocation functions.
-budget_lst <- list(3.5e6, 4.5e6, 5.25e6)    # List of bduget scenarios to evaluate
+budget_lst <- list(3.5e6, 4.5e6, 5.25e6)    # List of budget scenarios to evaluate
 
 
 #======================================================================================================================#
