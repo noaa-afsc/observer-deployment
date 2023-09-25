@@ -95,7 +95,6 @@ cost_params <- list(
 #======================#
 
 sample_rate_vec <- seq(from = 0.0001, to = 0.9950, by = 0.0001) 
-
 max_budget <- 7.00e6                        # This is used as a cutoff for allocation functions.
 budget_lst <- list(4.8e6 + 1.019e6)    # List of budget scenarios to evaluate ($4.8M for PC contract, 1.019 for FGEM)
 
@@ -126,4 +125,12 @@ fixed_fmp.prox <- rbindlist(lapply(budget_lst, function(x) cbind(BUDGET = x, pro
 
 # Have $4.62 for OB and $1.2M for FG_EM. Estimated 2,275 observer days as well.
 attr(prox_rates_from_budget2(fixed_fmp.prox_index, budget = budget_lst[[1]]), "costs")[ADP == 2022]
-fixed_fmp.prox[ADP == 2022]
+fixed_fmp.prox[ADP == 2022, .(STRATUM_COL, STRATA_N, SAMPLE_RATE = SAMPLE_RATE * 100, n)][order(-STRATUM_COL)]
+
+
+#=======================#
+### FixedxFMP x CWB ####
+
+fixed_fmp.cwb_prop <- calculate_cwb_Ph(fixed_fmp.box, sample_rate_vec)             # no changes needed here
+fixed_fmp.cwb <- rbindlist(lapply(budget_lst, function(x) cbind(BUDGET = x, allo_cwb_loop2(fixed_fmp.cwb_prop, fixed_fmp.allo_lst, cost_params, budget = x, sqrt_cost = F)$rates)))
+fixed_fmp.cwb[ADP == 2022, .(STRATUM_COL, STRATA_N, SAMPLE_RATE = fh * 100, nh)][order(-STRATUM_COL)]
