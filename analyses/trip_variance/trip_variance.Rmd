@@ -175,8 +175,8 @@ f2 <- ggplot(dat[monitoring_rate >= 0.05 & monitoring_rate <= 0.25], aes(x = mon
       theme_bw() +
       theme(text=element_text(size=9))
 
-ggsave(f1, filename = "analyses/trip_variance/f1.png", width = 6, height = 5, units = "in")
-ggsave(f2, filename = "analyses/trip_variance/f2.png", width = 6, height = 5, units = "in")
+ggsave(f1, filename = "output_figures/trip_variance_1.png", width = 6, height = 5, units = "in")
+ggsave(f2, filename = "output_figures/trip_variance_2.png", width = 6, height = 5, units = "in")
 
 est_adp <- dat %>% 
            filter(round(N * 0.15) == n)
@@ -201,5 +201,5 @@ t1 <- est_adp %>%
       flextable() %>% 
       autofit()
 
-save_as_docx(t1, path = "analyses/trip_variance/t1.docx")
+save_as_docx(t1, path = "output_tables/trip_variance.docx")
 ```
