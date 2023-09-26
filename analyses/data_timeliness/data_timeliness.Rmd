@@ -205,7 +205,7 @@ I created a function that uses stratum-specific mean data timeliness to estimate
 ```{r table}
 strata_timeliness <- setDT(times_smry)[, .(COVERAGE_TYPE, STRATA, mean_data_timeliness)]
 
-save(strata_timeliness, file = "source_data/strata_timeliness.RData")
+save(strata_timeliness, file = "source_data/strata_timeliness.RData")   # https://drive.google.com/file/d/1WjmGwo5qx_orqGgC09gm6wAPIh1V9VPl/view?usp=drive_link
 
 strata_timeliness
 ```
