@@ -223,13 +223,13 @@ fixed_fmp.prox <- rbindlist(lapply(budget_lst, function(x) cbind(BUDGET = x, pro
 #================#
 
 # Save all objects (excluding functions)
-if(F) save(list = setdiff(ls(), lsf.str()), file = "analyses/draft_rates/draft_rates.rdata")
+if(F) save(list = setdiff(ls(), lsf.str()), file = "results/draft_rates.rdata")
 
 #=======================================#
 # Prepare all objects for evaluation ####
 #=======================================#
 
-if(F) load("analyses/draft_rates/draft_rates.rdata")
+if(F) load("results/draft_rates.rdata")
 
 # Names of designs
 # design_labels <- apply(
@@ -274,10 +274,10 @@ pc_effort.FIXED_FMP <- copy(fixed.val)
 pc_effort.FIXED_FMP[, STRATUM_COL := paste0(STRATA, "-", BSAI_GOA)]
 
 # Save rates and effort objects
-if(F) save(rates, pc_effort.CURRENT, pc_effort.FMP, pc_effort.FIXED_FMP, file = "analyses/draft_rates/draft_rates_effort.rdata")
+if(F) save(rates, pc_effort.CURRENT, pc_effort.FMP, pc_effort.FIXED_FMP, file = "results/draft_rates_effort.rdata")
 
 # Quick load
-if(F) load("analyses/draft_rates/draft_rates_effort.rdata")
+if(F) load("results/draft_rates_effort.rdata")
 
 #=====================#
 # Following PCFMAC ####

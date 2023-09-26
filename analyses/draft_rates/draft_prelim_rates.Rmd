@@ -26,7 +26,7 @@ library(scales)
 ```
 
 ```{r load data}
-load("draft_prelim_rates.rdata")
+load("results/draft_prelim_rates.rdata")
 ```
 
 ```{r create monitoring costs curves}

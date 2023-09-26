@@ -246,4 +246,4 @@ attr(fixed_fmp.prox_rates, "costs")[ADP == 2022]
 #================#
 
 # Save all objects (excluding functions)
-if(F) save(list = setdiff(ls(), lsf.str()), file = "analyses/draft_rates/draft_prelim_rates.rdata")
+if(F) save(list = setdiff(ls(), lsf.str()), file = "results/draft_prelim_rates.rdata")
