@@ -25,9 +25,9 @@ library(dplyr)              # For piping and handling sf objects
 ## Load data and data prep ----
 #=============================#
 
-load("analyses/draft_rates/draft_rates_2.rdata")           # Raw output from nalyses/draft_rates/draft_rates.R - box definitions and raw rates
-load("analyses/draft_rates/draft_rates_effort_2.rdata")    # Outputs from analyses/draft_rates/draft_rates.R - compiled rates and effort
-load("~/GitHub/2024_ADP/source_data/2024_Draft_ADP_data.rdata")   # Most recent valhalla version
+load("results/draft_rates.rdata")           # Raw output from nalyses/draft_rates/draft_rates.R - box definitions and raw rates
+load("results/draft_rates_effort.rdata")    # Outputs from analyses/draft_rates/draft_rates.R - compiled rates and effort
+load("source_data/2024_Draft_ADP_data.rdata")   # Most recent valhalla version
 
 #===============#
 ## Functions ----
