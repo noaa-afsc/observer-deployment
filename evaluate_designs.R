@@ -33,15 +33,17 @@ for(i in 1:nrow(Scenarios)){
 }
 
 # * Format results ----
-data_timeliness_results <- data_timeliness_results[, ":=" (Category = "Days", 
-                                                           BUDGET = recode(as.character(BUDGET), "3500000" = "$3.5M", "4500000" = "$4.5M", "5250000" = "$5.25M"),
-                                                           Stratification = Stratification,
-                                                           Allocation = factor(Allocation, levels = levels(scorecard_dt$Allocation)),
-                                                           variable = "Data Timeliness",
-                                                           value = data_timeliness)][,
-                                                           BASELINE := rep(value[Stratification == "CURRENT" & Allocation == "EQUAL"], times = .N), by = .(BUDGET, variable)][,
-                                                           DIFF := -1 * ((value - BASELINE) / BASELINE)][,
-                                                           .(Category, BUDGET, Stratification, Allocation, variable, value, BASELINE, DIFF, label = formatC(value, format = "f", digits = 0))]
+data_timeliness_results <- data_timeliness_results[
+][, ":=" (
+  Category = "Days", 
+  BUDGET = recode(as.character(BUDGET), "3500000" = "$3.5M", "4500000" = "$4.5M", "5250000" = "$5.25M"),
+  Stratification = Stratification,
+  Allocation = factor(Allocation, levels = levels(scorecard_dt$Allocation)),
+  variable = "Data Timeliness",
+  value = data_timeliness)
+][, BASELINE := rep(value[Stratification == "CURRENT" & Allocation == "EQUAL"], times = .N), by = .(BUDGET, variable)
+][, DIFF := -1 * ((value - BASELINE) / BASELINE)
+][, .(Category, BUDGET, Stratification, Allocation, variable, value, BASELINE, DIFF, label = formatC(value, format = "f", digits = 0))]
 
 scorecard_dt <- rbind(scorecard_dt, data_timeliness_results)
 
@@ -105,52 +107,57 @@ for(i in 1:nrow(Scenarios)){
 }
 
 # * Format results ----
-trip_variance_results <- trip_variance_results[, ":=" (Category = "Trip-Level\nVariance (CV)", 
-                                                       BUDGET = recode(as.character(BUDGET), "3500000" = "$3.5M", "4500000" = "$4.5M", "5250000" = "$5.25M"),
-                                                       Allocation = factor(Allocation, levels = levels(scorecard_dt$Allocation)))][,
-                                                       BASELINE := rep(value[Stratification == "CURRENT" & Allocation == "EQUAL"], times = .N), by = .(BUDGET, variable)][,
-                                                       DIFF := -1 * ((value - BASELINE) / BASELINE)][,
-                                                       .(Category, BUDGET, Stratification, Allocation, variable, value, BASELINE, DIFF, label = formatC(value * 100, format = "f", digits = 2))]                                                                    
+trip_variance_results <- trip_variance_results[
+][, ":=" (
+  Category = "Trip-Level\nVariance (CV)", 
+  BUDGET = recode(as.character(BUDGET), "3500000" = "$3.5M", "4500000" = "$4.5M", "5250000" = "$5.25M"),
+  Allocation = factor(Allocation, levels = levels(scorecard_dt$Allocation)))
+][, BASELINE := rep(value[Stratification == "CURRENT" & Allocation == "EQUAL"], times = .N), by = .(BUDGET, variable)
+][, DIFF := -1 * ((value - BASELINE) / BASELINE)
+][, .(Category, BUDGET, Stratification, Allocation, variable, value, BASELINE, DIFF, label = formatC(value * 100, format = "f", digits = 2))]                                                                    
 
 scorecard_dt <- rbind(scorecard_dt, trip_variance_results)
 
 # Final formatting ----
 
 # Multiply by -1 for metrics for which larger numbers are worse
-scorecard_dt[, scaled_value := value][
-Category %in% c("Cost", "Days", "Trip-Level\nVariance (CV)"), scaled_value := -1 * scaled_value][, 
+scorecard_dt[
+][, scaled_value := value
+][Category %in% c("Cost", "Days", "Trip-Level\nVariance (CV)"), scaled_value := -1 * scaled_value
 # Get the maximum and minimum value for each metric
-':=' (worst = min(scaled_value), best = max(scaled_value)), by = .(variable)][
+][, ':=' (worst = min(scaled_value), best = max(scaled_value)), by = .(variable)
 # Assign global values for some metrics
-Category %in% c("Interspersion (AK)", "Interspersion (FMP)", "Power to Detect\nRare Events", "Trip-Level\nVariance (CV)"), ':=' (worst = min(scaled_value), best = max(scaled_value)), by = .(Category)][,
+][Category %in% c("Interspersion (AK)", "Interspersion (FMP)", "Power to Detect\nRare Events", "Trip-Level\nVariance (CV)"),
+  ':=' (worst = min(scaled_value), best = max(scaled_value)), by = .(Category)
 # Calculate the spread between best and worst
-spread := best - worst][,                                                                                                                                                                                               
+][, spread := best - worst
 # Find the relative difference
-DIFF := (scaled_value - worst) / spread][, 
+][, DIFF := (scaled_value - worst) / spread
 # Recode columns
-':=' (Category = recode(Category, "Power to Detect\nRare Events" = "Power to\nDetect"),
-      variable = recode_factor(variable, "crab_psc" = "Crab PSC",
-                                         "discard"  = "Discards",
-                                         "hlbt_psc" = "Halibut PSC",
-                                         "chnk_psc" = "Chinook PSC"),
-      Allocation = recode(Allocation, "STATUS_QUO" = "STATUS\nQUO"))]
+][, ':=' (
+  Category = recode(Category, "Power to Detect\nRare Events" = "Power to\nDetect"),
+  variable = recode_factor(
+    variable, 
+    "crab_psc" = "Crab PSC", "discard"  = "Discards", "hlbt_psc" = "Halibut PSC", "chnk_psc" = "Chinook PSC"),
+  Allocation = recode(Allocation, "STATUS_QUO" = "STATUS\nQUO"))]
 
 # Multiply by -1 for metrics for which larger numbers are worse
-trip_variance_strata_results[, ':=' (label = formatC(value * 100, format = "f", digits = 2), scaled_value = value, Category = "Trip-Level\nVariance (CV)")][
-, scaled_value := -1 * scaled_value][, 
+trip_variance_strata_results[
+][, ':=' (label = formatC(value * 100, format = "f", digits = 2), scaled_value = value, Category = "Trip-Level\nVariance (CV)")
+][, scaled_value := -1 * scaled_value
 # Get the maximum and minimum value within the category
-':=' (worst = min(scaled_value), best = max(scaled_value)), by = .(Category)][,
+][, ':=' (worst = min(scaled_value), best = max(scaled_value)), by = .(Category)
 # Calculate the spread between best and worst
-spread := best - worst][,                                                                                                                                                                                               
+][, spread := best - worst
 # Find the relative difference
-DIFF := (scaled_value - worst) / spread][, 
+][, DIFF := (scaled_value - worst) / spread
 # Recode columns
-':=' (BUDGET = recode(as.character(BUDGET), "3500000" = "$3.5M", "4500000" = "$4.5M", "5250000" = "$5.25M"),
-variable = recode_factor(variable, "crab_psc" = "Crab PSC",
-                                   "discard"  = "Discards",
-                                   "hlbt_psc" = "Halibut PSC",
-                                   "chnk_psc" = "Chinook PSC"),
-Allocation = recode(Allocation, "STATUS_QUO" = "STATUS\nQUO"))]
+][, ':=' (
+  BUDGET = recode(as.character(BUDGET), "3500000" = "$3.5M", "4500000" = "$4.5M", "5250000" = "$5.25M"),
+  variable = recode_factor(
+    variable, 
+    "crab_psc" = "Crab PSC", "discard"  = "Discards", "hlbt_psc" = "Halibut PSC", "chnk_psc" = "Chinook PSC"),
+  Allocation = recode(Allocation, "STATUS_QUO" = "STATUS\nQUO"))]
 
 # Figures ----
 
