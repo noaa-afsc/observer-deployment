@@ -7,12 +7,12 @@ library(scales)
 library(tidyverse)
 
 # * Get data ----
-load("source_data/2024_Draft_ADP_data.rdata")
-load("source_data/strata_timeliness.RData")
+load("source_data/2024_Draft_ADP_data.rdata")              # https://drive.google.com/file/d/1Nq202X4JyuOOdnP_ENHRvsI7fWDE2qPo/view?usp=drive_link
+load("source_data/strata_timeliness.RData")                # https://drive.google.com/file/d/1WjmGwo5qx_orqGgC09gm6wAPIh1V9VPl/view?usp=drive_link
 
 # * Get intermediate results ----
-load("results/draft_rates_effort.rdata")
-load("results/scorecard_dt.rdata")
+load("results/draft_rates_effort.rdata")                   # https://drive.google.com/file/d/1feAzcFhFvMfADQP2Lp2vu4mhh0hQiceQ/view?usp=drive_link
+load("results/scorecard_dt.rdata")                         # https://drive.google.com/file/d/1Een7cUVuGiCMjMlkedY1NUXW3tCRbsa7/view?usp=drive_link
 
 # * Get functions ----
 source("common_functions/evaluate_data_timeliness.R")
