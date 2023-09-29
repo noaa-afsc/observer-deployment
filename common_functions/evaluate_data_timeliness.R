@@ -3,7 +3,7 @@ evaluate_data_timeliness <- function(data, strata_timeliness, budget, rates, str
   fgem_n_new <- sum(
     rates[
     ][[paste(stratification, allocation, sep = ".")]][
-    ][ADP == unique(data$ADP) & BUDGET == budget & STRATUM_COL %in% c("EM_HAL", "EM_POT", "EM_FIXED-BSAI", "EM_FIXED-GOA", "EM_HAL-BSAI", "EM_HAL-GOA", "EM_POT-BSAI", "EM_POT-GOA"), n])
+    ][ADP == unique(data$ADP) & BUDGET == budget & STRATUM_COL %like% c("EM_HAL|EM_POT|EM_FIXED"), n])
   strata_timeliness <- strata_timeliness[
   ][COVERAGE_TYPE == "PARTIAL"
   ][STRATA %in% c("EM_HAL", "EM_POT"), mean_data_timeliness := round(mean_data_timeliness * (fgem_n_new / 285), 2)]
