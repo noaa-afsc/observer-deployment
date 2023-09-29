@@ -25,8 +25,8 @@ library(dplyr)              # For piping and handling sf objects
 ## Load data and data prep ----
 #=============================#
 
-load("analyses/draft_rates/draft_rates_2.rdata")           # Raw output from nalyses/draft_rates/draft_rates.R - box definitions and raw rates
-load("analyses/draft_rates/draft_rates_effort_2.rdata")    # Outputs from analyses/draft_rates/draft_rates.R - compiled rates and effort
+load("results/draft_rates.rdata")           # Raw output from nalyses/draft_rates/draft_rates.R - box definitions and raw rates
+load("results/draft_rates_effort.rdata")    # Outputs from analyses/draft_rates/draft_rates.R - compiled rates and effort
 
 # Load the ADFG statistical area shapefile. '../' is needed for Rmarkdown to climb into parent folders.
 stat_area_sf <- st_read(
@@ -416,7 +416,7 @@ ggplot(all_ispn_overall_plot_dt_old, aes(x = Allocation, y = METHOD, fill = DIFF
 interspersion_ak <- all_ispn_overall_plot_dt[ADP == 2022, .(BUDGET, Stratification, Allocation, variable = METHOD, value = METHOD_ISPN, BASELINE, DIFF)]
 interspersion_fmp <- all_ispn_fmp_plot_dt[ADP == 2022, .(BUDGET, Stratification, Allocation, variable = METHOD, value = METHOD_ISPN, BASELINE, DIFF)]
 
-save(interspersion_ak, interspersion_fmp, file = "analyses/evaluation_interspersion/scorecard_interspersion.rdata")
+save(interspersion_ak, interspersion_fmp, file = "results/scorecard_interspersion.rdata")
 # Saved to google drive: https://drive.google.com/file/d/15ImmB1LDkfeZCtfKy94IhSvk5OF9YQqC/view?usp=drive_link
 
 
@@ -589,41 +589,11 @@ for(i in 1:length(figs_insp_2022_fmp_grobs)) figs_insp_2022_fmp_grobs[[i]]$width
 #================================#
 ##  [Appendix B] Gear-Specific Interspersion (AK-wide and FMP-specific for each budget)
 
-ggsave(grid.arrange(figs_insp_2022_grobs[["3.5M"]]) ,     file = "analyses/evaluation_interspersion/tables_and_figures/figure_B_lo_AK.png", width = 12, height = 6, units = "in")
-ggsave(grid.arrange(figs_insp_2022_fmp_grobs[["3.5M"]]),  file = "analyses/evaluation_interspersion/tables_and_figures/figure_B_lo_FMP.png", width = 12, height = 6, units = "in")
+ggsave(grid.arrange(figs_insp_2022_grobs[["3.5M"]]) ,     file = "output_figures/figure_B_lo_AK.png", width = 12, height = 6, units = "in")
+ggsave(grid.arrange(figs_insp_2022_fmp_grobs[["3.5M"]]),  file = "output_figures/figure_B_lo_FMP.png", width = 12, height = 6, units = "in")
 
-ggsave(grid.arrange(figs_insp_2022_grobs[["4.5M"]]),      file = "analyses/evaluation_interspersion/tables_and_figures/figure_B_md_AK.png", width = 12, height = 6, units = "in")
-ggsave(grid.arrange(figs_insp_2022_fmp_grobs[["4.5M"]]),  file = "analyses/evaluation_interspersion/tables_and_figures/figure_B_md_FMP.png", width = 12, height = 6, units = "in")
+ggsave(grid.arrange(figs_insp_2022_grobs[["4.5M"]]),      file = "output_figures/figure_B_md_AK.png", width = 12, height = 6, units = "in")
+ggsave(grid.arrange(figs_insp_2022_fmp_grobs[["4.5M"]]),  file = "output_figures/figure_B_md_FMP.png", width = 12, height = 6, units = "in")
 
-ggsave(grid.arrange(figs_insp_2022_grobs[["5.25M"]]),     file = "analyses/evaluation_interspersion/tables_and_figures/figure_B_hi_AK.png", width = 12, height = 6, units = "in")
-ggsave(grid.arrange(figs_insp_2022_fmp_grobs[["5.25M"]]), file = "analyses/evaluation_interspersion/tables_and_figures/figure_B_hi_FMP.png", width = 12, height = 6, units = "in")
-
-
-#===================#
-# CWB Ph Figures ----
-#===================#
-
-# Figure 3-4
-cwb_2022_dat <- current.cwb_prop$Ph_dt[ADP == 2022 & STRATA != "ZERO"]
-cwb_Ph_plot <- ggplot(cwb_2022_dat, aes(x = SAMPLE_RATE, y = Ph, color = STRATA)) + geom_line(size = 1) + 
-  theme(legend.position = "bottom") + scale_x_continuous(breaks = seq(0, 1, 0.2)) + 
-  labs(x = "Sample Rate", color = "Strata", y = expression(hat(P)[h]))
-
-ggsave(cwb_Ph_plot, file = "analyses/evaluation_interspersion/tables_and_figures/cwb_Ph.png", width = 4, height = 4, units = "in")
-
-#============================#
-# Proximity Index Figures ----
-#============================#
-
-# Figure 3-6
-prox_2022_dat <- melt(current.prox_index$rates[ADP == 2022], id.vars = c("STRATA", "SAMPLE_RATE"), measure.vars = c("ISPN", "CV_SCALING", "INDEX"))
-prox_2022_dat[, variable := factor(
-  variable, 
-  levels = c("ISPN", "CV_SCALING", "INDEX"),
-  labels = c(expression(hat(T)[h]), expression(F[h]), expression(D[h]) ))]
-prox_indices_plot <-  ggplot(prox_2022_dat, aes(x = SAMPLE_RATE, y = value, color = STRATA)) + 
-  facet_grid(. ~ variable, labeller = label_parsed, scales = "free") + 
-  geom_line(size = 1) + labs(x = "Sample rate", y = "Value", color = "Strata") + 
-  scale_x_continuous(breaks = seq(0, 1, 0.2)) + 
-  ylim(c(0, 1)) + theme(legend.position = "bottom")
-ggsave(prox_indices_plot, file = "analyses/evaluation_interspersion/tables_and_figures/prox_indices.png", width = 8, height = 4, units = "in")
+ggsave(grid.arrange(figs_insp_2022_grobs[["5.25M"]]),     file = "output_figures/figure_B_hi_AK.png", width = 12, height = 6, units = "in")
+ggsave(grid.arrange(figs_insp_2022_fmp_grobs[["5.25M"]]), file = "output_figures/figure_B_hi_FMP.png", width = 12, height = 6, units = "in")
