@@ -25,8 +25,8 @@ library(dplyr)              # For piping and handling sf objects
 ## Load data and data prep ----
 #=============================#
 
-load("analyses/draft_rates/draft_rates_2.rdata")           # Raw output from nalyses/draft_rates/draft_rates.R - box definitions and raw rates
-load("analyses/draft_rates/draft_rates_effort_2.rdata")    # Outputs from analyses/draft_rates/draft_rates.R - compiled rates and effort
+load("results/draft_rates.rdata")           # Raw output from nalyses/draft_rates/draft_rates.R - box definitions and raw rates
+load("results/draft_rates_effort.rdata")    # Outputs from analyses/draft_rates/draft_rates.R - compiled rates and effort
 
 #===============#
 ## Constants ----
@@ -109,5 +109,5 @@ ggplot(data_collection_summary[ADP == 2022], aes(x = Allocation, y = variable, f
 scorecard_samples_bio <- data_collection_summary[ADP == 2022 & variable %like% "Bio|OB_at_sea|EM_TRW_shoreside", .(BUDGET, Stratification, Allocation, variable, value, BASELINE, DIFF)]
 scorecard_samples_comp <- data_collection_summary[ADP == 2022 & variable %like% "Comp|OB_at_sea|EMFG_at_sea", .(BUDGET, Stratification, Allocation, variable, value, BASELINE, DIFF)]
 
-save(scorecard_samples_bio, scorecard_samples_comp, file = "analyses/evaluation_bio_comp_n/scorecard_bio_comp_n.rdata")
+save(scorecard_samples_bio, scorecard_samples_comp, file = "results/scorecard_bio_comp_n.rdata")
 # Saved to google drive: https://drive.google.com/file/d/1hFKoG4jiZYvMpyDfTa1LoDTOnUhhoclE/view?usp=drive_link
