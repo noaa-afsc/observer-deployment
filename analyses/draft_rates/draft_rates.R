@@ -231,6 +231,35 @@ if(F) save(list = setdiff(ls(), lsf.str()), file = "results/draft_rates.rdata")
 
 if(F) load("results/draft_rates.rdata")
 
+#===================#
+# CWB Ph Figures ----
+#===================#
+
+# Figure 3-4
+cwb_2022_dat <- current.cwb_prop$Ph_dt[ADP == 2022 & STRATA != "ZERO"]
+cwb_Ph_plot <- ggplot(cwb_2022_dat, aes(x = SAMPLE_RATE, y = Ph, color = STRATA)) + geom_line(linewidth = 1) + 
+  theme(legend.position = "bottom") + scale_x_continuous(breaks = seq(0, 1, 0.2)) + 
+  labs(x = "Sample Rate", color = "Strata", y = expression(hat(P)[h]))
+
+ggsave(cwb_Ph_plot, file = "output_figures/cwb_Ph.png", width = 4, height = 4, units = "in")
+
+#============================#
+# Proximity Index Figures ----
+#============================#
+
+# Figure 3-6
+prox_2022_dat <- melt(current.prox_index$rates[ADP == 2022], id.vars = c("STRATA", "SAMPLE_RATE"), measure.vars = c("ISPN", "CV_SCALING", "INDEX"))
+prox_2022_dat[, variable := factor(
+  variable, 
+  levels = c("ISPN", "CV_SCALING", "INDEX"),
+  labels = c(expression(hat(T)[h]), expression(F[h]), expression(D[h]) ))]
+prox_indices_plot <-  ggplot(prox_2022_dat, aes(x = SAMPLE_RATE, y = value, color = STRATA)) + 
+  facet_grid(. ~ variable, labeller = label_parsed, scales = "free") + 
+  geom_line(size = 1) + labs(x = "Sample rate", y = "Value", color = "Strata") + 
+  scale_x_continuous(breaks = seq(0, 1, 0.2)) + 
+  ylim(c(0, 1)) + theme(legend.position = "bottom")
+ggsave(prox_indices_plot, file = "output_figures/prox_indices.png", width = 8, height = 4, units = "in")
+
 # Names of designs
 # design_labels <- apply(
 #   expand.grid(c("Equal Rates", "Status Quo", "Cost-weighte Boxes", "Proximity"), c("Current", "FMP", "Fixed-FMP")), 
