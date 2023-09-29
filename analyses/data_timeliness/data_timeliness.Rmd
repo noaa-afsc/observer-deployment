@@ -1,0 +1,233 @@
+---
+title: "Data Timeliness as an Evaluation Metric"
+output: html_document
+date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r start, include=FALSE}
+library(data.table)
+library(reshape2)
+library(ROracle)
+library(tidyverse)
+
+channel_akro <- eval(parse(text = Sys.getenv("channel_cas")))
+channel_afsc <- eval(parse(text = Sys.getenv("channel_afsc")))
+
+knitr::opts_chunk$set(echo = FALSE)
+options(scipen = 9999)
+```
+
+```{r get_data}
+em_trip_end <- dbGetQuery(channel_afsc, "
+select distinct e.year, e.odds_trip_number,
+trunc(max(t.trip_end_date_time)) as trip_end
+from norpac.odds_logged_trip_summary_v e
+join norpac.odds_em_request_status h on h.status_year = e.year 
+join norpac.odds_monitor i on i.trip_plan_log_seq = e.odds_trip_number
+left join em_pac_review.em_trip t on t.trip_plan_log_seq = e.odds_trip_number
+where e.year = 2022
+and e.observer_status_code <> 'NO'
+and e.trip_status in ('COMPLETED', 'PENDING')
+and i.sample_plan_seq in (13)
+group by e.year, e.odds_trip_number
+order by e.odds_trip_number")
+
+em_data_available <- dbGetQuery(channel_akro, "
+select h.ODDS_TRIP_NUMBER, 
+-- sampling strata information
+case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end as coverage_type,
+decode(ss.sampling_strata_code,
+'EM_H', 'EM_HAL',
+'EM_P', 'EM_POT',
+'H'   , 'EM_HAL',
+'P'   , 'EM_POT') as strata,
+trunc(min(r.EFFECTIVE_DATE)) data_available
+from AKFISH_REPORT.CATCH_REPORT_SOURCE r
+join AKFISH_REPORT.CATCH_REPORT_SPECIES_FACT f on r.CATCH_REPORT_SOURCE_PK = f.CATCH_REPORT_SOURCE_PK
+join AKFISH_REPORT.EM_HAUL h on f.EM_HAUL_PK = h.EM_HAUL_PK
+join AKFISH_REPORT.CALENDAR_DATE c on f.REPORT_DATE_PK = c.CALENDAR_DATE_PK
+join akfish_report.sampling_strata ss on ss.sampling_strata_pk = f.sampling_strata_pk
+where r.year_pk >= 2021 
+and r.CATCH_REPORT_TYPE_CODE = 'EM'
+and ss.sampling_strata_code != 'N/A'
+group by h.ODDS_TRIP_NUMBER,
+case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end,
+decode(ss.sampling_strata_code,
+'EM_H', 'EM_HAL',
+'EM_P', 'EM_POT',
+'H'   , 'EM_HAL',
+'P'   , 'EM_POT')
+order by h.ODDS_TRIP_NUMBER")
+
+ob_trips <- dbGetQuery(channel_afsc, 
+  "select extract(year from t.start_date) as year, t.cruise, t.permit, t.trip_seq, t.end_date as trip_end
+   from norpac.atl_fma_trip t
+   join norpac.ols_observer_cruise cru on cru.cruise = t.cruise
+   join norpac.ols_observer_contract con on con.contract_number = cru.contract_number
+   where extract(year from t.start_date) = 2022
+   and t.did_fishing_occur_flag = 'Y'")
+
+ob_hauls <- dbGetQuery(channel_akro, 
+  "select h.cruise, to_char(v.vessel_id) as permit, h.trip_seq,
+  -- sampling strata information
+case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end as coverage_type,
+decode(ss.sampling_strata_code,
+'EM_H', 'EM_HAL',
+'EM_P', 'EM_POT',
+'EM_TrawlFullCoverage', 'EM_TRW_EFP',
+'EM_TrawlPartialCoverage', 'EM_TRW_EFP',
+'EM_TrawlPartialCoverageTen', 'EM_TRW_EFP',
+'F', 'FULL',
+'H', 'HAL',
+'N', 'ZERO',
+'P', 'POT',
+'TR', 'TRW') as strata,
+trunc(min(r.EFFECTIVE_DATE)) data_available
+from AKFISH_REPORT.CATCH_REPORT_SOURCE r
+join AKFISH_REPORT.CATCH_REPORT_SPECIES_FACT f on r.CATCH_REPORT_SOURCE_PK = f.CATCH_REPORT_SOURCE_PK
+join AKFISH_REPORT.OBSERVER_HAUL h on f.OBSERVER_HAUL_PK = h.OBSERVER_HAUL_PK
+join AKFISH_REPORT.CALENDAR_DATE c on f.REPORT_DATE_PK = c.CALENDAR_DATE_PK
+join akfish_report.sampling_strata ss on ss.sampling_strata_pk = f.sampling_strata_pk
+join akfish_report.vessel v on v.vessel_pk = f.vessel_pk
+where r.year_pk >= 2021 
+and r.CATCH_REPORT_TYPE_CODE = 'OBS'
+and ss.sampling_strata_code != 'N/A'
+group by h.cruise, v.vessel_id, h.trip_seq,
+case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end,
+decode(ss.sampling_strata_code,
+'EM_H', 'EM_HAL',
+'EM_P', 'EM_POT',
+'EM_TrawlFullCoverage', 'EM_TRW_EFP',
+'EM_TrawlPartialCoverage', 'EM_TRW_EFP',
+'EM_TrawlPartialCoverageTen', 'EM_TRW_EFP',
+'F', 'FULL',
+'H', 'HAL',
+'N', 'ZERO',
+'P', 'POT',
+'TR', 'TRW')")
+
+afsc_offloads <- dbGetQuery(channel_afsc, 
+"select distinct extract(year from delivery_end_date) as year, to_char(offload_join) offload_join, delivery_end_date, date_of_entry
+from obsint.offload_em_trawl_received_v
+where extract(year from delivery_end_date) = 2022")
+
+akro_offloads <- dbGetQuery(channel_akro, 
+"with j as (
+    -- sub query to only include active offloads
+    select distinct offload_join
+    from akfish_report.catch_report_source
+    where expire_date is null
+    and catch_report_type_code = 'EM_OFFLOAD'
+    and year_pk = 2022
+    ), q as (
+    select to_char(r.offload_join) offload_join,
+    -- sampling strata information
+    case when ss.sampling_strata_code in ('F', 'EM_TrawlFullCoverage') then 'FULL' else 'PARTIAL' end as coverage_type,
+    decode(ss.sampling_strata_code,
+    'EM_TrawlFullCoverage', 'EM_TRW_EFP',
+    'EM_TrawlPartialCoverage', 'EM_TRW_EFP',
+    'EM_TrawlPartialCoverageTen', 'EM_TRW_EFP') as strata
+    from akfish_report.catch_report_source r
+    join akfish_report.catch_report_species_fact f on f.catch_report_source_pk = r.catch_report_source_pk
+    join akfish_report.sampling_strata ss on ss.sampling_strata_pk = f.sampling_strata_pk
+    where r.catch_report_type_code = 'EM_OFFLOAD'
+      and r.year_pk = 2022
+      and r.offload_join in (select * from j)
+      and ss.sampling_strata_code != 'N/A'
+) select distinct * from q")
+```
+
+```{r wrangle_data}
+em_data_timeliness <- em_trip_end %>% 
+                      inner_join(
+                      em_data_available, 
+                      by = "ODDS_TRIP_NUMBER"
+                      ) %>% 
+                      select(YEAR, TRIP_NUMBER = ODDS_TRIP_NUMBER, COVERAGE_TYPE, STRATA, TRIP_END, DATA_AVAILABLE) %>% 
+                      mutate(TRIP_END = as.Date(TRIP_END),
+                             DATA_AVAILABLE = as.Date(DATA_AVAILABLE),
+                             data_timeliness = as.numeric(difftime(DATA_AVAILABLE, TRIP_END, units = "days")))
+                      
+ob_data_timeliness <- ob_trips %>% 
+                      inner_join(
+                      ob_hauls,
+                      by = c("CRUISE", "PERMIT", "TRIP_SEQ")
+                      ) %>% 
+                      mutate(TRIP_NUMBER = paste0(CRUISE, PERMIT, TRIP_SEQ), 
+                             TRIP_END = as.Date(TRIP_END),
+                             DATA_AVAILABLE = as.Date(DATA_AVAILABLE)) %>% 
+                      select(YEAR, TRIP_NUMBER, COVERAGE_TYPE, STRATA, TRIP_END, DATA_AVAILABLE) %>%  
+                      mutate(data_timeliness = as.numeric(difftime(DATA_AVAILABLE, TRIP_END, units = "days")))
+
+offload_data_timeliness <- afsc_offloads %>% 
+                           inner_join(
+                           akro_offloads, 
+                           by = "OFFLOAD_JOIN"
+                           ) %>% 
+                           select(YEAR, TRIP_NUMBER = OFFLOAD_JOIN, COVERAGE_TYPE, STRATA, TRIP_END = DELIVERY_END_DATE, DATA_AVAILABLE = DATE_OF_ENTRY) %>% 
+                           mutate(TRIP_END = as.Date(TRIP_END),
+                                  DATA_AVAILABLE = as.Date(DATA_AVAILABLE),
+                                  data_timeliness = as.numeric(difftime(DATA_AVAILABLE, TRIP_END, units = "days")) + 1)
+
+data_timeliness <- rbind(em_data_timeliness, ob_data_timeliness, offload_data_timeliness) %>% 
+                   mutate(data_timeliness = ifelse(data_timeliness < 0, 0, data_timeliness)) %>% 
+                   group_by(TRIP_NUMBER) %>% 
+                   filter(n_distinct(COVERAGE_TYPE) == 1 & n_distinct(STRATA) == 1) %>% 
+                   ungroup()
+```
+
+# Calculating Data Timeliness
+For most trips, I calculated data timeliness as the time between a trip ending and data being available to the Catch Accounting System. For trawl EM, I used offload end date instead of trip end date, as I was unable to link trip end date to trawl EM offloads. I used the time at which data were available to the CAS, rather than the time at which data were submitted to the AFSC, as I could measure the former more consistently across EM and observed strata. I used data from 2022 to calculate stratum-specific data timeliness. Trips from which data were not available were excluded. Dashed red lines and their associated annotations show mean data timeliness for each stratum:    
+```{r figure, fig.width=6, fig.height=5}
+times_smry <- data_timeliness %>%
+              group_by(YEAR, COVERAGE_TYPE, STRATA) %>%
+              summarise(mean_data_timeliness = round(mean(data_timeliness), 2), .groups = "drop") %>% 
+              mutate(label = paste(format(mean_data_timeliness, nsmall = 2)))
+
+times_figure <- ggplot(filter(data_timeliness, COVERAGE_TYPE != "FULL"), aes(x = data_timeliness)) +
+                facet_wrap(sub("_EFP", "", sub("_", " ", STRATA)) ~ ., scales="free_y", ncol = 2, dir = "v") +
+                geom_histogram(bins = 20, fill="gray70") +
+                geom_vline(data = filter(times_smry, COVERAGE_TYPE != "FULL"), aes(xintercept = mean_data_timeliness), color = "red", lty = 2) +
+                geom_text(data = filter(times_smry, COVERAGE_TYPE != "FULL"), aes(x = mean_data_timeliness, y = Inf, label = label), angle = 90, hjust = 1.2, vjust = -.25) +
+                labs(x="Data timeliness (days)", y="Count") +
+                theme_bw()
+
+times_figure
+
+if(!file.exists("output_figures/data_timeliness.png")){
+  ggsave(filename = "output_figures/data_timeliness.png", width = 6, height = 5, units = 'in')}
+```
+
+# Creating a Function
+I created a function that uses stratum-specific mean data timeliness to estimate the mean data timeliness of all (monitored and unmonitored) non-jig trips within a data set.   
+```{r table}
+strata_timeliness <- setDT(times_smry)[, .(COVERAGE_TYPE, STRATA, mean_data_timeliness)]
+
+save(strata_timeliness, file = "source_data/strata_timeliness.RData")   # https://drive.google.com/file/d/1WjmGwo5qx_orqGgC09gm6wAPIh1V9VPl/view?usp=drive_link
+
+strata_timeliness
+```
+
+```{r function}
+data <- setDT(dbGetQuery(channel_akro, "select * from akfish_sf.valhalla where adp = 2022"))
+
+source("common_functions/evaluate_data_timeliness.R")
+```
+
+Unmonitored trips receive the same timeliness as monitored trips within a stratum, since data from monitored trips will be used to generate estimates for unmonitored trips. As an example, the function estimates a mean data timeliness of 26.68 days for all non-jig trips that occurred in 2022:  
+```{r example_1, echo = TRUE}
+evaluate_data_timeliness(data, strata_timeliness)
+```
+
+This can be compared to a design in which data from fixed-gear EM strata are available in half the time it currently takes them to reach CAS:  
+```{r example_2, echo = TRUE}
+evaluate_data_timeliness(data, copy(strata_timeliness)[STRATA %in% c("EM_HAL", "EM_POT"), mean_data_timeliness := round(mean_data_timeliness/2, 2)])
+```
+
+Or we could choose to return mean data timeliness for partial coverage strata only:    
+```{r example_3, echo = TRUE}
+evaluate_data_timeliness(data[COVERAGE_TYPE == "PARTIAL"], strata_timeliness)
+```
+  
