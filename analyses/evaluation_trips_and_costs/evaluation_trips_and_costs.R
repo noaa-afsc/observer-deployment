@@ -421,7 +421,7 @@ expense_variances_lst <- mapply(
 
 expense_2022 <- rbindlist(expense_variances_lst, idcol = "DESIGN", fill = T)
 expense_2022[, c("BUDGET", "ADP") := tstrsplit(BUDGET.ADP, split = "[.]")][, BUDGET.ADP := NULL]
-expense_2022_cv <- expense_variances_2022[, .(EXP_SD = sd(TOTAL), EXP_MAX = max(TOTAL), EXP_MIN = min(TOTAL), EXP_MEAN = mean(TOTAL)), by = .(ADP, BUDGET, DESIGN)]
+expense_2022_cv <- expense_2022[, .(EXP_SD = sd(TOTAL), EXP_MAX = max(TOTAL), EXP_MIN = min(TOTAL), EXP_MEAN = mean(TOTAL)), by = .(ADP, BUDGET, DESIGN)]
 expense_2022_cv[, c("Stratification", "Allocation") := tstrsplit(DESIGN, split  = "[.]")][, DESIGN := NULL]
 expense_2022_cv[, Allocation := factor(Allocation, levels = c("EQUAL", "STATUS_QUO", "CWB", "PROX"))]
 expense_2022_cv[, Stratification := factor(Stratification, levels = c("CURRENT", "FMP", "FIXED_FMP"))]
@@ -438,9 +438,9 @@ expenses_cv_2022_plot <- ggplot(expense_2022_cv, aes(x = ALLO_LBL, y = EXP_CV)) 
   labs(x = "Allocation method", y = "CV of expenses") 
 
 # Figure 5-1
-ggsave(expenses_cv_2022_plot, file = "analyses/evaluation_interspersion/figure_eval_expenses_cv.png", width = 8, height = 6, units = "in", dpi = 300)
+ggsave(expenses_cv_2022_plot, file = "output_figures/figure_eval_expenses_cv.png", width = 8, height = 6, units = "in", dpi = 300)
 
 # For Scorecard!
 scorecard_expense_cv <- expense_2022_cv[, .(BUDGET, Stratification, Allocation, variable = "CV", value = EXP_CV, BASELINE, DIFF)]
-save(scorecard_expense_cv, file = "analyses/evaluation_trips_and_costs/scorecard_expense_cv.rdata")
+save(scorecard_expense_cv, file = "results/scorecard_expense_cv.rdata")
 # Saved to google drive: https://drive.google.com/file/d/1RM16ONVHDtWfaIDMnX5znRa4mWxXDr5x/view?usp=drive_link
