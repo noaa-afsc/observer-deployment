@@ -35,12 +35,12 @@ strat_vec <- c("CURRENT", "FMP", "FIXED_FMP")
 ## Load data and data prep ----
 #=============================#
 
-load("analyses/evaluation_trips_and_costs/scorecard_expense_cv.rdata")  # scorecard_expense_cv
-load("analyses/evaluation_bio_comp_n/scorecard_bio_comp_n.rdata") # scorecard_samples_bio, scorecard_samples_comp
-load("analyses/evaluation_interspersion/scorecard_interspersion.rdata") # interspersion_ak, interspersion_fmp
+load("results/scorecard_expense_cv.rdata")  # scorecard_expense_cv
+load("results/scorecard_bio_comp_n.rdata") # scorecard_samples_bio, scorecard_samples_comp
+load("results/scorecard_interspersion.rdata") # interspersion_ak, interspersion_fmp
 # Load Craig's Power to detect tables
 # For now, Geoff had a copy placed in the evaluation_interspersion folder as the detection folder wasn't on repo.
-load("analyses/evaluation_interspersion/Power_tables.Rdata") # design_detect_table, detect_table, and effects_table     
+load("results/Power_tables.Rdata") # design_detect_table, detect_table, and effects_table     
 
 rare_event_detection_dt <- setDT(copy(design_detect_table))
 rare_event_detection_dt[
@@ -102,5 +102,5 @@ scorecard_dt <- rbind(
   rare_event_detection_dt[, .(Category, BUDGET, Stratification, Allocation, variable, value, BASELINE, DIFF, label)]
 )
 
-# save(scorecard_dt, file = "analyses/evaluation_scorecard_p1/scorecard_dt.rdata")
+# save(scorecard_dt, file = "results/scorecard_dt.rdata")
 # Saved to google drive Draft ADP Outputs Folder: https://drive.google.com/file/d/1Een7cUVuGiCMjMlkedY1NUXW3tCRbsa7/view?usp=drive_link
