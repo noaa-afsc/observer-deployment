@@ -60,13 +60,13 @@ ts_ex <- box_lst$CURRENT$geom_sf %>% filter(ADP == 2022 & STRATA %in% c("OB_HAL"
 ts_ex_map <- crop_map(ak_low_res, ts_ex)
 
 # Calculate the weight of trips in each box (shows where fishing is distributed in time and space)
-map_ob_box_w <- ggplot(a_map) + 
+map_ob_box_w <- ggplot(ts_ex_map) + 
   geom_sf() + geom_sf(data = ts_ex, aes(fill = BOX_w), color = "black") + map_theme_1 + 
   labs(fill = expression(italic("w"["b"]))) + 
   scale_fill_viridis_c(trans = "sqrt")
 
 # Count of unique trips in the neighborhood of each box (shows which boxes are likely or unlikely to be neighboring a sampled trip )
-map_ob_box_nbr <- ggplot(a_map) + 
+map_ob_box_nbr <- ggplot(ts_ex_map) + 
   geom_sf() + geom_sf(data = ts_ex, aes(fill = BOX_nbr), color = "black") + map_theme_1 + 
   labs(fill = expression(italic("t"["G"]))) + 
   scale_fill_viridis_c(trans = "sqrt")
@@ -105,7 +105,7 @@ ggsave("analyses/stratification/figures/fmsc_2_map_ob_box_A.png",      plot = ma
 ggsave("analyses/stratification/figures/fmsc_2_map_ob_box_1_A_wb.png", plot = map_ob_box_1_A_wb, width = 11, height = 6)
 
 # Data table preview version
-a_dt <- setDT(a %>% st_drop_geometry())[
+a_dt <- setDT(ts_ex %>% st_drop_geometry())[
 ][, .SD[1:10, .(BOX_ID, HEX_ID, WEEK = TIME, Nb = BOX_n, wb = BOX_w, tG = BOX_nbr, Ab = 1 - PROB)], keyby = STRATA] 
 
 ob_hal_prob_ft <- a_dt %>% filter(STRATA == "OB_HAL") %>%  flextable() %>% 
@@ -133,9 +133,8 @@ save_as_pptx(ob_hal_prob_ft, ob_pot_prob_ft, ob_trw_prob_ft, path = "analyses/st
 # FOR CWB, it's a little trickier, need to iteratively adjust assumed sample rate before getting Ph. For 
 
 
-# save(cwb_prop, prox_index, prox_rates, file = "analyses/stratification/fmac_2_data.rdata")
 # quick load here : https://drive.google.com/file/d/1pKLjF_Sa69OCUQ3nkzHT6uEN4sv1M8HM/view?usp=drive_link
-load(file = "analyses/stratification/fmac_2_data.rdata")
+load(file = "analyses/stratification/fmsc_2_data.rdata")
 
 # Need cwb_prop and other objects to make figures of curves! Making them from stratification_allocation_test.R for now
 cwb_curves <- ggplot(cwb_prop$Ph_dt[ADP == 2022 & STRATA != "ZERO"], aes(x = SAMPLE_RATE, y = Ph, color = STRATA)) + geom_line(linewidth = 1.5) + 
@@ -263,7 +262,7 @@ gear_fmp_dt <- data.table(GEAR = rep(c("HAL", "POT", "TRW"), each = 2), FMP = re
 t1 <- rates_smry_wide[Stratification == "Current", -"Stratification"]
 t1[, GEAR := tstrsplit(Strata, "_")[[2]]]
 t1 <- t1[gear_fmp_dt, on = .(GEAR)]
-setnames(t1, c("N", "Equal_"), c("Current_N", "Current_Rate"))
+setnames(t1, c("N", "Equal Rates"), c("Current_N", "Current_Rate"))
 
 t2 <- rates_smry_wide[Stratification == "FMP", -"Stratification"]
 
