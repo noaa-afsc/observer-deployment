@@ -2,11 +2,11 @@
 
 # Investigation of how many trips would be in hypothetical strata, considering changes to gear type (status quo, putting
 # mixed-gear trips into distinct strata, or pooling all fixed-gear trips into one strata) crossed with further
-# sttratifying by FMP (status quo, BSAI vs GOA, or BS vs AI vs GOA). To assess whether certain stratifications make 
-# sense, the probability that each stratum X FMP is reasonbly sized, we consider the probability that each cell would
-# be sampled and the probablity that two or fewer samples would be collected, given a 15% sample rate.
+# stratifying by FMP (status quo, BSAI vs GOA, or BS vs AI vs GOA). To assess whether certain stratification make 
+# sense, the probability that each stratum X FMP is reasonably sized, we consider the probability that each cell would
+# be sampled and the probability that two or fewer samples would be collected, given a 15% sample rate.
 
-# The resulting preadsheet outputs are in our google drive:
+# The resulting spreadsheet outputs are in our google drive:
 # https://docs.google.com/spreadsheets/d/18YKPncs3P2pbafssWQ-crvV2KAhn16Yx/edit?usp=sharing&ouid=112928343270640187258&rtpof=true&sd=true
 
 #======================================================================================================================#

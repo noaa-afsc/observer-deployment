@@ -1,0 +1,172 @@
+---
+title: "2024 Draft ADP Preliminary Rates"
+date: "2023-08-22"
+output:
+  bookdown::word_document2:
+      reference_docx: ../../reference-word-doc.docx
+      page_margins:
+           bottom: 0.75 
+           top: 1
+           right: 0.75
+           left: 0.75
+           header: 0.5 
+           footer: 0.5 
+           gutter: 0.0 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+library(data.table)
+library(ggplot2)
+library(magrittr)  # for piping
+library(flextable)
+library(grid)
+library(gridExtra)
+library(scales) 
+```
+
+```{r load data}
+load("results/draft_prelim_rates.rdata")
+```
+
+```{r create monitoring costs curves}
+# Make a figure to relate sample rate to cost-per-unit (days or trips)
+cost_curve.rate_costs <- cost_dt[ADP == 2022, .(MON_RATE, OB_CPD, EMFG_CPD, EMTRW_CPT)]
+cost_curve.melt <- melt(cost_curve.rate_costs, id.vars = "MON_RATE", value.vars = c("OB_CPD", "EMFG_CPD", "EMTRW_CPT"))
+cost_curve.melt[, Method := fcase(
+  variable == "OB_CPD", "Observer CPD",
+  variable == "EMFG_CPD", "EM Fixed-Gear CPD",
+  variable == "EMTRW_CPT", "EM Trawl CPT"
+)]
+cost_curve.melt[, Method := as.factor(Method)]
+cost_curve.melt[, Method := factor(Method, levels = rev(levels(Method)))]
+
+cost_curves <- ggplot(cost_curve.melt[MON_RATE > 0.025], aes(x = MON_RATE, y = value)) + facet_grid(Method ~ "", scales = "free_y") + 
+  geom_line(linewidth = 1) + 
+  theme(
+    strip.background.x = element_blank(), strip.text.x = element_blank(),
+    axis.text.x = element_blank(), axis.ticks.x = element_blank(),
+    axis.text.y = element_blank(), axis.ticks.y = element_blank(),
+    panel.grid.major = element_blank(), panel.grid.minor = element_blank()
+  ) + 
+  labs(x = "Monitoring Rate", y = "Cost Per Unit") 
+```
+
+```{r create rates table}
+
+design_rates <- rbind(
+  cbind(Design = "Current x Equal", current.equal[ADP == 2022, .(STRATUM_COL = STRATA, STRATA_N, SAMPLE_RATE = MON_RATE, n = round(MON_N))]),
+  cbind(Design = "Current x SQ", current.status_quo[ADP == 2022, .(STRATUM_COL = STRATA, STRATA_N, SAMPLE_RATE = MON_RATE, n = round(MON_N))]),
+  cbind(Design = "Current x CWB", current.cwb_rates2$rates[ADP == 2022, .(STRATUM_COL, STRATA_N, SAMPLE_RATE = round(fh, 4), n = round(STRATA_N * fh))]),
+  cbind(Design = "Current x PROX", current.prox_rates[ADP == 2022, .(STRATUM_COL, STRATA_N, SAMPLE_RATE, n = round(n))]),
+  
+  cbind(Design = "FMP x Equal", fmp.equal[ADP == 2022, .(STRATUM_COL = STRATA, STRATA_N, SAMPLE_RATE = MON_RATE, n = round(MON_N))]),
+  cbind(Design = "FMP x SQ", fmp.status_quo[ADP == 2022, .(STRATUM_COL = STRATA, STRATA_N, SAMPLE_RATE = MON_RATE, n = round(MON_N))]),
+  cbind(Design = "FMP x CWB", fmp.cwb_rates2$rates[ADP == 2022, .(STRATUM_COL, STRATA_N, SAMPLE_RATE = round(fh, 4), n = round(STRATA_N * fh))]),
+  cbind(Design = "FMP x PROX", fmp.prox_rates[ADP == 2022, .(STRATUM_COL, STRATA_N, SAMPLE_RATE, n = round(n))]),
+
+  cbind(Design = "Fixed-FMP x Equal", fixed_fmp.equal[ADP == 2022, .(STRATUM_COL = STRATA, STRATA_N, SAMPLE_RATE = MON_RATE, n = round(MON_N))]),
+  cbind(Design = "Fixed-FMP x SQ", fixed_fmp.status_quo[ADP == 2022, .(STRATUM_COL = STRATA, STRATA_N, SAMPLE_RATE = MON_RATE, n = round(MON_N))]),
+  cbind(Design = "Fixed-FMP x CWB", fixed_fmp.cwb_rates2$rates[ADP == 2022, .(STRATUM_COL, STRATA_N, SAMPLE_RATE = round(fh, 4), n = round(STRATA_N * fh))]),
+  cbind(Design = "Fixed-FMP x PROX", fixed_fmp.prox_rates[ADP == 2022, .(STRATUM_COL, STRATA_N, SAMPLE_RATE, n = round(n))])
+)
+design_rates[, METHOD := fcase(
+  STRATUM_COL %like% "OB", "OB",
+  STRATUM_COL %like% "EM_HAL|EM_POT|EM_FIXED", "EM_FG",
+  STRATUM_COL %like% "EM_TRW", "EM_TRW")]
+design_rates[, c("STRATA", "FMP") := tstrsplit(STRATUM_COL, split = "-")]
+design_levels <- c(
+  paste("Current",   c("Equal", "SQ", "CWB", "PROX"), sep = " x "),
+  paste("FMP",       c("Equal", "SQ", "CWB", "PROX"), sep = " x "),
+  paste("Fixed-FMP", c("Equal", "SQ", "CWB", "PROX"), sep = " x ")
+)
+design_rates[, Design := factor(Design, levels = design_levels)]
+design_rates[, Sample_Perc := SAMPLE_RATE*100]
+design_rates[, Gear := gsub("^[^_]*_", "", STRATA)]
+
+design_rates_final <- design_rates[, .(Design, Method = METHOD, FMP, Gear, N = STRATA_N, `Sample %` = Sample_Perc, n)]
+
+
+h_line_i <- which(design_rates_final[-1, Design] != design_rates_final[-.N, Design])
+design_rates_flex <- design_rates_final %>% flextable() %>% fontsize(size = 8, part = "all") %>%
+  padding(padding = 1)  %>% hline(i = h_line_i) %>% autofit() 
+
+make_design_rates_table <- function(x) {
+  h_line_i <- which(x[-1, Design] != x[-.N, Design])
+  x %>% flextable() %>% fontsize(size = 8, part = "all") %>%
+    padding(padding = 1)  %>% hline(i = h_line_i) %>% autofit() 
+}
+
+current.table <- make_design_rates_table(design_rates_final[Design %like% "^Current x"])
+fmp.table <- make_design_rates_table(design_rates_final[Design %like% "^FMP x"])
+fixed_fmp.table <- make_design_rates_table(design_rates_final[Design %like% "^Fixed-FMP x"])
+
+
+```
+
+### Preliminary Sample Rates for the 2024 Draft Annual Deployment Plan
+
+The purpose of this analysis is to preview the sampling rates allocated by the designs proposed in the 2024 Annual Deployment Plan (ADP) as well as the assumptions built in to these preliminary results. Note that these results are apt to change when the 2024 Draft ADP is posted as data and assumptions are updated.
+
+
+### Fishing effort 
+The monitoring designs presented in this analysis were applied to fishing effort in 2022. Per the usual ADP schedule, the Draft ADP analysis uses fishing effort from the prior calendar year and the Final ADP will incorporate changes to reflect anticipated changes to fishing effort, costs, and EM pool participation. As a result, note that this analysis does not yet include anticipated changes due to the PCTC, changes to the Fixed-gear EM vessel pool, or Trawl EM vessel pools.
+
+
+### Monitoring Costs
+
+Monitoring cost models were generated for all three monitoring methods: at-sea observers, at-sea fixed-gear EM, and trawl EM (including both compliance monitoring at-sea and shoreside sampling by observers). These models were built using the best available data and reflect known patterns of economy of scale and inflation. This analysis will assume a budget of $4.5M dollars, which approximates the ex-vessel fee revenue from recent years. The Draft ADP will examine designs at budgets above and below this amount.
+
+* **At-sea Observers**: Cost-per-observer day is a function of total sea days and travel costs; as total sea days increase, cost-per-day decreases. Although the current partial coverage observer contract concludes in mid-August, the cost structure was assumed to apply generally to the entire year. Additionally, because the new partial coverage contract will no longer have a single ‘guaranteed day’ minimum of 2000 days, the cost model assumes the ability to purchase less than 2000 days (at higher per-unit costs) .
+
+* **At-sea Fixed-Gear EM**: Fixed-gear EM costs are a function of the number of vessels in the pool and how many trips are reviewed. Fixed costs are calculated as the number of fixed-gear EM vessels multiplied by the average yearly cost of each vessel (equipment install and maintenance costs), and review costs are calculated as the number of sampled trips multiplied by review costs. Costs assume that costs (both fixed and recurring) will be fully funded by the PC ex-vessel monitoring fee in the future.
+
+* **Trawl EM**: Fixed Trawl EM costs are a function of the number of GOA-only vessels expected to join the pool (GOA-only vessels are expected to have equipment install and maintenance costs funded by the ex-vessel fee, whereas any vessels that fish both GOA and BS are assumed to pay for those costs). Review costs are assumed as the total number of sea days multiplied by the per-day compliance review cost. Shoreside observer costs are assumed as the expected number of shoreside observer days multiplied by the expected costs of each shoreside day. Costs assume that costs (both fixed and recurring) will be fully funded by the PC ex-vessel monitoring fee in the future.
+
+```{r Figure 1. Cost curves, fig.width = 3, fig.height = 6}
+cost_curves
+```
+
+*Figure 1.* Relationships of cost-per-unit as a function of monitoring rate for each of the three monitoring methods. The y-axis units were obliterated to discourage comparisons. Observers do not have fixed costs but generally have higher per-day costs that gradually scale with volume. Trawl EM has high fixed costs dependent on the number of GOA-only vessels, cheap costs for compliance monitoring review, and moderate costs for shoreside sampling that scale with volume. Fixed-gear EM has very high fixed costs dependent on the number of wired vessels that enter the pool and low review costs. 
+
+
+### Designs
+
+Monitoring designs are a combination of stratification and allocation schemes. 
+
+* **Stratification**: Used to divide the population into sample units (trips/offloads). ODDS must be able to assign a stratum to a trip based on characteristics known before fishing occurs.
+  + **Current**: [Monitoring Method (Observer, EM Fixed Gear, EM Trawl)] **x** [Gear Type (HAL, POT, TRW]
+  + **FMP**: 	[Monitoring Method (Observer, EM Fixed Gear, EM Trawl)] **x** [Gear Type (HAL, POT, TRW] **x** [**FMP (BSAI, GOA)**]
+Further stratifying by FMP allows differential allocation that may reduce the likelihood of gaps in the BSAI 
+  + **Fixed-FMP**:	[Monitoring Method (Observer, EM Fixed Gear, EM Trawl)] **x** [Gear Type (**FIXED**, TRW] **x** [FMP (BSAI, GOA)]
+Combining HAL and POT gear trips into a FIXED gear stratum simplifies the existing issue of deciding how to assign strata to trips that fish with multiple gear types. 
+
+* **Allocation Methods**:
+Used to decide how much to sample each stratum, given a budget. Allocation methods differ based on the goals they are mean to achieve.
+  + **Equal Rates**: Useful for comparisons and when little is known about the population.
+  + **Status Quo**: The current allocation method, in part dictated by the policy decision to sample Fixed-gear EM at 30% and Trawl EM at 33.33%, with the remaining funds allocated to the Observer strata. Observer strata are allocated at equal rates up until the strata achieve a 95% probability of realizing 15%, and additional samples are allocated to reduce variance of discards, Chinook PSC, and halibut PSC.
+  + **Cost-weighted Boxes**: Allocates more samples to strata with a higher proportion of boxes (based on the arrangement of trips in time and space) expected to not be near a neighboring sampled trip, and allocates more to strata with a lower cost per trip.
+  + **Proximity**: Allocates more samples to strata with a lower expected proportion of trips neighboring a sampled trip, and allocates more to strata with fewer total trips to prevent small sample size issues.
+
+### Preliminary Rates
+
+*Table 1.* Preliminary rates and sample sizes from all designs considered in the 2024 Draft Annual Deployment Plan. *Design* is a combination of the stratification and allocation schemes. *Method* refers to the monitoring method. *FMP* and *Gear* identify how strata are defined in addition to *Method*. *N* is the total number of trips in a stratum, *Sample %* is the preliminary sample rate given a $4.5M budget, and *n* is the preliminary sample size.
+
+```{r Table 1. Current rates table}
+current.table
+```
+
+\newpage
+```{r Table 2. FMP rates table}
+fmp.table
+```
+
+\newpage
+```{r Table 3. Fixed-FMP rates table}
+fixed_fmp.table
+```
+
+
+### Analyst Notes
+
+- A $4.5M budget is not sufficient for the status quo allocation scheme to afford optimized days. Therefore, the status quo allocation method employs equal rates allocation to the Observer strata.

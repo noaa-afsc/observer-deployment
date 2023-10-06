@@ -365,7 +365,12 @@ td_mod2$DIAG$YEAR_GEAR[, mean(PERC), by = GEAR]  # PTR 1.07, HAL 0.38
 # Let's apply mod1 for now (it's what we've used in recent years). Can only be applied to 2015 data onward, but not 2013 (no data in billdays?)
 td_mod1$TD_MOD$xlevels  # 2014 is there but was only applied to like one POT trip, so year 2014 doesn't exist for other gear types!
 
-td_pred <- unique(work.data[
+# FIXME - Apparently NORPAC.ODDS_BILLDAYS_2015_MV has 2023 Cruise and Permits, but columns AT_SEA_DAY_COUNT_ODDS and ODDS_TRIP_PLAN_LOG_SEQ
+# are no longer being populated! This will need to be fixed for calculating trip duration!!!# For now, for the 2024 Draft ADP, we don't need 2023 fishing effort, so carve it off now (it otherwise results in an error beccause 
+# there is no 2023 model to apply to 2023 data).  
+# Added as issue #24 on the repo
+
+td_pred <- unique(work.data[ADP < 2023][
   ADP >= 2015 & CVG_NEW == "PARTIAL" & STRATA_NEW %in% c("HAL", "POT", "TRW") & AGENCY_GEAR_CODE != "JIG", 
   .(AGENCY_GEAR_CODE, START = min(TRIP_TARGET_DATE, LANDING_DATE, na.rm = T), END = max(TRIP_TARGET_DATE, LANDING_DATE, na.rm = T)), 
   by = .(ADP, TRIP_ID)])
@@ -391,8 +396,11 @@ td_pred <- td_pred[, .(DAYS = round(mean(MOD)/0.5)*0.5), by = .(ADP, TRIP_ID)]
 work.data[, PERMIT := NULL][, PERMIT := as.integer(VESSEL_ID)]
 
 # Identify which FMP had most retained catch, splitting FMP by BSAI and GOA
-pc_trip_id_count <- uniqueN(work.data[CVG_NEW == "PARTIAL" & ADP >= 2015, TRIP_ID])
-fmp_bsai_goa <- work.data[CVG_NEW == "PARTIAL" & ADP >= 2015, .(
+# FIXME excluded 2023 per issue #24 on the repo
+pc_trip_id_count <- uniqueN(work.data[CVG_NEW == "PARTIAL" & ADP >= 2015 & ADP < 2023, TRIP_ID])
+
+# FIXME excluded 2023 per issue #24 on the repo
+fmp_bsai_goa <- work.data[CVG_NEW == "PARTIAL" & ADP >= 2015 & ADP < 2023, .(
   FMP_WT = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)
 ), by = .(TRIP_ID, BSAI_GOA = FMP)][, .SD[which.max(FMP_WT)], by = .(TRIP_ID)][, FMP_WT := NULL][]
 if( (pc_trip_id_count != uniqueN(fmp_bsai_goa$TRIP_ID) ) | (pc_trip_id_count != nrow(fmp_bsai_goa)) ) {
@@ -400,7 +408,9 @@ if( (pc_trip_id_count != uniqueN(fmp_bsai_goa$TRIP_ID) ) | (pc_trip_id_count != 
 }
 
 # Identify which FMP had most retained catch, splitting FMP by BS, AI and GOA
+# FIXME excluded 2023 per issue #24 on the repo
 fmp_bs_ai_goa <- copy(work.data)[
+][ADP < 2023
 ][CVG_NEW == "PARTIAL" & ADP >= 2015, 
 ][, BS_AI_GOA := fcase(
   REPORTING_AREA_CODE %in% c(541, 542, 543), "AI",
@@ -413,10 +423,11 @@ if( (pc_trip_id_count != uniqueN(fmp_bs_ai_goa$TRIP_ID) ) | (pc_trip_id_count !=
   stop("Something went wrong making 'fmp_bs_ai_goa'")
 }
 
+# FIXME also excluding 2023 here per issue #24 on the repo
 pc_effort_dt <- unique(
-  work.data[CVG_NEW == "PARTIAL" & ADP >= 2015, .(
+  work.data[ADP < 2023][CVG_NEW == "PARTIAL" & ADP >= 2015, .(
     PERMIT, TARGET = TRIP_TARGET_CODE, AREA = as.integer(REPORTING_AREA_CODE), AGENCY_GEAR_CODE, 
-    GEAR = ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", AGENCY_GEAR_CODE), STRATA = STRATA_NEW, 
+    GEAR = ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", AGENCY_GEAR_CODE), STRATA = STRATA_NEW,                 # Here, we defined STRATA_NEW as STRATA
     TRIP_TARGET_DATE, LANDING_DATE, ADFG_STAT_AREA_CODE = as.integer(ADFG_STAT_AREA_CODE), wd_TRIP_ID), 
     keyby = .(ADP = as.integer(ADP), TRIP_ID)])
 
@@ -444,7 +455,7 @@ pc_effort_dt[, POOL := ifelse(STRATA %like% "EM", "EM", ifelse(STRATA == "ZERO",
 #======================================================================================================================#
 # FIXME    LANDING_DATE missing for some trips!
 
-# pc_effort_dt[is.na(LANDING_DATE), .(N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)] # 141 trips total
+# pc_effort_dt[is.na(LANDING_DATE), .(N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)] # 96 trips total
 # pc_effort_dt[PERMIT %in% PartialCPs$VESSEL_ID & ADP %in% c(2015:2016), .(N = uniqueN(TRIP_ID)), by = .(is.na(LANDING_DATE))]
 # unique(work.data[TRIP_ID %in% pc_effort_dt[is.na(LANDING_DATE), unique(TRIP_ID)], .(TRIP_ID, REPORT_ID, MANAGEMENT_PROGRAM_CODE)])
 # All off of the trips missing LANDING_DATE are from partial coverage CPs (but some trips by those vessels DO have )
@@ -459,6 +470,11 @@ pc_effort_dt <- pc_effort_dt[!is.na(LANDING_DATE)]
 
 # Rename strata to include POOL
 unique(pc_effort_dt$STRATA)
+if(any(unique(pc_effort_dt$STRATA) == "FULL")) stop("There are some FULL coverage trips in the partial coverage dataset!")
+# FIXME I believe some new PCTC vessels were added and although the STRATA_NEW column was updated, CVG_NEW was both 
+# FULL and PARTIAL for some TRIP_IDs
+pc_effort_dt <- pc_effort_dt[STRATA != "FULL"]
+
 pc_effort_dt[, STRATA := fcase(
   STRATA == "HAL", "OB_HAL",
   STRATA == "POT" ,"OB_POT",
@@ -484,4 +500,6 @@ trips_melt[, TRIP_ID := trip_id_tbl[trips_melt, TRIP_ID, on = .(wd_TRIP_ID)]]
 # For some reason, my shapefiles don't include ADFG STAT AREA 515832. Seem like it was merged into 515831. 
 pc_effort_dt[ADFG_STAT_AREA_CODE == 515832, ADFG_STAT_AREA_CODE := 515831]
 
-save(pc_effort_dt, trips_melt, file = "analyses/allocation_evaluation/allocation_evaluation.Rdata")
+if(F) save(pc_effort_dt, trips_melt, file = "analyses/allocation_evaluation/allocation_evaluation.Rdata")
+
+if(F) save(pc_effort_dt, trips_melt, file = "analyses/draft_rates/data_prep_outputs.Rdata")                             # Used for 2024 Draft
