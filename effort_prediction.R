@@ -103,13 +103,14 @@ p4 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) 
 # "GOA Halibut EM_HAL",
 # "GOA Halibut EM_POT",
 # "GOA Halibut HAL",
+# "GOA Halibut POT",
 # "GOA Halibut ZERO",
 # "GOA Pollock EM_TRW_EFP",
 # "GOA Pollock TRW",
 # "GOA Sablefish EM_HAL",
 # "GOA Sablefish EM_POT",
 # "GOA Sablefish HAL",
-# "GOA Sablefish POT", 
+# "GOA Sablefish POT",
 # "GOA Sablefish ZERO",
 # "BSAI Halibut EM_HAL",
 # "BSAI Halibut HAL",
@@ -117,24 +118,26 @@ p4 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) 
 
 # 2) Fisheries for which we would use a *subset* of years to calculate the ratio:
 
-## use 2021 data only for the following fisheries:
-# "GOA Pacific Cod EM_POT", 
-# "GOA Pacific Cod EM_HAL", 
-# "GOA Pacific Cod HAL",    
-# "GOA Pacific Cod POT",    
-# "GOA Pacific Cod ZERO",   
-# "BSAI Sablefish EM_POT",  
-# "BSAI Sablefish HAL"      
+## use 2021 and 2022 data only for the following fisheries:
+# "GOA Pacific Cod EM_POT",
+# "GOA Pacific Cod EM_HAL",
+# "GOA Pacific Cod HAL",
+# "GOA Pacific Cod POT",
+# "GOA Pacific Cod ZERO",
+# "BSAI Sablefish EM_POT",
+# "BSAI Sablefish HAL"
+
+## use 2022 data only for the following fisheries:
+# "GOA Pacific Cod TRW"
 
 # 3) Fisheries that don't exist or are finished by October:
-# "GOA Halibut POT",
 # "GOA Other EM_HAL",
 # "GOA Other EM_POT",
 # "GOA Other HAL",
 # "GOA Other TRW",
 # "GOA Other ZERO",
-# "GOA Pacific Cod TRW",
 # "BSAI Halibut EM_POT",
+# "BSAI Halibut POT",
 # "BSAI Halibut ZERO",
 # "BSAI Other POT",
 # "BSAI Pacific Cod EM_HAL",
@@ -143,7 +146,7 @@ p4 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) 
 # "BSAI Pacific Cod POT",
 # "BSAI Pacific Cod TRW",
 # "BSAI Pacific Cod ZERO",
-# "BSAI Pollock TRW",
+# "BSAI Pollock EM_TRW_EFP",
 # "BSAI Sablefish EM_HAL",
 # "BSAI Sablefish ZERO"
 
@@ -162,37 +165,40 @@ dec.oct.ratio <- rbind(
                                FMP_TARGET_STRATA %in% c("GOA Halibut EM_HAL",
                                                         "GOA Halibut EM_POT",
                                                         "GOA Halibut HAL",
+                                                        "GOA Halibut POT",
                                                         "GOA Halibut ZERO",
+                                                        "GOA Pollock EM_TRW_EFP",
                                                         "GOA Pollock TRW",
                                                         "GOA Sablefish EM_HAL",
                                                         "GOA Sablefish EM_POT",
                                                         "GOA Sablefish HAL",
-                                                        "GOA Sablefish POT", 
+                                                        "GOA Sablefish POT",
                                                         "GOA Sablefish ZERO",
                                                         "BSAI Halibut EM_HAL",
                                                         "BSAI Halibut HAL",
                                                         "BSAI Sablefish POT"),
                  .(RATIO=mean(THRU_DEC_TRIPS/THRU_OCT_TRIPS)), by = .(FMP_TARGET_STRATA)],
                  # group 2: ratios from a subset of years
-                 dec.oct.trips[ADP %in% c(ADPyear-2) &
-                                  FMP_TARGET_STRATA %in% c("GOA Pacific Cod EM_POT", 
-                                                           "GOA Pacific Cod EM_HAL", 
-                                                           "GOA Pacific Cod HAL",    
-                                                           "GOA Pacific Cod POT",    
-                                                           "GOA Pacific Cod ZERO",   
-                                                           "BSAI Sablefish EM_POT",  
+                 dec.oct.trips[ADP %in% c(ADPyear-3, ADPyear-2) &
+                                  FMP_TARGET_STRATA %in% c("GOA Pacific Cod EM_POT",
+                                                           "GOA Pacific Cod EM_HAL",
+                                                           "GOA Pacific Cod HAL",
+                                                           "GOA Pacific Cod POT",
+                                                           "GOA Pacific Cod ZERO",
+                                                           "BSAI Sablefish EM_POT",
                                                            "BSAI Sablefish HAL"),
                                .(RATIO=mean(THRU_DEC_TRIPS/THRU_OCT_TRIPS)), by = .(FMP_TARGET_STRATA)],
+                 dec.oct.trips[ADP %in% c(ADPyear-2) &
+                                 FMP_TARGET_STRATA %in% c("GOA Pacific Cod TRW"),
+                               .(RATIO=mean(THRU_DEC_TRIPS/THRU_OCT_TRIPS)), by = .(FMP_TARGET_STRATA)],
                  # group 3: overwrite the mean ratios with 1 for domains that are done by october
-                 dec.oct.trips[FMP_TARGET_STRATA %in% c("GOA Halibut POT",
-                                                        "GOA Other EM_HAL",
+                 dec.oct.trips[FMP_TARGET_STRATA %in% c("GOA Other EM_HAL",
                                                         "GOA Other EM_POT",
                                                         "GOA Other HAL",
                                                         "GOA Other TRW",
                                                         "GOA Other ZERO",
-                                                        "GOA Pollock EM_TRW_EFP",
-                                                        "GOA Pacific Cod TRW",
                                                         "BSAI Halibut EM_POT",
+                                                        "BSAI Halibut POT",
                                                         "BSAI Halibut ZERO",
                                                         "BSAI Other POT",
                                                         "BSAI Pacific Cod EM_HAL",
@@ -201,7 +207,7 @@ dec.oct.ratio <- rbind(
                                                         "BSAI Pacific Cod POT",
                                                         "BSAI Pacific Cod TRW",
                                                         "BSAI Pacific Cod ZERO",
-                                                        "BSAI Pollock TRW",
+                                                        "BSAI Pollock EM_TRW_EFP",
                                                         "BSAI Sablefish EM_HAL",
                                                         "BSAI Sablefish ZERO"),
                   .(RATIO=1), by = .(FMP_TARGET_STRATA)])
