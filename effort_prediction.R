@@ -299,9 +299,7 @@ total.trips.year   <- total.trips.target[, .(TOTAL_TRIPS = sum(TOTAL_TRIPS)), by
 total.trips.year[ADP == ADPyear - 1, TOTAL_TRIPS := total.trips.year[ADP == ADPyear, TOTAL_TRIPS]]
 
 # add any Guess Variation Factor (GVF) to ADPyear effort
-# we were off by -20.9, 6.2, -6.5, and -1.8% in 2018, 2019, 2020, and 2021 respectively
-# round(mean(c(abs(0.062), abs(-0.065), abs(-0.018))), 4) = 0.0483
-gvf <- c(-0.0483, 0.0483)
+gvf <- c(-0.05, 0.05)
 total.trips.year[ADP == ADPyear, ':=' (MIN = (1 + min(gvf)) * TOTAL_TRIPS, MAX = (1 + max(gvf)) * TOTAL_TRIPS)]
 
 p11 <- ggplot(total.trips.year, aes(x = ADP, y = TOTAL_TRIPS)) +
@@ -315,7 +313,7 @@ p11 <- ggplot(total.trips.year, aes(x = ADP, y = TOTAL_TRIPS)) +
        labs(x = "Year", y = "Partial Coverage Trips") +
        theme_classic()
 
-# png("images/TripsPerYearGVF.png", width = 7, height = 5, units = 'in', res=300)
+# png("output_figures/TripsPerYearGVF.png", width = 7, height = 5, units = 'in', res=300)
 # p11
 # dev.off()
 
