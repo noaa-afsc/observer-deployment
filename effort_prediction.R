@@ -338,11 +338,11 @@ draw_from[, TRIP_TARGET_CODE := ifelse(TARGET == "S", "Sablefish", NA)
                 ][, TRIP_TARGET_CODE := ifelse(is.na(TRIP_TARGET_CODE), "Other", TRIP_TARGET_CODE)] 
 
 # add probability of trawl EM boats not taking an observer (efp_prob; based on data from vessels that have been in the program prior to ADPyear)
-# 2021-05-31 is the last day of the 2021 spring fisheries, and 2022-09-01 is the first day of the 2022 fall fisheries
-# by including trips after the 2021 spring fisheries have closed and before the 2022 fall fisheries have opened,
-# we calculate efp_prob based on the fall 2021 and spring 2022 seasons (the two most recent full seasons, 
-# as the fall 2022 fishery was not finished by the time Valhalla was compiled)  
-efp_prob <- unique(work.data[TRIP_TARGET_DATE > as.Date("2021-05-31") & TRIP_TARGET_DATE < as.Date("2022-09-01") & VESSEL_ID %in% efp_list$PERMIT[efp_list$YEAR_ADDED < ADPyear] & TRIP_TARGET_CODE %in% c("P", "B") & AGENCY_GEAR_CODE %in% c("NPT", "PTR"), .(TRIP_ID, COVERAGE_TYPE, STRATA, AGENCY_GEAR_CODE)])
+# 2022-05-31 is the last day of the 2022 spring fisheries, and 2023-09-01 is the first day of the 2023 fall fisheries
+# by including trips after the 2022 spring fisheries have closed and before the 2023 fall fisheries have opened,
+# we calculate efp_prob based on the fall 2022 and spring 2023 seasons (the two most recent full seasons, 
+# as the fall 2023 fishery was not finished by the time Valhalla was compiled)  
+efp_prob <- unique(work.data[TRIP_TARGET_DATE > as.Date("2022-05-31") & TRIP_TARGET_DATE < as.Date("2023-09-01") & VESSEL_ID %in% efp_list$PERMIT[efp_list$YEAR_ADDED < ADPyear] & TRIP_TARGET_CODE %in% c("P", "B") & AGENCY_GEAR_CODE %in% c("NPT", "PTR"), .(TRIP_ID, COVERAGE_TYPE, STRATA, AGENCY_GEAR_CODE)])
 efp_prob <- efp_prob[, .SD[all(AGENCY_GEAR_CODE == "PTR")], by = .(TRIP_ID)]
 efp_prob <- efp_prob[, .N, by = .(COVERAGE_TYPE, STRATA)]
 efp_prob <- efp_prob[, .(STRATA, N, EFP_PROB = N / sum(N)), by = .(COVERAGE_TYPE)][STRATA == "EM_TRW_EFP"]
@@ -367,4 +367,4 @@ efrt_adpyear <- draw_from[to_draw, on = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)]
 setnames(efrt_adpyear, "C_TRIPS", "TRIPS_PRED")
 
 # save effort predictions (to_draw) and the population of trips to sample from (draw_from)
-save(list = c("efrt", "efrt_adpyear", "gvf"), file = "data/effort_prediction.rdata")
+save(list = c("efrt", "efrt_adpyear", "gvf"), file = "source_data/effort_prediction.rdata")
