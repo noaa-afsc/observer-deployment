@@ -16,7 +16,7 @@ library(tidyverse)
 # Get data
 load("source_data/2024_Draft_ADP_data.rdata")
 rm(list=setdiff(ls(), c("trips_melt", "efrt", "work.data")))
-load("source_data/sandbox.rdata")
+load("results/draft_rates_effort.rdata")
 
 # Settings
 knitr::opts_chunk$set(echo = FALSE)
@@ -35,7 +35,8 @@ dat[, N := uniqueN(TRIP_ID), keyby = .(STRATA)]
 
 # Get observed trip status
 dat <- unique(work.data[, .(TRIP_ID, OBSERVED_FLAG)])[dat, on = .(TRIP_ID)]
-
+dat <- unique(dat[, .(TRIP_ID, STRATA, OBSERVED_FLAG, N, chnk_psc, crab_psc, discard, hlbt_psc)])
+  
 # Sum metrics by columns of interest
 dat <- dat[, .(chnk_psc = sum(chnk_psc), hlbt_psc = sum(hlbt_psc), discard = sum(discard), crab_psc = sum(crab_psc)), by = .(TRIP_ID, STRATA, OBSERVED_FLAG, N)]
 
@@ -140,21 +141,65 @@ flextable() %>%
 autofit()
 ```
 
-I wrote a function that estimates the trip-level mean, variance, standard error, and CV when given a data set of effort, a data set containing the original monitoring status of each trip, a data set containing the PSC and discards associated with the effort, the rates at which the effort will be sampled, and the trip column that data sets should be joined on:  
+I wrote a function that estimates the trip-level mean, variance, standard error, and CV when given a data set of effort, a data set containing the original monitoring status of each trip, a data set containing the PSC and discards associated with the effort, the rates at which the effort will be sampled (based on budget, stratification, and allocation), and the trip column that data sets should be joined on:  
 ```{r function}
 source("common_functions/evaluate_trip_variance.R")
 ```
 
 ```{r example_1, echo=TRUE}
-effort <- copy(efrt)[ADP == 2022 & POOL != "ZE"][, ':=' (STRATUM_COL = STRATA)]
-rates <- adp_rates[, .(ADP = 2022, STRATUM_COL = STRATA, SAMPLE_RATE = `15% + Opt 0.95`/100)]
+effort         <- copy(pc_effort.CURRENT)[ADP == 2022]
+budget         <- 4500000
+stratification <- "CURRENT"
+allocation     <- "STATUS_QUO"
 
-evaluate_trip_variance(effort, work.data, trips_melt, rates, effort_wd_join = "TRIP_ID")
+evaluate_trip_variance(effort, work.data, trips_melt, budget, rates, stratification, allocation, effort_wd_join = "wd_TRIP_ID")
+  
 ```
 
-```{r example_2, echo=TRUE}
-effort <- copy(pc_effort.current[POOL != "ZE"])
-rates <- rates_2022$CURRENT.MPO_SQ
-  
-evaluate_trip_variance(effort, work.data, trips_melt, rates, effort_wd_join = "wd_TRIP_ID")
+```{r for_ducument, eval=FALSE}
+f1 <- ggplot(dat[monitoring_rate >= 0.05 & monitoring_rate <= 0.25], aes(x = n, y = var)) +
+      geom_line() +
+      facet_grid(metric ~ sub("_EFP", "", sub("_", " ", STRATA)), scales = "free") +
+      scale_x_continuous(breaks = seq(25, 325, 75)) +
+      scale_y_continuous(labels = comma) +
+      labs(x = "Sample size", y = "Variance") +
+      theme_bw() +
+      theme(text=element_text(size=9))
+
+f2 <- ggplot(dat[monitoring_rate >= 0.05 & monitoring_rate <= 0.25], aes(x = monitoring_rate * 100, y = var)) +
+      geom_line() +
+      geom_vline(xintercept = 15, lty = 2, color = "red") +
+      facet_grid(metric ~ sub("_EFP", "", sub("_", " ", STRATA)), scales = "free") +
+      scale_y_continuous(labels = comma) +
+      labs(x = "Monitoring rate (%)", y = "Variance") +
+      theme_bw() +
+      theme(text=element_text(size=9))
+
+ggsave(f1, filename = "output_figures/trip_variance_1.png", width = 6, height = 5, units = "in")
+ggsave(f2, filename = "output_figures/trip_variance_2.png", width = 6, height = 5, units = "in")
+
+est_adp <- dat %>% 
+           filter(round(N * 0.15) == n)
+
+est_adp <- est_adp %>% 
+           select(STRATA, Metric = metric, var) %>% 
+           pivot_wider(names_from = STRATA, values_from = var) %>% 
+           mutate(Total  = rowSums(select_if(., is.numeric), na.rm = TRUE)) %>% 
+           mutate_if(is.numeric, sqrt) %>%
+           left_join(
+           est_adp %>% 
+           select(STRATA, Metric = metric, mean) %>% 
+           group_by(Metric) %>% 
+           summarise(`Catch Estimate` = sum(mean), .groups = "drop"),
+           by = join_by(Metric)
+           ) %>% 
+           mutate(CV = format(round(Total / `Catch Estimate`, 2), nsmall = 2)) %>% 
+           mutate_if(is.numeric, round) %>%
+           select(Metric, CV)
+
+t1 <- est_adp %>% 
+      flextable() %>% 
+      autofit()
+
+save_as_docx(t1, path = "output_tables/trip_variance.docx")
 ```

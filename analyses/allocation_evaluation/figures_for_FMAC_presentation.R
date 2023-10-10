@@ -199,6 +199,34 @@ FMAC_fig_mixed_gear_trips <- ggplot(gear_n[ADP == 2022], aes(y = STRATA, x = TRI
 
 ggsave(filename = "analyses/allocation_evaluation/figures/FMAC_fig_mixed_gear_trips.png", FMAC_fig_mixed_gear_trips, width = 7, height = 5, units = "in", dpi = 600)
 
+# Split NPT from PTR
+gear_n2 <- unique(val_2018_2022_dt[, .(POOL, ADP, STRATA, TRIP_ID, AGENCY_GEAR_CODE)])
+gear_n2 <- unique(gear_n2)
+gear_n2 <- dcast(gear_n2, ADP + POOL + STRATA + TRIP_ID ~ AGENCY_GEAR_CODE, value.var = "AGENCY_GEAR_CODE", fill = "")
+gear_n2 <- gear_n2[, .(TRIPS = uniqueN(TRIP_ID)), by = .(ADP, POOL, STRATA, HAL, JIG, POT, NPT, PTR)]
+gear_n2[, LABEL := gsub("  ", " ", trimws(paste0(c(HAL, JIG, POT, NPT, PTR), collapse = " "), which = "both")), by = 1:nrow(gear_n2)]
+gear_n2[, HATCH := ifelse(LABEL %in% c("HAL", "JIG", "POT", "NPT", "PTR"), "plain", "patterned")]
+gear_n2[, POOL := fcase(POOL == "EM", "EM", POOL == "OB", "Observer", POOL == "ZE", "Zero")]
+
+ggplot(gear_n2[ADP == 2022], aes(y = STRATA, x = TRIPS)) + 
+  facet_grid(POOL ~ ., scales = "free_y", space = "free_y") + 
+  geom_col_pattern(
+    mapping = aes(fill = LABEL, pattern = HATCH), 
+    pattern_fill = "orange", pattern_density = 0.4, position = "fill", color = "black") + 
+  scale_pattern_manual(values = c("crosshatch", "none"), guide = "none") +
+  scale_fill_viridis_d() +
+  guides(fill = guide_legend(override.aes = list(
+    pattern = c("none", "crosshatch", "none", "none", "crosshatch", "none", "none"),
+    pattern_fill = c("none", "orange", "none", "none", "orange", "none", "none")))) +
+  labs(x = "Proportion of Trips", fill = "Gear Types", pattern = "Gear Types", y = "Pool and Strata") +
+  scale_x_continuous(breaks = seq(0, 1, 0.2))
+
+# Percentage of trips mixed within fixed-gear
+gear_n2[ADP == 2022 & (HAL=="HAL" | POT=="POT"), sum(TRIPS[HATCH == "patterned"]) / sum(TRIPS), by =.(POOL)]
+# Percentage of trips mixed within TRW
+gear_n2[ADP == 2022 & (NPT=="NPT" | PTR=="PTR"), sum(TRIPS[HATCH == "patterned"]) / sum(TRIPS), by =.(POOL)]
+
+
 
 # TEST
 ggplot(gear_n[ADP == 2022], aes(y = STRATA, x = TRIPS)) + 
@@ -246,6 +274,24 @@ FMAC_fig_mixed_fmp_trips <- ggplot(fmp_n_bs_ai_goa, aes(y = STRATA, x = TRIPS)) 
   labs(x = "Proportion of Trips", fill = "FMPs", pattern = "FMPs", y = "Pool and Strata") 
 
 ggsave(filename = "analyses/allocation_evaluation/figures/FMAC_fig_mixed_fmp_trips.png", FMAC_fig_mixed_fmp_trips, width = 7, height = 4, units = "in", dpi = 600)
+
+# Percentages
+fmp_n_bs_ai_goa[, .(LABEL, PERC = 100 * TRIPS / sum(TRIPS)), by = .(POOL, STRATA)]
+fmp_n_bs_ai_goa[, .(PERC = 100 * sum(TRIPS[HATCH == "patterned"]) / sum(TRIPS)), by = .(POOL, STRATA)]
+
+# If splitting by BSAI vs GOA
+fmp_n_bsai_goa <- unique(fmp_n[, FMP := fcase(
+  AREA < 600, "BSAI",
+  AREA >= 600, "GOA")
+][, .(TRIP_ID, POOL, STRATA, FMP)])
+fmp_n_bsai_goa <- dcast(fmp_n_bsai_goa, POOL + STRATA + TRIP_ID ~ FMP, value.var = "FMP", fill = "")
+fmp_n_bsai_goa <- fmp_n_bsai_goa[, .(TRIPS = uniqueN(TRIP_ID)), by = .(POOL, STRATA, BSAI, GOA)]
+fmp_n_bsai_goa[, LABEL := gsub("  ", " ", trimws(paste0(c(BSAI, GOA), collapse = " "), which = "both")), by = 1:nrow(fmp_n_bsai_goa)]
+fmp_n_bsai_goa[, HATCH := ifelse(LABEL %in% c("BSAI", "GOA"), "plain", "patterned")]
+fmp_n_bsai_goa[, POOL := fcase(POOL == "EM", "EM", POOL == "OB", "Observer", POOL == "ZE", "Zero")]
+fmp_n_bsai_goa[, .(LABEL, PERC = 100 * TRIPS / sum(TRIPS)), by = .(POOL, STRATA)]
+fmp_n_bsai_goa[, .(PERC = 100 * sum(TRIPS[HATCH == "patterned"]) / sum(TRIPS)), by = .(POOL, STRATA)]
+
 
 #======================================================================================================================#
 # Evaluation Figure ----------------------------------------------------------------------------------------------------
@@ -310,7 +356,10 @@ ggsave(filename = "analyses/allocation_evaluation/figures/FMAC_interspersion_plo
 # FPC Figure  ----------------------------------------------------------------------------------------------------------
 #======================================================================================================================#
 
-# Calculate index as INTERSPERSION / CV_SCALING
+# Index = INTERSPERSION / CV_SCALING    
+# Both metrics scale from 0 to 1, so this allocation method weights both metrics equally. Both increase as the sampling
+# rate increase, but how they do so may differ between strata. CV_scaling (or the variance scaling factor) can also be
+# interpreted as the variance savings acquired from larger sample sizes according to the finite population correction.
 
 fpc_tbl <- data.table(
   STRATA_N = rep(c(50, 200, 800), each = 50),
