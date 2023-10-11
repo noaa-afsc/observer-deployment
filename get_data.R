@@ -152,7 +152,7 @@ FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT as vessel_id, length a
 work.data <- dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla"))
 
 # Load data from current year
-load("source_data/2023-09-19cas_valhalla.RData")
+load("source_data/2023-10-10cas_valhalla.RData")
 
 # Append data from current year to data from prior year
 work.data <- rbind(work.data, valhalla)
