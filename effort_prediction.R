@@ -14,7 +14,7 @@ efp_list <- fread("source_data/efp_list_2023-09-05.csv")
 # https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
 
 # calculate cumulative effort by stratum and species using valhalla from the past four years
-cumulative.trips.target <- copy(work.data)[ADP >= ADPyear - 4 & CVG_NEW == "PARTIAL" & AGENCY_GEAR_CODE!="JIG"]
+cumulative.trips.target <- copy(work.data)[ADP >= ADPyear - 4 & CVG_NEW == "PARTIAL" & AGENCY_GEAR_CODE != "JIG"]
 
 # simplify species and fmp labels
 cumulative.trips.target[
@@ -39,44 +39,44 @@ cumulative.trips.target[, TRIP_TARGET_DATE := min(TRIP_TARGET_DATE), by=TRIP_ID]
 cumulative.trips.target <- unique(cumulative.trips.target)
 
 # split trips that occurred in more than one fmp, adp, strata, and/or target
-cumulative.trips.target[ , TRIPS:=1/.N, by=TRIP_ID]
+cumulative.trips.target[ , TRIPS := 1/.N, by = TRIP_ID]
 
 # order the data
-cumulative.trips.target <- cumulative.trips.target[order(ADP, STRATA, TRIP_TARGET_CODE, TRIP_TARGET_DATE)]
+setorder(cumulative.trips.target, ADP, STRATA, TRIP_TARGET_CODE, TRIP_TARGET_DATE)
 
 # calculate cumulative trips by date for each domain
-cumulative.trips.target[, C_TRIPS:=cumsum(TRIPS), by=.(ADP, FMP, STRATA, TRIP_TARGET_CODE)]
+cumulative.trips.target[, C_TRIPS := cumsum(TRIPS), by = .(ADP, FMP, STRATA, TRIP_TARGET_CODE)]
 
 # reformat date columns
-cumulative.trips.target[, JULIAN_DATE:=yday(TRIP_TARGET_DATE)]
+cumulative.trips.target[, JULIAN_DATE := yday(TRIP_TARGET_DATE)]
 
 # set julian date to 1 for trips that left in year adp - 1
-cumulative.trips.target[, JULIAN_DATE:=ifelse(year(TRIP_TARGET_DATE)<ADP, 1, JULIAN_DATE)]
+cumulative.trips.target[, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) < ADP, 1, JULIAN_DATE)]
 
 # set julian date to 366 for trips that left in year adp + 1 (this should be no trips)
-cumulative.trips.target[, JULIAN_DATE:=ifelse(year(TRIP_TARGET_DATE)>ADP, 366, JULIAN_DATE)]
+cumulative.trips.target[, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) > ADP, 366, JULIAN_DATE)]
 
 # isolate the latest date for which we have data in the most recent year of valhalla
-max.date <- max(cumulative.trips.target[ADP==ADPyear-1, JULIAN_DATE])
+max.date <- max(cumulative.trips.target[ADP == ADPyear - 1, JULIAN_DATE])
 
 # plot cumulative trips by year and stratum
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
 
 ## GOA
 p1 <- ggplot(cumulative.trips.target[FMP == "GOA"], aes(JULIAN_DATE, C_TRIPS)) +
-      geom_line(aes(color=as.character(ADP)), linewidth=1.2) + 
-      geom_vline(xintercept = max.date, color="red") +
+      geom_line(aes(color = as.character(ADP)), linewidth = 1.2) + 
+      geom_vline(xintercept = max.date, color = "red" ) +
       geom_vline(xintercept = 366) +
-      facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
+      facet_wrap(FMP + TRIP_TARGET_CODE ~ STRATA, scales = "free") +
       labs(x = "Day of the year", y = "Cumulative trips", color = "Year") + 
       theme_bw()
 
 ## BSAI
 p2 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) +
-      geom_line(aes(color=as.character(ADP)), linewidth=1.2) + 
-      geom_vline(xintercept = max.date, color="red") +
+      geom_line(aes(color = as.character(ADP)), linewidth = 1.2) + 
+      geom_vline(xintercept = max.date, color = "red") +
       geom_vline(xintercept = 366) +
-      facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
+      facet_wrap(FMP + TRIP_TARGET_CODE ~ STRATA, scales = "free") +
       labs(x = "Day of the year", y = "Cumulative trips", color = "Year") + 
       theme_bw()
 
@@ -84,11 +84,11 @@ p2 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) 
 
 ## GOA
 p3 <- ggplot(cumulative.trips.target[FMP == "GOA"], aes(JULIAN_DATE, C_TRIPS)) +
-      geom_line(aes(color=as.character(ADP)), linewidth=1.2) + 
-      geom_vline(xintercept = max.date, color="red") +
+      geom_line(aes(color = as.character(ADP)), linewidth = 1.2) + 
+      geom_vline(xintercept = max.date, color = "red") +
       geom_vline(xintercept = 366) +
-      coord_cartesian(xlim = c(max.date-20, 366)) +
-      facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
+      coord_cartesian(xlim = c(max.date - 20, 366)) +
+      facet_wrap(FMP + TRIP_TARGET_CODE ~ STRATA, scales = "free") +
       labs(x = "Day of the year", y = "Cumulative trips", color = "Year") + 
       theme_bw()
 
