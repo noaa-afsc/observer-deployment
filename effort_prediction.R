@@ -62,45 +62,34 @@ max.date <- max(cumulative.trips.target[ADP == ADPyear - 1, JULIAN_DATE])
 # plot cumulative trips by year and stratum
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
 
+plot_theme_cumulative_trips <- list(
+  geom_line(aes(color = as.character(ADP)), linewidth = 1.2), 
+  geom_vline(xintercept = max.date, color = "red" ),
+  geom_vline(xintercept = 366),
+  facet_wrap(FMP + TRIP_TARGET_CODE ~ STRATA, scales = "free"),
+  labs(x = "Day of the year", y = "Cumulative trips", color = "Year"),
+  theme_bw())
+
+
 ## GOA
 p1 <- ggplot(cumulative.trips.target[FMP == "GOA"], aes(JULIAN_DATE, C_TRIPS)) +
-      geom_line(aes(color = as.character(ADP)), linewidth = 1.2) + 
-      geom_vline(xintercept = max.date, color = "red" ) +
-      geom_vline(xintercept = 366) +
-      facet_wrap(FMP + TRIP_TARGET_CODE ~ STRATA, scales = "free") +
-      labs(x = "Day of the year", y = "Cumulative trips", color = "Year") + 
-      theme_bw()
+      plot_theme_cumulative_trips
 
 ## BSAI
 p2 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) +
-      geom_line(aes(color = as.character(ADP)), linewidth = 1.2) + 
-      geom_vline(xintercept = max.date, color = "red") +
-      geom_vline(xintercept = 366) +
-      facet_wrap(FMP + TRIP_TARGET_CODE ~ STRATA, scales = "free") +
-      labs(x = "Day of the year", y = "Cumulative trips", color = "Year") + 
-      theme_bw()
+      plot_theme_cumulative_trips
 
 # plot cumulative trips by year and stratum for the portion of (ADPyear - 1) in which we don't have data
 
 ## GOA
 p3 <- ggplot(cumulative.trips.target[FMP == "GOA"], aes(JULIAN_DATE, C_TRIPS)) +
-      geom_line(aes(color = as.character(ADP)), linewidth = 1.2) + 
-      geom_vline(xintercept = max.date, color = "red") +
-      geom_vline(xintercept = 366) +
-      coord_cartesian(xlim = c(max.date - 20, 366)) +
-      facet_wrap(FMP + TRIP_TARGET_CODE ~ STRATA, scales = "free") +
-      labs(x = "Day of the year", y = "Cumulative trips", color = "Year") + 
-      theme_bw()
+      plot_theme_cumulative_trips + 
+      coord_cartesian(xlim = c(max.date - 20, 366)) 
 
 ## BSAI
 p4 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) +
-      geom_line(aes(color=as.character(ADP)), linewidth=1.2) + 
-      geom_vline(xintercept = max.date, color="red") +
-      geom_vline(xintercept = 366) +
-      coord_cartesian(xlim = c(max.date-20, 366)) +
-      facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
-      labs(x = "Day of the year", y = "Cumulative trips", color = "Year") + 
-      theme_bw()
+      plot_theme_cumulative_trips +
+      coord_cartesian(xlim = c(max.date - 20, 366))
 
 # Based on the plots, there are three conditions that stratum/species fisheries find themselves come October:
 # 1) Fisheries that increase by a (mostly) consistent ratio between October and December:
