@@ -144,66 +144,79 @@ p4 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) 
 # "BSAI Sablefish ZERO"
 
 # calculate the through October trips and the through December trips so that a ratio can later be calculated 
-dec.oct.trips <- unique(cumulative.trips.target[JULIAN_DATE<=max.date, .(THRU_OCT_TRIPS=max(C_TRIPS)), by=.(ADP, FMP, TRIP_TARGET_CODE, STRATA)][!is.na(THRU_OCT_TRIPS), .(ADP, FMP, TRIP_TARGET_CODE, STRATA, THRU_OCT_TRIPS)])[
-                 unique(cumulative.trips.target[, .(THRU_DEC_TRIPS=max(C_TRIPS)), by=.(ADP, FMP, TRIP_TARGET_CODE, STRATA)][!is.na(THRU_DEC_TRIPS), .(ADP, FMP, TRIP_TARGET_CODE, STRATA, THRU_DEC_TRIPS)]), 
-                 on = .(ADP, FMP, STRATA, TRIP_TARGET_CODE)]
+dec.oct.trips <- unique(cumulative.trips.target[
+][JULIAN_DATE <= max.date, .(THRU_OCT_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)
+][!is.na(THRU_OCT_TRIPS), .(ADP, FMP, TRIP_TARGET_CODE, STRATA, THRU_OCT_TRIPS)])[
+  unique(cumulative.trips.target[
+  ][, .(THRU_DEC_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)
+  ][!is.na(THRU_DEC_TRIPS), .(ADP, FMP, TRIP_TARGET_CODE, STRATA, THRU_DEC_TRIPS)]), 
+  on = .(ADP, FMP, STRATA, TRIP_TARGET_CODE)]
 
 # create a column that contains fmp, target, and stratum
-dec.oct.trips <- dec.oct.trips[, FMP_TARGET_STRATA:=paste(FMP, TRIP_TARGET_CODE, STRATA, sep = " ")][, .(ADP, FMP, TRIP_TARGET_CODE, STRATA, FMP_TARGET_STRATA, THRU_OCT_TRIPS, THRU_DEC_TRIPS)]
+dec.oct.trips <- dec.oct.trips[
+][, FMP_TARGET_STRATA := paste(FMP, TRIP_TARGET_CODE, STRATA, sep = " ")
+][, .(ADP, FMP, TRIP_TARGET_CODE, STRATA, FMP_TARGET_STRATA, THRU_OCT_TRIPS, THRU_DEC_TRIPS)]
 
 # find the dec/oct ratio for each group of fmp, target, stratum combinations
 dec.oct.ratio <- rbind(
-                 # group 1 : calculate the december/october trip ratio according to the groups above
-                 dec.oct.trips[ADP<ADPyear-1 & # because ADPyear-1 only has data through october
-                               FMP_TARGET_STRATA %in% c("GOA Halibut EM_HAL",
-                                                        "GOA Halibut EM_POT",
-                                                        "GOA Halibut HAL",
-                                                        "GOA Halibut POT",
-                                                        "GOA Halibut ZERO",
-                                                        "GOA Pollock EM_TRW_EFP",
-                                                        "GOA Pollock TRW",
-                                                        "GOA Sablefish EM_HAL",
-                                                        "GOA Sablefish EM_POT",
-                                                        "GOA Sablefish HAL",
-                                                        "GOA Sablefish POT",
-                                                        "GOA Sablefish ZERO",
-                                                        "BSAI Halibut EM_HAL",
-                                                        "BSAI Halibut HAL",
-                                                        "BSAI Sablefish POT"),
-                 .(RATIO=mean(THRU_DEC_TRIPS/THRU_OCT_TRIPS)), by = .(FMP_TARGET_STRATA)],
-                 # group 2: ratios from a subset of years
-                 dec.oct.trips[ADP %in% c(ADPyear-3, ADPyear-2) &
-                                  FMP_TARGET_STRATA %in% c("GOA Pacific Cod EM_POT",
-                                                           "GOA Pacific Cod EM_HAL",
-                                                           "GOA Pacific Cod HAL",
-                                                           "GOA Pacific Cod POT",
-                                                           "GOA Pacific Cod ZERO",
-                                                           "BSAI Sablefish EM_POT",
-                                                           "BSAI Sablefish HAL"),
-                               .(RATIO=mean(THRU_DEC_TRIPS/THRU_OCT_TRIPS)), by = .(FMP_TARGET_STRATA)],
-                 dec.oct.trips[ADP %in% c(ADPyear-2) &
-                                 FMP_TARGET_STRATA %in% c("GOA Pacific Cod TRW"),
-                               .(RATIO=mean(THRU_DEC_TRIPS/THRU_OCT_TRIPS)), by = .(FMP_TARGET_STRATA)],
-                 # group 3: overwrite the mean ratios with 1 for domains that are done by october
-                 dec.oct.trips[FMP_TARGET_STRATA %in% c("GOA Other EM_HAL",
-                                                        "GOA Other EM_POT",
-                                                        "GOA Other HAL",
-                                                        "GOA Other TRW",
-                                                        "GOA Other ZERO",
-                                                        "BSAI Halibut EM_POT",
-                                                        "BSAI Halibut POT",
-                                                        "BSAI Halibut ZERO",
-                                                        "BSAI Other POT",
-                                                        "BSAI Pacific Cod EM_HAL",
-                                                        "BSAI Pacific Cod EM_POT",
-                                                        "BSAI Pacific Cod HAL",
-                                                        "BSAI Pacific Cod POT",
-                                                        "BSAI Pacific Cod TRW",
-                                                        "BSAI Pacific Cod ZERO",
-                                                        "BSAI Pollock EM_TRW_EFP",
-                                                        "BSAI Sablefish EM_HAL",
-                                                        "BSAI Sablefish ZERO"),
-                  .(RATIO=1), by = .(FMP_TARGET_STRATA)])
+  # group 1 : calculate the december/october trip ratio according to the groups above
+  # because ADPyear-1 only has data through october
+  dec.oct.trips[
+  ][ADP < ADPyear - 1 & FMP_TARGET_STRATA %in% c(
+    "GOA Halibut EM_HAL",
+    "GOA Halibut EM_POT",
+    "GOA Halibut HAL",
+    "GOA Halibut POT",
+    "GOA Halibut ZERO",
+    "GOA Pollock EM_TRW_EFP",
+    "GOA Pollock TRW",
+    "GOA Sablefish EM_HAL",
+    "GOA Sablefish EM_POT",
+    "GOA Sablefish HAL",
+    "GOA Sablefish POT",
+    "GOA Sablefish ZERO",
+    "BSAI Halibut EM_HAL",
+    "BSAI Halibut HAL",
+    "BSAI Sablefish POT"), 
+    .(RATIO = mean(THRU_DEC_TRIPS / THRU_OCT_TRIPS)), by = .(FMP_TARGET_STRATA)],
+  # group 2: ratios from a subset of years
+  dec.oct.trips[
+  ][ADP %in% c(ADPyear - 3, ADPyear - 2) & FMP_TARGET_STRATA %in% c(
+    "GOA Pacific Cod EM_POT",
+    "GOA Pacific Cod EM_HAL",
+    "GOA Pacific Cod HAL",
+    "GOA Pacific Cod POT",
+    "GOA Pacific Cod ZERO",
+    "BSAI Sablefish EM_POT",
+    "BSAI Sablefish HAL"),
+    .(RATIO = mean(THRU_DEC_TRIPS / THRU_OCT_TRIPS)), by = .(FMP_TARGET_STRATA)],
+  dec.oct.trips[
+  ][ADP %in% c(ADPyear - 2) & FMP_TARGET_STRATA %in% c(
+    "GOA Pacific Cod TRW"),
+    .(RATIO = mean(THRU_DEC_TRIPS / THRU_OCT_TRIPS)), by = .(FMP_TARGET_STRATA)],
+  # group 3: overwrite the mean ratios with 1 for domains that are done by october
+  dec.oct.trips[
+  ][FMP_TARGET_STRATA %in% c(
+    "GOA Other EM_HAL",
+    "GOA Other EM_POT",
+    "GOA Other HAL",
+    "GOA Other TRW",
+    "GOA Other ZERO",
+    "BSAI Halibut EM_POT",
+    "BSAI Halibut POT",
+    "BSAI Halibut ZERO",
+    "BSAI Other POT",
+    "BSAI Pacific Cod EM_HAL",
+    "BSAI Pacific Cod EM_POT",
+    "BSAI Pacific Cod HAL",
+    "BSAI Pacific Cod POT",
+    "BSAI Pacific Cod TRW",
+    "BSAI Pacific Cod ZERO",
+    "BSAI Pollock EM_TRW_EFP",
+    "BSAI Sablefish EM_HAL",
+    "BSAI Sablefish ZERO"),
+    .(RATIO = 1), by = .(FMP_TARGET_STRATA)]
+)
 
 # check that the number of fmp, target, stratum combinations match
 if(length(unique(dec.oct.trips$FMP_TARGET_STRATA)) != length(unique(dec.oct.ratio$FMP_TARGET_STRATA))){stop("Domains don't match between trips and ratios.")}
