@@ -61,7 +61,6 @@ max.date <- max(cumulative.trips.target[ADP == ADPyear - 1, JULIAN_DATE])
 
 # plot cumulative trips by year and stratum
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
-
 plot_theme_cumulative_trips <- list(
   geom_line(aes(color = as.character(ADP)), linewidth = 1.2), 
   geom_vline(xintercept = max.date, color = "red" ),
@@ -73,23 +72,23 @@ plot_theme_cumulative_trips <- list(
 
 ## GOA
 p1 <- ggplot(cumulative.trips.target[FMP == "GOA"], aes(JULIAN_DATE, C_TRIPS)) +
-      plot_theme_cumulative_trips
+  plot_theme_cumulative_trips
 
 ## BSAI
 p2 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) +
-      plot_theme_cumulative_trips
+  plot_theme_cumulative_trips
 
 # plot cumulative trips by year and stratum for the portion of (ADPyear - 1) in which we don't have data
 
 ## GOA
 p3 <- ggplot(cumulative.trips.target[FMP == "GOA"], aes(JULIAN_DATE, C_TRIPS)) +
-      plot_theme_cumulative_trips + 
-      coord_cartesian(xlim = c(max.date - 20, 366)) 
+  plot_theme_cumulative_trips + 
+  coord_cartesian(xlim = c(max.date - 20, 366)) 
 
 ## BSAI
 p4 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) +
-      plot_theme_cumulative_trips +
-      coord_cartesian(xlim = c(max.date - 20, 366))
+  plot_theme_cumulative_trips +
+  coord_cartesian(xlim = c(max.date - 20, 366))
 
 # Based on the plots, there are three conditions that stratum/species fisheries find themselves come October:
 # 1) Fisheries that increase by a (mostly) consistent ratio between October and December:
@@ -248,67 +247,44 @@ cumulative.trips.target <- rbind(
       on = "FMP_TARGET_STRATA"
     ][, .(JULIAN_DATE = 366, C_TRIPS = max(C_TRIPS * RATIO)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)]
   )[, ADP := ADPyear], 
-  fill = TRUE)
+  fill = TRUE
+)
 
 # plot cumulative trips by year and stratum for EM_HAL
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
-p5 <- ggplot(cumulative.trips.target[STRATA=="EM_HAL" & C_TRIPS>1, ], aes(JULIAN_DATE, C_TRIPS)) + # for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-      geom_line(aes(color=as.character(ADP)), linewidth=1.5) + 
-      geom_vline(xintercept = max.date, color="red") +
-      geom_vline(xintercept = 366) +
-      facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
-      labs(x = "Day of the year", y = "Cumulative trips", color = "Year") + 
-      theme_bw()
+# for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
+p5 <- ggplot(cumulative.trips.target[STRATA == "EM_HAL" & C_TRIPS > 1, ], aes(JULIAN_DATE, C_TRIPS)) + 
+  plot_theme_cumulative_trips
 
 # plot cumulative trips by year and stratum for EM_POT
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
-p6 <- ggplot(cumulative.trips.target[STRATA=="EM_POT" & C_TRIPS>1, ], aes(JULIAN_DATE, C_TRIPS)) + # for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-      geom_line(aes(color=as.character(ADP)), linewidth=1.5) + 
-      geom_vline(xintercept = max.date, color="red") +
-      geom_vline(xintercept = 366) +
-      facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
-      labs(x = "Day of the year", y = "Cumulative trips", color = "Year") + 
-      theme_bw()
+# for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
+p6 <- ggplot(cumulative.trips.target[STRATA == "EM_POT" & C_TRIPS > 1, ], aes(JULIAN_DATE, C_TRIPS)) +
+  plot_theme_cumulative_trips
 
 # plot cumulative trips by year and stratum for HAL
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
-p7 <- ggplot(cumulative.trips.target[STRATA=="HAL" & C_TRIPS>1, ], aes(JULIAN_DATE, C_TRIPS)) + # for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-      geom_line(aes(color=as.character(ADP)), linewidth=1.5) + 
-      geom_vline(xintercept = max.date, color="red") +
-      geom_vline(xintercept = 366) +
-      facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
-      labs(x = "Day of the year", y = "Cumulative trips", color = "Year") + 
-      theme_bw()
+# for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
+p7 <- ggplot(cumulative.trips.target[STRATA == "HAL" & C_TRIPS > 1, ], aes(JULIAN_DATE, C_TRIPS)) +
+  plot_theme_cumulative_trips
 
 # plot cumulative trips by year and stratum for POT
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
-p8 <- ggplot(cumulative.trips.target[STRATA=="POT" & C_TRIPS>1, ], aes(JULIAN_DATE, C_TRIPS)) + # for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-      geom_line(aes(color=as.character(ADP)), linewidth=1.5) + 
-      geom_vline(xintercept = max.date, color="red") +
-      geom_vline(xintercept = 366) +
-      facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
-      labs(x = "Day of the year", y = "Cumulative trips", color = "Year") + 
-      theme_bw()
+# for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
+p8 <- ggplot(cumulative.trips.target[STRATA == "POT" & C_TRIPS > 1, ], aes(JULIAN_DATE, C_TRIPS)) +
+  plot_theme_cumulative_trips
 
 # plot cumulative trips by year and stratum for TRW
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
-p9 <- ggplot(cumulative.trips.target[STRATA=="TRW" & C_TRIPS>1, ], aes(JULIAN_DATE, C_TRIPS)) + # for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-      geom_line(aes(color=as.character(ADP)), linewidth=1.5) + 
-      geom_vline(xintercept = max.date, color="red") +
-      geom_vline(xintercept = 366) +
-      facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
-      labs(x = "Day of the year", y = "Cumulative trips", color = "Year") + 
-      theme_bw()
+# for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
+p9 <- ggplot(cumulative.trips.target[STRATA == "TRW" & C_TRIPS > 1, ], aes(JULIAN_DATE, C_TRIPS)) +
+  plot_theme_cumulative_trips
 
 # plot cumulative trips by year and stratum for ZERO
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
-p10 <- ggplot(cumulative.trips.target[STRATA=="ZERO" & C_TRIPS>1, ], aes(JULIAN_DATE, C_TRIPS)) + # for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-       geom_line(aes(color=as.character(ADP)), linewidth=1.5) + 
-       geom_vline(xintercept = max.date, color="red") +
-       geom_vline(xintercept = 366) +
-       facet_wrap(FMP+TRIP_TARGET_CODE~STRATA, scales = "free") +
-       labs(x = "Day of the year", y = "Cumulative trips", color = "Year") + 
-       theme_bw()
+# for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
+p10 <- ggplot(cumulative.trips.target[STRATA == "ZERO" & C_TRIPS > 1, ], aes(JULIAN_DATE, C_TRIPS)) +
+  plot_theme_cumulative_trips
 
 # count total trips by domain and year
 total.trips.target <- cumulative.trips.target[, .(TOTAL_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)]
@@ -322,26 +298,28 @@ gvf <- c(-0.05, 0.05)
 total.trips.year[ADP == ADPyear, ':=' (MIN = (1 + min(gvf)) * TOTAL_TRIPS, MAX = (1 + max(gvf)) * TOTAL_TRIPS)]
 
 p11 <- ggplot(total.trips.year, aes(x = ADP, y = TOTAL_TRIPS)) +
-       geom_errorbar(aes(ymin = MIN, ymax = MAX), color = "red", width = 0.2) +
-       annotate("text", x = ADPyear-0.15, y = mean(as.vector(unlist(total.trips.year[ADP==ADPyear, .(TOTAL_TRIPS, MAX)]))), label = "GVF") +
-       geom_point() +
-       geom_line() +
-       geom_point(data = total.trips.year[ADP >= ADPyear - 1], color = "red") +
-       scale_x_continuous(limits = c(ADPyear-4, ADPyear+0.25)) +
-       expand_limits(y = 0) +
-       labs(x = "Year", y = "Partial Coverage Trips") +
-       theme_classic()
+  geom_errorbar(aes(ymin = MIN, ymax = MAX), color = "red", width = 0.2) +
+  annotate("text", x = ADPyear - 0.15, y = total.trips.year[ADP == ADPyear, mean(c(TOTAL_TRIPS, MAX))], label = "GVF") +
+  geom_point() +
+  geom_line() +
+  geom_point(data = total.trips.year[ADP >= ADPyear - 1], color = "red") +
+  scale_x_continuous(limits = c(ADPyear - 4, ADPyear + 0.25)) +
+  expand_limits(y = 0) +
+  labs(x = "Year", y = "Partial Coverage Trips") +
+  theme_classic()
 
 # png("output_figures/TripsPerYearGVF.png", width = 7, height = 5, units = 'in', res=300)
 # p11
 # dev.off()
 
 # calculate effort predictions for ADPyear, which are equal to the projected effort for ADPyear-1
-to_draw <- cumulative.trips.target[ADP==ADPyear, .(C_TRIPS=round(max(C_TRIPS))), by=.(ADP, FMP, TRIP_TARGET_CODE, STRATA)][order(FMP, TRIP_TARGET_CODE, STRATA)]
+to_draw <- cumulative.trips.target[
+][ADP == ADPyear, .(C_TRIPS = round(max(C_TRIPS))), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)
+][order(FMP, TRIP_TARGET_CODE, STRATA)]
 
 # create full year of effort to draw trips from
 # use January - October of ADPyear - 1 and November - December of ADPyear - 2
-draw_from <- rbind(efrt[ADP==ADPyear-1], efrt[ADP==ADPyear-2 & yday(START) > max.date])
+draw_from <- rbind(efrt[ADP == ADPyear - 1], efrt[ADP == ADPyear - 2 & yday(START) > max.date])
 
 # relabel year to ADPyear
 draw_from[, ADP := ADPyear]
@@ -350,11 +328,13 @@ draw_from[, ADP := ADPyear]
 draw_from[POOL == "ZE", STRATA := "ZERO"]
 
 # match TRIP_TARGET_CODE to to_draw
-draw_from[, TRIP_TARGET_CODE := ifelse(TARGET == "S", "Sablefish", NA)
-          ][, TRIP_TARGET_CODE := ifelse(TARGET == "C", "Pacific Cod", TRIP_TARGET_CODE)
-            ][, TRIP_TARGET_CODE := ifelse(TARGET == "I", "Halibut", TRIP_TARGET_CODE)
-              ][, TRIP_TARGET_CODE := ifelse(TARGET %in% c("P", "B"), "Pollock", TRIP_TARGET_CODE)
-                ][, TRIP_TARGET_CODE := ifelse(is.na(TRIP_TARGET_CODE), "Other", TRIP_TARGET_CODE)] 
+draw_from[, TRIP_TARGET_CODE := fcase(
+  !(TARGET %in% c("P", "B", "C", "I", "S")), "Other",
+  TARGET %in% c("P", "B"), "Pollock",
+  TARGET == "C", "Pacific Cod",
+  TARGET == "I", "Halibut",
+  TARGET == "S", "Sablefish",
+  default = "Other")]
 
 # add probability of trawl EM boats not taking an observer (efp_prob; based on data from vessels that have been in the program prior to ADPyear)
 # 2022-05-31 is the last day of the 2022 spring fisheries, and 2023-09-01 is the first day of the 2023 fall fisheries
