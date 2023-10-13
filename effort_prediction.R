@@ -69,7 +69,6 @@ plot_theme_cumulative_trips <- list(
   labs(x = "Day of the year", y = "Cumulative trips", color = "Year"),
   theme_bw())
 
-
 ## GOA
 p1 <- ggplot(cumulative.trips.target[FMP == "GOA"], aes(JULIAN_DATE, C_TRIPS)) +
   plot_theme_cumulative_trips
