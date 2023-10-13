@@ -219,23 +219,36 @@ dec.oct.ratio <- rbind(
 )
 
 # check that the number of fmp, target, stratum combinations match
-if(length(unique(dec.oct.trips$FMP_TARGET_STRATA)) != length(unique(dec.oct.ratio$FMP_TARGET_STRATA))){stop("Domains don't match between trips and ratios.")}
+if(length(unique(dec.oct.trips$FMP_TARGET_STRATA)) != length(unique(dec.oct.ratio$FMP_TARGET_STRATA))) {
+  stop("Domains don't match between trips and ratios.") }
 
 # add fmp_target_strata to cumulative.trips.target and rearrange columns
-cumulative.trips.target <- cumulative.trips.target[, .(ADP, TRIP_ID, FMP, TRIP_TARGET_CODE, STRATA, FMP_TARGET_STRATA=paste(FMP, TRIP_TARGET_CODE, STRATA, sep = " "), TRIP_TARGET_DATE, JULIAN_DATE, TRIPS, C_TRIPS)]
+cumulative.trips.target <- cumulative.trips.target[, .(
+  ADP, TRIP_ID, FMP, TRIP_TARGET_CODE, STRATA, FMP_TARGET_STRATA = paste(FMP, TRIP_TARGET_CODE, STRATA, sep = " "), 
+  TRIP_TARGET_DATE, JULIAN_DATE, TRIPS, C_TRIPS)]
 
 # add predicted ADPyear effort to cumulative.trips.target as just the projection of ADPyear-1 effort
 cumulative.trips.target <- rbind(
-                           rbind(
-                           # all cumulative trips available in the data
-                           cumulative.trips.target,
-                           # maximum cumulative trips for years prior to the most recent year, extended to the end of the year for graphing purposes
-                           cumulative.trips.target[ADP<ADPyear-1, .(JULIAN_DATE=max(JULIAN_DATE), C_TRIPS=max(C_TRIPS)), by=.(ADP, FMP, TRIP_TARGET_CODE, STRATA)][, JULIAN_DATE:=366], fill=TRUE),
-                           rbind(
-                           # maximum cumulative trips for the most recent year (starting point for ADPyear projections)
-                           cumulative.trips.target[ADP==ADPyear-1][, .(JULIAN_DATE=max(JULIAN_DATE), C_TRIPS=max(C_TRIPS)), by=.(ADP, FMP, TRIP_TARGET_CODE, STRATA)],
-                           # maximum cumulative trips for the most recent year, projected to year's end using december/october effort ratios (end point for ADPyear projections)
-                           dec.oct.ratio[cumulative.trips.target[ADP==ADPyear-1], on = "FMP_TARGET_STRATA"][, .(JULIAN_DATE=366, C_TRIPS=max(C_TRIPS*RATIO)), by=.(ADP, FMP, TRIP_TARGET_CODE, STRATA)])[, ADP:=ADPyear], fill = TRUE)
+  rbind(
+    # all cumulative trips available in the data
+    cumulative.trips.target,
+    # maximum cumulative trips for years prior to the most recent year, extended to the end of the year for graphing purposes
+    cumulative.trips.target[
+    ][ADP < ADPyear - 1, .(JULIAN_DATE = max(JULIAN_DATE), C_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)
+    ][, JULIAN_DATE := 366], 
+    fill = TRUE),
+  rbind(
+    # maximum cumulative trips for the most recent year (starting point for ADPyear projections)
+    cumulative.trips.target[
+    ][ADP == ADPyear - 1
+    ][, .(JULIAN_DATE = max(JULIAN_DATE), C_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)],
+    # maximum cumulative trips for the most recent year, projected to year's end using december/october effort ratios (end point for ADPyear projections)
+    dec.oct.ratio[
+      cumulative.trips.target[ADP == ADPyear-1], 
+      on = "FMP_TARGET_STRATA"
+    ][, .(JULIAN_DATE = 366, C_TRIPS = max(C_TRIPS * RATIO)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)]
+  )[, ADP := ADPyear], 
+  fill = TRUE)
 
 # plot cumulative trips by year and stratum for EM_HAL
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
