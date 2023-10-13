@@ -341,23 +341,33 @@ draw_from[, TRIP_TARGET_CODE := fcase(
 # by including trips after the 2022 spring fisheries have closed and before the 2023 fall fisheries have opened,
 # we calculate efp_prob based on the fall 2022 and spring 2023 seasons (the two most recent full seasons, 
 # as the fall 2023 fishery was not finished by the time Valhalla was compiled)  
-efp_prob <- unique(work.data[TRIP_TARGET_DATE > as.Date("2022-05-31") & TRIP_TARGET_DATE < as.Date("2023-09-01") & VESSEL_ID %in% efp_list$PERMIT[efp_list$YEAR_ADDED < ADPyear] & TRIP_TARGET_CODE %in% c("P", "B") & AGENCY_GEAR_CODE %in% c("NPT", "PTR"), .(TRIP_ID, COVERAGE_TYPE, STRATA, AGENCY_GEAR_CODE)])
-efp_prob <- efp_prob[, .SD[all(AGENCY_GEAR_CODE == "PTR")], by = .(TRIP_ID)]
-efp_prob <- efp_prob[, .N, by = .(COVERAGE_TYPE, STRATA)]
-efp_prob <- efp_prob[, .(STRATA, N, EFP_PROB = N / sum(N)), by = .(COVERAGE_TYPE)][STRATA == "EM_TRW_EFP"]
-draw_from[PERMIT %in% efp_list$PERMIT & TRIP_TARGET_CODE == "Pollock" & AGENCY_GEAR_CODE == "PTR", EFP_PROB := efp_prob[COVERAGE_TYPE == "PARTIAL", EFP_PROB]]
-efrt[PERMIT %in% efp_list$PERMIT & TARGET %in% c("P", "B") & AGENCY_GEAR_CODE =="PTR", EFP_PROB := efp_prob[COVERAGE_TYPE == "PARTIAL", EFP_PROB]]              
+efp_prob <- unique(work.data[
+  TRIP_TARGET_DATE > as.Date("2022-05-31") & TRIP_TARGET_DATE < as.Date("2023-09-01") & 
+    VESSEL_ID %in% efp_list$PERMIT[efp_list$YEAR_ADDED < ADPyear] &
+    TRIP_TARGET_CODE %in% c("P", "B") & AGENCY_GEAR_CODE %in% c("NPT", "PTR"),
+  .(TRIP_ID, COVERAGE_TYPE, STRATA, AGENCY_GEAR_CODE)
+])[, .SD[all(AGENCY_GEAR_CODE == "PTR")], by = .(TRIP_ID)
+][, .N, by = .(COVERAGE_TYPE, STRATA)
+][, .(STRATA, N, EFP_PROB = N / sum(N)), by = .(COVERAGE_TYPE)
+][STRATA == "EM_TRW_EFP"]
+draw_from[
+  PERMIT %in% efp_list$PERMIT & TRIP_TARGET_CODE == "Pollock" & AGENCY_GEAR_CODE == "PTR",
+  EFP_PROB := efp_prob[COVERAGE_TYPE == "PARTIAL", EFP_PROB]]
+efrt[
+  PERMIT %in% efp_list$PERMIT & TARGET %in% c("P", "B") & AGENCY_GEAR_CODE =="PTR", 
+  EFP_PROB := efp_prob[COVERAGE_TYPE == "PARTIAL", EFP_PROB]]              
 
 # compare the number of trips to draw (to_draw) to the number of trips available to be drawn (draw_from) 
-comp_draw <- merge(to_draw[, .(ADP, FMP, TRIP_TARGET_CODE, STRATA, TO_DRAW = C_TRIPS)],
-                   draw_from[, .(DRAW_FROM = uniqueN(TRIP_ID)), by = .(FMP, TRIP_TARGET_CODE, STRATA)],
-                   on = .(FMP, TRIP_TARGET_CODE, STRATA),
-                   all = TRUE)
+comp_draw <- merge(
+  to_draw[, .(ADP, FMP, TRIP_TARGET_CODE, STRATA, TO_DRAW = C_TRIPS)],
+  draw_from[, .(DRAW_FROM = uniqueN(TRIP_ID)), by = .(FMP, TRIP_TARGET_CODE, STRATA)],
+  on = .(FMP, TRIP_TARGET_CODE, STRATA), all = TRUE)
 
 # check that we're not trying to draw trips for which we don't have recent data
 to_draw_domains   <- unique(to_draw[C_TRIPS > 0, .(DOMAINS = paste(FMP, TRIP_TARGET_CODE, STRATA, sep = " "))])
 draw_from_domains <- unique(draw_from[, .(DOMAINS = paste(FMP, TRIP_TARGET_CODE, STRATA, sep = " "))])
-if(nrow(to_draw_domains[!(DOMAINS %in% unique(draw_from_domains$DOMAINS))]) != 0){warning("We expect effort in domains for which we don't have recent data")}
+if(nrow(to_draw_domains[!(DOMAINS %in% unique(draw_from_domains$DOMAINS))]) != 0) {
+  warning("We expect effort in domains for which we don't have recent data")}
 
 # merge the predicted number of trips for each domain onto draw_from
 efrt_adpyear <- draw_from[to_draw, on = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)]
