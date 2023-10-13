@@ -204,40 +204,31 @@ cumulative.trips.target <- rbind(
   fill = TRUE
 )
 
-# plot cumulative trips by year and stratum for EM_HAL
+# plot cumulative trips by year and stratum
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
-# for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-p5 <- ggplot(cumulative.trips.target[STRATA == "EM_HAL" & C_TRIPS > 1, ], aes(JULIAN_DATE, C_TRIPS)) + 
+
+# EM_HAL
+p5 <- ggplot(cumulative.trips.target[STRATA == "EM_HAL", ], aes(JULIAN_DATE, C_TRIPS)) + 
   plot_theme_cumulative_trips
 
-# plot cumulative trips by year and stratum for EM_POT
-# vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
-# for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-p6 <- ggplot(cumulative.trips.target[STRATA == "EM_POT" & C_TRIPS > 1, ], aes(JULIAN_DATE, C_TRIPS)) +
+# EM_POT
+p6 <- ggplot(cumulative.trips.target[STRATA == "EM_POT", ], aes(JULIAN_DATE, C_TRIPS)) +
   plot_theme_cumulative_trips
 
-# plot cumulative trips by year and stratum for HAL
-# vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
-# for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-p7 <- ggplot(cumulative.trips.target[STRATA == "HAL" & C_TRIPS > 1, ], aes(JULIAN_DATE, C_TRIPS)) +
+# HAL
+p7 <- ggplot(cumulative.trips.target[STRATA == "HAL", ], aes(JULIAN_DATE, C_TRIPS)) +
   plot_theme_cumulative_trips
 
-# plot cumulative trips by year and stratum for POT
-# vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
-# for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-p8 <- ggplot(cumulative.trips.target[STRATA == "POT" & C_TRIPS > 1, ], aes(JULIAN_DATE, C_TRIPS)) +
+# POT
+p8 <- ggplot(cumulative.trips.target[STRATA == "POT", ], aes(JULIAN_DATE, C_TRIPS)) +
   plot_theme_cumulative_trips
 
-# plot cumulative trips by year and stratum for TRW
-# vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
-# for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-p9 <- ggplot(cumulative.trips.target[STRATA == "TRW" & C_TRIPS > 1, ], aes(JULIAN_DATE, C_TRIPS)) +
+# TRW
+p9 <- ggplot(cumulative.trips.target[STRATA == "TRW", ], aes(JULIAN_DATE, C_TRIPS)) +
   plot_theme_cumulative_trips
 
-# plot cumulative trips by year and stratum for ZERO
-# vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
-# for confidentiality, exclude domains and portions of the year that only have 1 cumulative trip
-p10 <- ggplot(cumulative.trips.target[STRATA == "ZERO" & C_TRIPS > 1, ], aes(JULIAN_DATE, C_TRIPS)) +
+# ZERO
+p10 <- ggplot(cumulative.trips.target[STRATA == "ZERO", ], aes(JULIAN_DATE, C_TRIPS)) +
   plot_theme_cumulative_trips
 
 # count total trips by domain and year
