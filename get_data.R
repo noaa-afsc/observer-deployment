@@ -34,7 +34,12 @@ PSC <-
                    GROUP BY year, el_report_id, species_group_code"))
 
 # * PCTC ----
-pctc <- if(ADP_version == "Draft"){read.csv("source_data/pctc_list_2023-08-18.csv")} else {read.csv("source_data/pctc_list_2023-09-19.csv")}
+pctc <- if(ADP_version == "Draft") {
+  read.csv("source_data/pctc_list_2023-08-18.csv")
+} else {
+  read.csv("source_data/pctc_list_2023-09-19.csv")
+  # https://drive.google.com/file/d/1qf2mf9TNCYXk6fx7sXjveDdWGQr97dGE/view?usp=drive_link
+}
 
 # * Voluntary full coverage ----
 #   Requests to join must be made prior to October 15  
@@ -139,6 +144,7 @@ em_requests <-
 
 # * Trawl EM ----
 trawl_em <- read.csv("source_data/efp_list_2023-09-05.csv")
+# https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
 
 # * Vessel lengths ----
 AKROVL <- dbGetQuery(channel_afsc, "select distinct ID as vessel_id, length_overall as akrovl
@@ -153,6 +159,7 @@ work.data <- dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla"))
 
 # Load data from current year
 load("source_data/2023-10-10cas_valhalla.RData")
+# https://drive.google.com/file/d/1_cSszEnp7WgAx3alI7nlg6fkXQZz-0eq/view?usp=drive_link
 
 # Append data from current year to data from prior year
 work.data <- rbind(work.data, valhalla)
