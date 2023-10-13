@@ -7,20 +7,24 @@ ADPyear  <- 2024
 
 # get data object produced by get_data.R
 load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
+# https://drive.google.com/file/d/1xH-P54wW3vPXtaQmgEDxb3YgHh-yJlp8/view?usp=drive_link
 
 # get list of trawl EM EFP vessels
 efp_list <- fread("source_data/efp_list_2023-09-05.csv")
+# https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
 
 # calculate cumulative effort by stratum and species using valhalla from the past four years
 cumulative.trips.target <- copy(work.data)[ADP >= ADPyear - 4 & CVG_NEW == "PARTIAL" & AGENCY_GEAR_CODE!="JIG"]
 
 # simplify species and fmp labels
-cumulative.trips.target[, TRIP_TARGET_CODE:=ifelse(!(TRIP_TARGET_CODE %in% c("P", "B", "C", "I", "S")), "Other", TRIP_TARGET_CODE)
-                        ][, TRIP_TARGET_CODE:=ifelse(TRIP_TARGET_CODE %in% c("P", "B"), "Pollock", TRIP_TARGET_CODE)
-                          ][, TRIP_TARGET_CODE:=ifelse(TRIP_TARGET_CODE %in% c("C"), "Pacific Cod", TRIP_TARGET_CODE)
-                            ][, TRIP_TARGET_CODE:=ifelse(TRIP_TARGET_CODE %in% c("I"), "Halibut", TRIP_TARGET_CODE)
-                              ][, TRIP_TARGET_CODE:=ifelse(TRIP_TARGET_CODE %in% c("S"), "Sablefish", TRIP_TARGET_CODE)
-                                ][, FMP:=ifelse(FMP %in% c("BS", "AI", "BSAI"), "BSAI", FMP)]
+cumulative.trips.target[
+][, TRIP_TARGET_CODE := fcase(
+  !(TRIP_TARGET_CODE %in% c("P", "B", "C", "I", "S")), "Other",
+  TRIP_TARGET_CODE %in% c("P", "B"), "Pollock",
+  TRIP_TARGET_CODE == "C", "Pacific Cod",
+  TRIP_TARGET_CODE == "I", "Halibut",
+  TRIP_TARGET_CODE == "S", "Sablefish")
+][, FMP := ifelse(FMP %in% c("BS", "AI"), "BSAI", FMP)]
 
 # select necessary columns
 cumulative.trips.target <- cumulative.trips.target[, .(TRIP_ID, FMP, ADP, STRATA_NEW, TRIP_TARGET_DATE, TRIP_TARGET_CODE)]
