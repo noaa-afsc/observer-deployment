@@ -89,57 +89,10 @@ p4 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) 
   plot_theme_cumulative_trips +
   coord_cartesian(xlim = c(max.date - 20, 366))
 
-# Based on the plots, there are three conditions that stratum/species fisheries find themselves come October:
-# 1) Fisheries that increase by a (mostly) consistent ratio between October and December:
-# "GOA Halibut EM_HAL",
-# "GOA Halibut EM_POT",
-# "GOA Halibut HAL",
-# "GOA Halibut POT",
-# "GOA Halibut ZERO",
-# "GOA Pollock EM_TRW_EFP",
-# "GOA Pollock TRW",
-# "GOA Sablefish EM_HAL",
-# "GOA Sablefish EM_POT",
-# "GOA Sablefish HAL",
-# "GOA Sablefish POT",
-# "GOA Sablefish ZERO",
-# "BSAI Halibut EM_HAL",
-# "BSAI Halibut HAL",
-# "BSAI Sablefish POT"
-
-# 2) Fisheries for which we would use a *subset* of years to calculate the ratio:
-
-## use 2021 and 2022 data only for the following fisheries:
-# "GOA Pacific Cod EM_POT",
-# "GOA Pacific Cod EM_HAL",
-# "GOA Pacific Cod HAL",
-# "GOA Pacific Cod POT",
-# "GOA Pacific Cod ZERO",
-# "BSAI Sablefish EM_POT",
-# "BSAI Sablefish HAL"
-
-## use 2022 data only for the following fisheries:
-# "GOA Pacific Cod TRW"
-
-# 3) Fisheries that don't exist or are finished by October:
-# "GOA Other EM_HAL",
-# "GOA Other EM_POT",
-# "GOA Other HAL",
-# "GOA Other TRW",
-# "GOA Other ZERO",
-# "BSAI Halibut EM_POT",
-# "BSAI Halibut POT",
-# "BSAI Halibut ZERO",
-# "BSAI Other POT",
-# "BSAI Pacific Cod EM_HAL",
-# "BSAI Pacific Cod EM_POT",
-# "BSAI Pacific Cod HAL",
-# "BSAI Pacific Cod POT",
-# "BSAI Pacific Cod TRW",
-# "BSAI Pacific Cod ZERO",
-# "BSAI Pollock EM_TRW_EFP",
-# "BSAI Sablefish EM_HAL",
-# "BSAI Sablefish ZERO"
+# based on the plots, there are three conditions that stratum/species fisheries find themselves come October:
+# 1) fisheries that increase by a (mostly) consistent ratio between October and December
+# 2) fisheries for which we would use a *subset* of years to calculate the ratio
+# 3) fisheries that don't exist or are finished by October
 
 # calculate the through October trips and the through December trips so that a ratio can later be calculated 
 dec.oct.trips <- unique(cumulative.trips.target[
@@ -178,6 +131,7 @@ dec.oct.ratio <- rbind(
     "BSAI Sablefish POT"), 
     .(RATIO = mean(THRU_DEC_TRIPS / THRU_OCT_TRIPS)), by = .(FMP_TARGET_STRATA)],
   # group 2: ratios from a subset of years
+  # use 2021 and 2022 data only for the following fisheries:
   dec.oct.trips[
   ][ADP %in% c(ADPyear - 3, ADPyear - 2) & FMP_TARGET_STRATA %in% c(
     "GOA Pacific Cod EM_POT",
@@ -188,6 +142,7 @@ dec.oct.ratio <- rbind(
     "BSAI Sablefish EM_POT",
     "BSAI Sablefish HAL"),
     .(RATIO = mean(THRU_DEC_TRIPS / THRU_OCT_TRIPS)), by = .(FMP_TARGET_STRATA)],
+  # use 2022 data only for the following fisheries:
   dec.oct.trips[
   ][ADP %in% c(ADPyear - 2) & FMP_TARGET_STRATA %in% c(
     "GOA Pacific Cod TRW"),
