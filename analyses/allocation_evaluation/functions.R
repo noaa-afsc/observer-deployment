@@ -1080,7 +1080,7 @@ define_boxes_3 <- function(data, space, time, year_col, stratum_cols, dmn_cols =
     for(i in jig_cols) {
       jig_trips <- data[which(data[[jig_cols]] == "JIG"), ]
       cat(paste0("Removing ", nrow(jig_trips), " rows from ", uniqueN(jig_trips$TRIP_ID), " JIG trips from ", i, " column."), "\n")
-      data <- setdiff(data, jig_trips)
+      data <- fsetdiff(data, jig_trips)
     }
   }
   
