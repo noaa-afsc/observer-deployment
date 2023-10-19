@@ -29,86 +29,56 @@ efp_list <- fread("source_data/efp_list_2023-09-05.csv")
 trips <- copy(work.data)[ADP < ADPyear - 1 & CVG_NEW == "PARTIAL" & AGENCY_GEAR_CODE != "JIG"]
 
 # select necessary columns
-trips <- trips[, .(ADP, STRATA_NEW, AGENCY_GEAR_CODE, POOL = STRATA_NEW, FMP, TRIP_ID)]
-
-# base pool on strata_new
-trips <- trips[, POOL := fcase(POOL %in% c("EM_HAL", "EM_POT", "EM_TRW_EFP"), "EM",
-                               POOL %in% c("POT", "HAL", "TRW"), "OB",
-                               POOL == "ZERO", "ZE")]
+trips <- trips[, .(YEAR = ADP, STRATA_NEW, AGENCY_GEAR_CODE, FMP, TRIP_ID)]
 
 # consolidate BS and AI FMPs to BSAI
 trips <- trips[FMP %in% c("BS", "AI"), FMP := "BSAI"]
+
+# base pool on strata_new
+trips <- trips[, POOL := fcase(STRATA_NEW %in% c("EM_HAL", "EM_POT", "EM_TRW_EFP"), "EM",
+                               STRATA_NEW %in% c("POT", "HAL", "TRW"), "OB",
+                               STRATA_NEW == "ZERO", "ZE")]
+
+# base strata_24 on strata_new
+trips <- trips[, STRATA_24 := sub("HAL", "FIXED", sub("POT", "FIXED", STRATA_NEW))]
+
+# base strata_24 on strata_new
+trips <- trips[, STRATA_24 := fcase(FMP == "BSAI" & STRATA_24 != "ZERO", paste0(STRATA_24, "_BSAI"),
+                                    FMP == "GOA"  & STRATA_24 != "ZERO", paste0(STRATA_24, "_GOA"),
+                                    STRATA_24 == "ZERO", "ZERO")]
 ```
 
 
 # **Goal:** Replace the somewhat manual process of predicting effort for the ADP with a model based on past years of effort.  
-
-# **Models:**  
-1) lm(Trips ~ Year)  
-2) lm(Trips ~ Gear + (Gear * Year))  
-3) lm(Trips ~ Gear + Pool + (Gear * Pool * Year)) 
-4) lm(Trips ~ Gear + Pool + FMP + (Gear * Pool * FMP * Year))
-5) lm(Trips ~ Strata_New + (Strata_New * Year)) 
-
 ```{r dat, echo = FALSE}
-dat1 <- trips[, .(TRIPS = uniqueN(TRIP_ID)), by = ADP]
-dat2 <- trips[, .(TRIPS = uniqueN(TRIP_ID)), by = .(ADP, AGENCY_GEAR_CODE)]
-dat3 <- trips[, .(TRIPS = uniqueN(TRIP_ID)), by = .(ADP, AGENCY_GEAR_CODE, POOL)]
-dat4 <- trips[, .(TRIPS = uniqueN(TRIP_ID)), by = .(ADP, AGENCY_GEAR_CODE, POOL, FMP)]
-dat5 <- trips[, .(TRIPS = uniqueN(TRIP_ID)), by = .(ADP, STRATA_NEW)]
+dat <- trips[YEAR >= 2016, .(TRIPS = uniqueN(TRIP_ID)), by = .(YEAR, STRATA_24)]
 ```
 
-## Visualize each model {.tabset .tabset-pills}
-```{r plot_theme, echo = FALSE}
-plot_template <- list(stat_smooth(method = "lm", formula = "y ~ x"), 
-                      geom_point(),  
+# **Models:**  
+```{r models}
+lm1 <- lm(TRIPS ~ YEAR, data = dat)
+lm2 <- lm(TRIPS ~ YEAR + STRATA_24, data = dat)
+lm3 <- lm(TRIPS ~ YEAR * STRATA_24, data = dat)
+```
+
+## Visualize predictions
+```{r plot, echo = FALSE, warning = FALSE, message = FALSE}
+dat[, ':=' (lm1 = predict(lm1), lm2 = predict(lm2), lm3 = predict(lm3))]
+
+plot_template <- list(geom_point(),  
                       scale_x_continuous(breaks = 2013:2022),
                       labs(x = "Year", y = "Number of partial coverage trips"),
                       theme_bw())
-```
 
-### Model 1 
-```{r plot1, echo = FALSE}
-ggplot(dat1, aes(x = ADP, y = TRIPS)) +
-  plot_template
-```
-
-### Model 2 
-```{r plot2, echo = FALSE}
-ggplot(dat2, aes(x = ADP, y = TRIPS)) +
-  facet_grid(AGENCY_GEAR_CODE ~ ., scales = "free_y") +
-  plot_template
-```
-
-### Model 3
-```{r plot3, echo = FALSE}
-ggplot(dat3, aes(x = ADP, y = TRIPS)) +
-  facet_grid(AGENCY_GEAR_CODE ~ POOL, scales = "free_y") +
-  plot_template
-```
-
-### Model 4
-```{r plot4, echo = FALSE}
-ggplot(dat4, aes(x = ADP, y = TRIPS)) +
-  facet_grid(AGENCY_GEAR_CODE ~ POOL + FMP, scales = "free_y") +
-  plot_template
-```
-
-### Model 5 
-```{r plot5, echo = FALSE}
-ggplot(dat5, aes(x = ADP, y = TRIPS)) +
-  facet_wrap(STRATA_NEW ~ ., scales = "free_y") +
+ggplot(dat, aes(x = YEAR, y = TRIPS)) +
+  geom_line(aes(y = lm1)) +
+  geom_line(aes(y = lm2), color = "blue") +
+  geom_line(aes(y = lm3), color = "red") +
+  facet_wrap(STRATA_24 ~ ., scale = "free_y") +
   plot_template
 ```
 
 ## View diagnostic plots {.tabset .tabset-pills}
-```{r lm, echo = FALSE}
-lm1 <- lm(TRIPS ~ ADP, dat1)
-lm2 <- lm(TRIPS ~ AGENCY_GEAR_CODE + ADP*AGENCY_GEAR_CODE, dat2)
-lm3 <- lm(TRIPS ~ AGENCY_GEAR_CODE + POOL + ADP*AGENCY_GEAR_CODE*POOL, dat3)
-lm4 <- lm(TRIPS ~ AGENCY_GEAR_CODE + POOL + FMP + ADP*AGENCY_GEAR_CODE*POOL*FMP, dat4)
-lm5 <- lm(TRIPS ~ STRATA_NEW + ADP*STRATA_NEW, dat5)
-```
 
 ### Model 1
 ```{r diagnostics_1, echo = FALSE, warning = FALSE}
@@ -128,18 +98,6 @@ par(mfrow=c(2,2))
 plot(lm3)
 ```
 
-### Model 4
-```{r diagnostics_4, echo = FALSE, warning = FALSE}
-par(mfrow=c(2,2))
-plot(lm4)
-```
-
-### Model 5
-```{r diagnostics_5, echo = FALSE, warning = FALSE}
-par(mfrow=c(2,2))
-plot(lm5)
-```
-
 ## Model summaries {.tabset .tabset-pills}
 
 ### Model 1
@@ -157,12 +115,12 @@ summary(lm2)
 summary(lm3)
 ```
 
-### Model 4
-```{r summary_4, echo = FALSE, warning = FALSE}
-summary(lm4)
+## ANOVA
+```{r anova}
+anova(lm1, lm2, lm3)
 ```
 
-### Model 5
-```{r summary_5, echo = FALSE, warning = FALSE}
-summary(lm5)
+## AIC
+```{r aic}
+AIC(lm1, lm2, lm3)
 ```
