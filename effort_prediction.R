@@ -255,7 +255,7 @@ p11 <- ggplot(total.trips.year, aes(x = ADP, y = TOTAL_TRIPS)) +
        labs(x = "Year", y = "Partial Coverage Trips") +
        theme_classic()
 
-# png("output_figures/TripsPerYearGVF.png", width = 7, height = 5, units = 'in', res=300)
+# png("output_figures/TripsPerYear.png", width = 7, height = 5, units = 'in', res=300)
 # p11
 # dev.off()
 
