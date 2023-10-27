@@ -93,7 +93,7 @@ effort.pred.strata <- copy(new.data)[, fit := predict(effort.mod, new.data)]
 effort.pred.strata[, se := predict(effort.mod, new.data, se.fit = TRUE)$se.fit]
 effort.pred.strata[, var := se^2]
 effort.pred.year <- effort.pred.strata[, .(fit = sum(fit), var = sum(var)), by = .(ADP)]
-effort.pred.year[, ':=' (lwr = fit - (1.96 * sqrt(var)), upr = fit + (1.96 * sqrt(var)))]
+effort.pred.year[, ':=' (lwr = fit - (2 * sqrt(var)), upr = fit + (2 * sqrt(var)))]
 
 # plot data, prediction, and prediction interval
 p4 <- ggplot(effort.year[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
@@ -111,10 +111,8 @@ p4 <- ggplot(effort.year[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
 # p4
 # dev.off()
 
-# calculate effort predictions for ADPyear, which are equal to the projected effort for ADPyear-1
-to_draw <- cumulative.trips.target[
-][ADP == ADPyear, .(C_TRIPS = round(max(C_TRIPS))), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)
-][order(FMP, TRIP_TARGET_CODE, STRATA)]
+# calculate effort predictions for ADPyear with 95% confidence interval
+to_draw <- effort.pred.strata[ADP == ADPyear, .(ADP, STRATA, TRIPS = round(fit), lwr = round(fit - 2 * se), upr = round(fit + 2 * se))]
 
 # create full year of effort to draw trips from
 # use January - October of ADPyear - 1 and November - December of ADPyear - 2
