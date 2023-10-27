@@ -2,6 +2,9 @@
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
 if(!require("ggplot2"))   install.packages("ggplot2", repos='http://cran.us.r-project.org')
 
+# avoid scientific notation
+options(scipen = 9999)
+
 # user inputs
 ADPyear  <- 2024
 
@@ -14,7 +17,7 @@ efp_list <- fread("source_data/efp_list_2023-09-05.csv")
 # https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
 
 # calculate cumulative effort by stratum and species using valhalla from the past four years
-cumulative.trips.target <- copy(work.data)[ADP >= ADPyear - 4 & CVG_NEW == "PARTIAL" & AGENCY_GEAR_CODE != "JIG"]
+cumulative.trips.target <- copy(work.data)[CVG_NEW == "PARTIAL" & AGENCY_GEAR_CODE != "JIG"]
 
 # simplify species and fmp labels
 cumulative.trips.target[
@@ -95,10 +98,10 @@ p4 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) 
 # 3) fisheries that don't exist or are finished by October
 
 # calculate the through October trips and the through December trips so that a ratio can later be calculated 
-dec.oct.trips <- unique(cumulative.trips.target[
+dec.oct.trips <- unique(cumulative.trips.target[ADP > ADPyear - 5
 ][JULIAN_DATE <= max.date, .(THRU_OCT_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)
 ][!is.na(THRU_OCT_TRIPS), .(ADP, FMP, TRIP_TARGET_CODE, STRATA, THRU_OCT_TRIPS)])[
-  unique(cumulative.trips.target[
+  unique(cumulative.trips.target[ADP > ADPyear - 5
   ][, .(THRU_DEC_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)
   ][!is.na(THRU_DEC_TRIPS), .(ADP, FMP, TRIP_TARGET_CODE, STRATA, THRU_DEC_TRIPS)]), 
   on = .(ADP, FMP, STRATA, TRIP_TARGET_CODE)]
@@ -180,7 +183,7 @@ cumulative.trips.target <- cumulative.trips.target[, .(
   ADP, TRIP_ID, FMP, TRIP_TARGET_CODE, STRATA, FMP_TARGET_STRATA = paste(FMP, TRIP_TARGET_CODE, STRATA, sep = " "), 
   TRIP_TARGET_DATE, JULIAN_DATE, TRIPS, C_TRIPS)]
 
-# add predicted ADPyear effort to cumulative.trips.target as just the projection of ADPyear-1 effort
+# project ADPyear - 1 effort to the end of the year
 cumulative.trips.target <- rbind(
   rbind(
     # all cumulative trips available in the data
@@ -190,19 +193,13 @@ cumulative.trips.target <- rbind(
     ][ADP < ADPyear - 1, .(JULIAN_DATE = max(JULIAN_DATE), C_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)
     ][, JULIAN_DATE := 366], 
     fill = TRUE),
-  rbind(
-    # maximum cumulative trips for the most recent year (starting point for ADPyear projections)
-    cumulative.trips.target[
-    ][ADP == ADPyear - 1
-    ][, .(JULIAN_DATE = max(JULIAN_DATE), C_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)],
     # maximum cumulative trips for the most recent year, projected to year's end using december/october effort ratios (end point for ADPyear projections)
     dec.oct.ratio[
       cumulative.trips.target[ADP == ADPyear-1], 
       on = "FMP_TARGET_STRATA"
-    ][, .(JULIAN_DATE = 366, C_TRIPS = max(C_TRIPS * RATIO)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)]
-  )[, ADP := ADPyear], 
+    ][, .(JULIAN_DATE = 366, C_TRIPS = max(C_TRIPS * RATIO)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)],
   fill = TRUE
-)
+  )
 
 # plot cumulative trips by year and stratum
 # vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
@@ -231,27 +228,32 @@ p9 <- ggplot(cumulative.trips.target[STRATA == "TRW", ], aes(JULIAN_DATE, C_TRIP
 p10 <- ggplot(cumulative.trips.target[STRATA == "ZERO", ], aes(JULIAN_DATE, C_TRIPS)) +
   plot_theme_cumulative_trips
 
-# count total trips by domain and year
-total.trips.target <- cumulative.trips.target[, .(TOTAL_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)]
-total.trips.year   <- total.trips.target[, .(TOTAL_TRIPS = sum(TOTAL_TRIPS)), by = .(ADP)]
+# count total trips by year and stratum
+total.trips.target <- cumulative.trips.target[, .(JULIAN_DATE = max(JULIAN_DATE), TOTAL_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)]
+total.trips.strata <- total.trips.target[,.(TOTAL_TRIPS = sum(TOTAL_TRIPS)), by = .(ADP, STRATA)]
+total.trips.year   <- total.trips.strata[, .(TOTAL_TRIPS = sum(TOTAL_TRIPS)), by = .(ADP)]
 
-# since ADPyear effort is actually a projection of what we think ADPyear - 1 effort will do, make the two equal
-total.trips.year[ADP == ADPyear - 1, TOTAL_TRIPS := total.trips.year[ADP == ADPyear, TOTAL_TRIPS]]
+# model effort
+effort.mod <- lm(TOTAL_TRIPS ~ ADP * STRATA, data = total.trips.strata)
 
-# add any Guess Variation Factor (GVF) to ADPyear effort
-gvf <- c(-0.05, 0.05)
-total.trips.year[ADP == ADPyear, ':=' (MIN = (1 + min(gvf)) * TOTAL_TRIPS, MAX = (1 + max(gvf)) * TOTAL_TRIPS)]
+# predict ADPyear effort with 95% confidence interval  
+new.data <- CJ(ADP = min(total.trips.strata$ADP):ADPyear, STRATA = unique(total.trips.strata$STRATA))
+effort.pred.strata <- copy(new.data)[, fit := predict(effort.mod, new.data)]
+effort.pred.strata[, se := predict(effort.mod, new.data, se.fit = TRUE)$se.fit]
+effort.pred.strata[, var := se^2]
+effort.pred.year <- effort.pred.strata[, .(fit = sum(fit), var = sum(var)), by = .(ADP)]
+effort.pred.year[, ':=' (lwr = fit - (1.96 * sqrt(var)), upr = fit + (1.96 * sqrt(var)))]
 
+# plot data, prediction, and prediction interval
 p11 <- ggplot(total.trips.year, aes(x = ADP, y = TOTAL_TRIPS)) +
-  geom_errorbar(aes(ymin = MIN, ymax = MAX), color = "red", width = 0.2) +
-  annotate("text", x = ADPyear - 0.15, y = total.trips.year[ADP == ADPyear, mean(c(TOTAL_TRIPS, MAX))], label = "GVF") +
-  geom_point() +
-  geom_line() +
-  geom_point(data = total.trips.year[ADP >= ADPyear - 1], color = "red") +
-  scale_x_continuous(limits = c(ADPyear - 4, ADPyear + 0.25)) +
-  expand_limits(y = 0) +
-  labs(x = "Year", y = "Partial Coverage Trips") +
-  theme_classic()
+       geom_point() +
+       geom_point(aes(x = ADP, y = fit), data = effort.pred.year[ADP == ADPyear], color = "red") +
+       geom_errorbar(aes(ymin = lwr, ymax = upr), data = effort.pred.year[ADP == ADPyear, .(ADP, TOTAL_TRIPS = fit, lwr, upr)], color = "red", width = 0.2) +
+       geom_line(aes(x = ADP, y = fit), data = effort.pred.year, color = "red") +
+       scale_x_continuous(breaks = min(total.trips.year$ADP):ADPyear) +
+       expand_limits(y = 0) +
+       labs(x = "Year", y = "Partial Coverage Trips") +
+       theme_classic()
 
 # png("output_figures/TripsPerYearGVF.png", width = 7, height = 5, units = 'in', res=300)
 # p11
