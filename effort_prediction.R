@@ -88,12 +88,65 @@ p3 <- ggplot(effort.year, aes(x = ADP, y = TOTAL_TRIPS)) +
 effort.mod <- lm(TOTAL_TRIPS ~ ADP * STRATA, data = effort.strata)
 
 # predict ADPyear effort with 95% confidence interval  
+# https://stackoverflow.com/questions/39337862/linear-model-with-lm-how-to-get-prediction-variance-of-sum-of-predicted-value
+lm_predict <- function (lmObject, newdata, diag = TRUE) {
+  ## input checking
+  if (!inherits(lmObject, "lm")) stop("'lmObject' is not a valid 'lm' object!")
+  ## extract "terms" object from the fitted model, but delete response variable
+  tm <- delete.response(terms(lmObject))      
+  ## linear predictor matrix
+  Xp <- model.matrix(tm, newdata)
+  ## predicted values by direct matrix-vector multiplication
+  pred <- c(Xp %*% coef(lmObject))
+  ## efficiently form the complete variance-covariance matrix
+  QR <- lmObject$qr   ## qr object of fitted model
+  piv <- QR$pivot     ## pivoting index
+  r <- QR$rank        ## model rank / numeric rank
+  if (is.unsorted(piv)) {
+    ## pivoting has been done
+    B <- forwardsolve(t(QR$qr), t(Xp[, piv]), r)
+  } else {
+    ## no pivoting is done
+    B <- forwardsolve(t(QR$qr), t(Xp), r)
+  }
+  ## residual variance
+  sig2 <- c(crossprod(residuals(lmObject))) / df.residual(lmObject)
+  if (diag) {
+    ## return point-wise prediction variance
+    VCOV <- colSums(B ^ 2) * sig2
+  } else {
+    ## return full variance-covariance matrix of predicted values
+    VCOV <- crossprod(B) * sig2
+  }
+  list(fit = pred, var.fit = VCOV, df = lmObject$df.residual, residual.var = sig2)
+}
+
+# create new data
 new.data <- CJ(ADP = min(effort.strata$ADP):ADPyear, STRATA = unique(effort.strata$STRATA))
-effort.pred.strata <- copy(new.data)[, fit := predict(effort.mod, new.data)]
-effort.pred.strata[, se := predict(effort.mod, new.data, se.fit = TRUE)$se.fit]
-effort.pred.strata[, var := se^2]
-effort.pred.year <- effort.pred.strata[, .(fit = sum(fit), var = sum(var)), by = .(ADP)]
-effort.pred.year[, ':=' (lwr = fit - (2 * sqrt(var)), upr = fit + (2 * sqrt(var)))]
+
+# predict effort
+pred <- lm_predict(effort.mod, new.data, diag = FALSE)
+
+# save fitted values
+effort.pred.strata <- copy(new.data)[, fit := pred$fit]
+
+# sum fits by year
+effort.pred.year <- effort.pred.strata[, .(fit = sum(fit)), by = .(ADP)]
+
+# adjust the variance-covariance matrix with residual variance
+VCOV_adj <- with(pred, var.fit + diag(residual.var, nrow(var.fit)))
+
+# sum adjusted variance
+effort.pred.year[, var := sum(VCOV_adj[(((ADP - 2012) * 7) - 6):((ADP - 2012) * 7), (((ADP - 2012) * 7) - 6):((ADP - 2012) * 7)]), by = ADP]
+
+# set alpha level for the prediction interval
+alpha <- 0.95
+
+# estimate t-values for the prediction interval
+Qt <- qt((1 - alpha) / 2, effort.mod$df.residual, lower.tail = FALSE)
+
+# estimate the prediction interval
+effort.pred.year[, ':=' (lwr = fit - (Qt * sqrt(var)), upr = fit + (Qt * sqrt(var)))]
 
 # plot data, prediction, and prediction interval
 p4 <- ggplot(effort.year[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
