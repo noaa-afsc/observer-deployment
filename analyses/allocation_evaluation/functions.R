@@ -422,7 +422,7 @@ define_boxes_gs <- function(data, space, time, year_col, stratum_cols, dmn_cols 
   
   # Testing with ps_cols = NULL
   # data <-  copy(val_mixed); space <- c(2e5, 2e5); time <- c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"); year_col <- "ADP"; dmn_cols <- "GEAR"; stratum_cols <- c("STRATA"); geom = T; ps_cols <- NULL
-
+  
   #==================================#
   # NOTE! Remove any jig-gear trips! #
   #==================================# 
@@ -440,7 +440,7 @@ define_boxes_gs <- function(data, space, time, year_col, stratum_cols, dmn_cols 
     for(i in jig_cols) {
       jig_trips <- data[which(data[[jig_cols]] == "JIG"), ]
       cat(paste0("Removing ", nrow(jig_trips), " rows from ", uniqueN(jig_trips$TRIP_ID), " JIG trips from ", i, " column."), "\n")
-      data <- setdiff(data, jig_trips)
+      data <- fsetdiff(data, jig_trips)
     }
   }
 
@@ -485,24 +485,25 @@ define_boxes_gs <- function(data, space, time, year_col, stratum_cols, dmn_cols 
   #======================#
   
   # First, get all years and a table converting date to week
+
   if(time[1] != "week") stop("So far this function only works with 'week()' function!")
-  dates_lst <- lapply(
-    lapply(
-      unique(unlist(data[, ..year_col])),
-      function(x) as.Date(paste0(x, c("-01-01", "-12-31")))
-    ),
-    function(x) as.Date(x[1] : x[2], origin = as.POSIXct("1970-01-01", tz = "UTC"))
-  )
-  dates_mtx <- cbind(unlist(dates_lst), unlist(lapply(dates_lst, get(time[1]))))
+  
+  time_cols <- time[3:4]
+  
+  date_range <- range(unlist(data[, ..time_cols]))     # Get range of dates, converting to numeric
+  date_vec <- as.Date(date_range[1] : date_range[2])   # Get date class of all dates within range
+  week_vec <- sapply(date_vec, get(time[[1]]))         # Identify the week of each date
+  dates_mtx <- cbind(date_vec, week_vec)               # Combine date vector and week vector
+
   dates_start <- min(dates_mtx[, 1]) - 1  # Get first date and subtract 1. T
   dates_mtx[, 1] <- dates_mtx[, 1] - dates_start  # This makes it so matrix can be reference by row index, much faster
+  # TODO Check behavior of neighboring at ADP year thresholds
   
   # Grab time columns and define groups based on TRIP_ID and HEX_ID
-  time_cols <- time[3:4]
   time_int <- data[, ..time_cols]
   time_int[, (time_cols) := lapply(.SD, as.integer), .SDcols = time_cols]
   setnames(time_int, new = c("S", "E"))
-  data_int <- data[, .(TRIP_ID, HEX_ID)][, GRP := .GRP, by = .(TRIP_ID, HEX_ID)]
+  data_int <- data[, .(TRIP_ID, HEX_ID)][, GRP := .GRP, by = .(TRIP_ID, HEX_ID)][]
   # Convert to matrix and split by TRIP_ID and HEX_ID
   time_lst <- as.matrix(cbind(time_int - dates_start, data_int[, .(GRP)]))
   time_lst <- lapply(split(time_lst, time_lst[, "GRP"], drop = F), matrix, ncol = 3)
