@@ -7,11 +7,15 @@
 # between 2015 and 2022. Its purpose is to fuel discussion on effort predictions for the ADPs and whether/how it can 
 # be improved.
 
+# It is the precursor to two RMD scripts: effort_prediction_exploration.Rmd and effort_bootstrapping.Rmd
+
 library(data.table)
 library(ggplot2)
 library(ggh4x)      # For facet_nested()
 library(grid)       # For combining plots
 library(gridExtra)  # For combining plots
+library(flextable)  # For print-ready tables
+library(magrittr)   # For piping
 
 #======================================================================================================================#
 # Load Data ----
@@ -2286,15 +2290,17 @@ plot_prox_res <- ggplot(boot_res, aes(x = as.character(ADP), y = ISPN)) +
   geom_line(data = og_prox$ispn_dt[ADP >= 2018 & SAMPLE_RATE == 0.15], aes(group = interaction(STRATA, BSAI_GOA))) +
   geom_violin(aes(color = Method), draw_quantiles = 0.5, fill = NA, position = "identity") + 
   geom_point(data = og_prox$ispn_dt[ADP >= 2018 & SAMPLE_RATE == 0.15]) + 
+  geom_text(data = og_prox$ispn_dt[ADP >= 2018 & SAMPLE_RATE == 0.15], aes(label = STRATA_N), size = 2, vjust = 0, nudge_y = 0.1) +
   scale_color_manual(values = c(swr_1 = "cyan3", swor_3 =  "blue", swor_2 = "purple", swor_1 = "magenta")) + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
   labs(x = "Year", y = "Proximity")
 
-plot_prox_res_free_scale <-  ggplot(boot_res, aes(x = as.character(ADP), y = ISPN)) + 
+plot_prox_res_free_scale <- ggplot(boot_res, aes(x = as.character(ADP), y = ISPN)) + 
   facet_nested(STRATA + BSAI_GOA ~ Method, scales = "free") +
   geom_line(data = og_prox$ispn_dt[ADP >= 2018 & SAMPLE_RATE == 0.15], aes(group = interaction(STRATA, BSAI_GOA))) +
   geom_violin(aes(color = Method), draw_quantiles = 0.5, fill = NA, position = "identity") + 
   geom_point(data = og_prox$ispn_dt[ADP >= 2018 & SAMPLE_RATE == 0.15]) + 
+  geom_text(data = og_prox$ispn_dt[ADP >= 2018 & SAMPLE_RATE == 0.15], aes(label = STRATA_N), size = 2, vjust = 0, nudge_y = 0.02) +
   scale_color_manual(values = c(swr_1 = "cyan3", swor_3 =  "blue", swor_2 = "purple", swor_1 = "magenta")) + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
   labs(x = "Year", y = "Proximity")
@@ -2305,25 +2311,26 @@ plot_prox_lst <- unify_plot_widths(plot_lst = list(original = plot_prox_res, fre
 # Here, we can see how each method differed relative to the actual (line and point)
 plot_rates_res <- ggplot(boot_res[!is.na(SAMPLE_RATE)], aes(x = as.character(ADP), y = SAMPLE_RATE)) + 
   facet_nested(STRATA + BSAI_GOA ~ Method) +
-  geom_line(data = og_rates, aes(group = interaction(STRATA, BSAI_GOA))) +
+  geom_line(data = og_rates[ADP >= 2018], aes(group = interaction(STRATA, BSAI_GOA))) +
   geom_violin(aes(color = Method), draw_quantiles = 0.5, fill = NA, position = "identity", na.rm = T) + 
-  geom_point(data = og_rates) + 
+  geom_point(data = og_rates[ADP >= 2018]) + 
+  geom_text(data = og_rates[ADP >= 2018], aes(label = STRATA_N), size = 2, vjust = 0, nudge_y = 0.1) +
   scale_color_manual(values = c(swr_1 = "cyan3", swor_3 =  "blue", swor_2 = "purple", swor_1 = "magenta")) + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
-  labs(x = "Year", y = "Proximity")
+  labs(x = "Year", y = "Sample Rate")  
 
 plot_rates_free_scale <-  ggplot(boot_res[!is.na(SAMPLE_RATE)], aes(x = as.character(ADP), y = SAMPLE_RATE)) + 
   facet_nested(STRATA + BSAI_GOA ~ Method, scales = "free") +
-  geom_line(data = og_rates, aes(group = interaction(STRATA, BSAI_GOA))) +
+  geom_line(data = og_rates[ADP >= 2018], aes(group = interaction(STRATA, BSAI_GOA))) +
   geom_violin(aes(color = Method), draw_quantiles = 0.5, fill = NA, position = "identity", na.rm = T) + 
-  geom_point(data = og_rates) + 
+  geom_point(data = og_rates[ADP >= 2018]) + 
+  geom_text(data = og_rates[ADP >= 2018], aes(label = STRATA_N), size = 2, vjust = 0, nudge_y = 0.02) +
   scale_color_manual(values = c(swr_1 = "cyan3", swor_3 =  "blue", swor_2 = "purple", swor_1 = "magenta")) + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
-  labs(x = "Year", y = "Proximity")
+  labs(x = "Year", y = "Sample Rate")
 
 plot_rates_lst <- unify_plot_widths(plot_lst = list(original = plot_rates_res, free = plot_rates_free_scale))
 
-save(plot_prox_lst, plot_rates_lst, file = "analyses/effort_prediction/effort_bootstrap.rdata")
 # swor_1 has by far the least variability among iterations (no surprise)
 # swor_2 and swor_3 have 
 
@@ -2361,6 +2368,8 @@ boot_prox_dt[, METHOD := factor(METHOD, levels = c("swr_1", "swor_3", "swor_2", 
 boot_prox_dt[, ACTUAL := og_prox_dt[boot_prox_dt, ISPN, on = .(ADP, STRATA, BSAI_GOA)]]
 boot_prox_dt[, DIFF := PROX - ACTUAL]
 boot_prox_dt[, PERC_DIFF := (PROX - ACTUAL)/ACTUAL]
+# Merge STRATA_N in
+boot_prox_dt[, STRATA_N := og_prox_dt[boot_prox_dt, STRATA_N, on = .(ADP, STRATA, BSAI_GOA)]]
 
 # Proximity is much more difficult to predict in the BSAI (strata with fewer trips) than in the GOA. 
 plot_prox_diff <- ggplot(boot_prox_dt[ADP >= 2018], aes(x = as.character(ADP), y = DIFF)) + 
@@ -2388,21 +2397,18 @@ plot_prox_perc_diff <- ggplot(boot_prox_dt[ADP >= 2018], aes(x = as.character(AD
 # allocation to these very small strata first, it might not have a huge impact.
 
 # Difference in Prox vs 'true', using mean across iterations
-ggplot(boot_prox_dt[ADP >= 2018, .(MEAN_DIFF = mean(DIFF)), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)]) + 
+plot_prox_diff_mean <- ggplot(boot_prox_dt[ADP >= 2018, .(MEAN_DIFF = mean(DIFF)), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)]) + 
   facet_nested(. ~ STRATA + BSAI_GOA) + 
   geom_hline(yintercept = 0) + 
   geom_line(aes(x = as.character(ADP), y = MEAN_DIFF, color = METHOD, group = interaction(METHOD, STRATA, BSAI_GOA)), linewidth = 1) + 
   scale_color_manual(values = c(swr_1 = "cyan3", swor_3 = "blue", swor_2 = "purple", swor_1 = "magenta")) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
-  labs(x = "Year", y = "Prox (Boot - Actual)", color = "Method") 
+  labs(x = "Year", y = "Prox (Boot - Actual)", color = "Method") +
+  geom_text(data =og_prox_dt[ADP >= 2018], aes(label = STRATA_N, x = as.character(ADP)), y = 0.3, size = 2)
+# All methods generally get prox within 0.1, if not 0.05. Exception is OB_TRW. Notice that stratum size changes greatly 
+# between years. Bouncing from 31 to 14 to 37 to 15 will has a large impact on predicting proximity. However, we are unlikely
+# to predict any such dramatic changes.
 
-ggplot(boot_prox_dt[ADP >= 2018, .(MEAN_DIFF = mean(PERC_DIFF)), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)]) + 
-  facet_nested(. ~ STRATA + BSAI_GOA) + 
-  geom_hline(yintercept = 0) + 
-  geom_line(aes(x = as.character(ADP), y = MEAN_DIFF, color = METHOD, group = interaction(METHOD, STRATA, BSAI_GOA)), linewidth = 1) + 
-  scale_color_manual(values = c(swr_1 = "cyan3", swor_3 = "blue", swor_2 = "purple", swor_1 = "magenta")) +
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
-  labs(x = "Year", y = "Prox (Boot - Actual)", color = "Method") 
 
 ### Rates ----
 
@@ -2416,35 +2422,41 @@ boot_rates_dt[, METHOD := factor(METHOD, levels = c("swr_1", "swor_3", "swor_2",
 boot_rates_dt[, ACTUAL := og_rates_dt[boot_rates_dt, SAMPLE_RATE, on = .(ADP, STRATA, BSAI_GOA)]]
 boot_rates_dt[, DIFF := SAMPLE_RATE - ACTUAL]
 boot_rates_dt[, PERC_DIFF := (SAMPLE_RATE - ACTUAL)/ACTUAL]
+boot_rates_dt[, STRATA_N := og_rates_dt[boot_rates_dt, STRATA_N, on = .(ADP, STRATA, BSAI_GOA)]]
 
-plot_rates_diff <- ggplot(boot_rates_dt[ADP >= 2018], aes(x = as.character(ADP), y = DIFF)) + 
-  facet_grid(BSAI_GOA ~ STRATA) + 
-  geom_hline(yintercept = 0) +
-  geom_boxplot(aes(color = METHOD), fill = NA) + 
-  geom_text(data = og_rates_dt[ADP >= 2018], aes(label = STRATA_N, y = 0.10), size = 2, vjust = 0) +
-  scale_color_manual(values = c(swr_1 = "cyan3", swor_3 = "blue", swor_2 = "purple", swor_1 = "magenta")) + 
-  labs(x = "Year", y = "Diff in Sample Rate (Boot - Actual)", color = "Method") + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+
+# 
+# plot_rates_diff <- ggplot(boot_rates_dt[ADP >= 2018], aes(x = as.character(ADP), y = DIFF)) + 
+#   facet_grid(BSAI_GOA ~ STRATA) + 
+#   geom_hline(yintercept = 0) +
+#   geom_boxplot(aes(color = METHOD), fill = NA) + 
+#   geom_text(data = og_rates_dt[ADP >= 2018], aes(label = STRATA_N, y = 0.10), size = 2, vjust = 0) +
+#   scale_color_manual(values = c(swr_1 = "cyan3", swor_3 = "blue", swor_2 = "purple", swor_1 = "magenta")) + 
+#   labs(x = "Year", y = "Diff in Sample Rate (Boot - Actual)", color = "Method") + 
+#   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
+#   geom_text(data = og_rates_dt, aes(label = STRATA_N), y = 0.5, size = 2)
 # As far as actual rates go, most have medians within 0.05, or 5%. 
 
-plot_rates_perc_diff <- ggplot(boot_rates_dt[ADP >= 2018], aes(x = as.character(ADP), y = PERC_DIFF)) + 
-  facet_grid(BSAI_GOA ~ STRATA) + 
-  geom_hline(yintercept = 0) +
-  geom_boxplot(aes(color = METHOD), fill = NA) + 
-  geom_text(data = og_rates_dt[ADP >= 2018], aes(label = STRATA_N, y = 0.40), size = 2, vjust = 0) +
-  scale_color_manual(values = c(swr_1 = "cyan3", swor_3 = "blue", swor_2 = "purple", swor_1 = "magenta")) + 
-  labs(x = "Year", y = "% Diff in Sample Rate (Boot - Actual)/Actual", color = "Method") + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
+# plot_rates_perc_diff <- ggplot(boot_rates_dt[ADP >= 2018], aes(x = as.character(ADP), y = PERC_DIFF)) + 
+#   facet_grid(BSAI_GOA ~ STRATA) + 
+#   geom_hline(yintercept = 0) +
+#   geom_boxplot(aes(color = METHOD), fill = NA) + 
+#   geom_text(data = og_rates_dt[ADP >= 2018], aes(label = STRATA_N, y = 0.40), size = 2, vjust = 0) +
+#   scale_color_manual(values = c(swr_1 = "cyan3", swor_3 = "blue", swor_2 = "purple", swor_1 = "magenta")) + 
+#   labs(x = "Year", y = "% Diff in Sample Rate (Boot - Actual)/Actual", color = "Method") + 
+#   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 # Percent differences for all methods are generally within 10% (with largest exception for 2021 OB-TRW GOA)
 
 # Difference in Rates vs 'true', using mean across iterations
-ggplot(boot_rates_dt[ADP >= 2018, .(MEAN_DIFF = mean(DIFF)), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)]) + 
+plot_rates_diff_mean <- ggplot(boot_rates_dt[ADP >= 2018, .(MEAN_DIFF = mean(DIFF)), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)]) + 
   facet_nested(. ~ STRATA + BSAI_GOA) + 
   geom_hline(yintercept = 0) + 
   geom_line(aes(x = as.character(ADP), y = MEAN_DIFF, color = METHOD, group = interaction(METHOD, STRATA, BSAI_GOA)), linewidth = 1) + 
   scale_color_manual(values = c(swr_1 = "cyan3", swor_3 = "blue", swor_2 = "purple", swor_1 = "magenta")) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
-  labs(x = "Year", y = "Sample Rate (Boot - Actual)", color = "Method") 
+  labs(x = "Year", y = "Sample Rate (Boot - Actual)", color = "Method") +
+  geom_text(data = og_rates_dt[ADP >= 2018], aes(x = as.character(ADP), label = STRATA_N), y = 0.075, size = 2)
+
 # Can see that for most strata, predicted rates are generally with 2.5%, mostly within 5%
 
 ggplot(boot_rates_dt[ADP >= 2018, .(MEAN_DIFF = mean(PERC_DIFF)), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)]) + 
@@ -2467,11 +2479,14 @@ swr_1_rates_dt[ADP == 2021, .(SAMPLE_RATE = mean(SAMPLE_RATE), n = mean(n), INDE
 # Is trip duration vastly different in 2020 vs 2021? I see this pattern in all methods, regardless of # of years used in bootstrapping.
 dcast(fixed_fmp.allo_lst$effort, STRATA ~ ADP, value.var = "TRP_DUR")
 # 2021 was actually higher than 2020, so 'realized' rates would be lower, leading to overestimates in my bootstrapping
-plot_trip_duration <- ggplot(fixed_fmp.allo_lst$effort[!(STRATA %like% "ZERO|EM_TRW")], aes(x = ADP, y = TRP_DUR, color = STRATA)) + geom_line() + geom_point() +
-  labs(x = "Year", y = "Average Trip Duration (days)")
+plot_trip_duration <- ggplot(fixed_fmp.allo_lst$effort[!(STRATA %like% "ZERO|EM_TRW")], aes(x = ADP, y = TRP_DUR, color = STRATA)) + 
+  geom_line(linewidth = 2) + geom_point(size = 3) +
+  labs(x = "Year", y = "Average Trip Duration (days)", color = "Stratum")
 # Trip duration definitely jumped sine 2019, but mostly for BSAI trips.
 # This kind of phenomenon isn't something we can ever plan for. # of trips is one thing, but change in fishing behavior itself
 # is another.
+
+
 
 ### Bias/Variance in difference in Proximity ----
 # boot_prox_dt[ADP >= 2018, mean(DIFF), keyby = .(METHOD)]  # swor_3 had the highest bias. swor_1 had the least
@@ -2542,51 +2557,106 @@ cbind(
 
 # First, average difference vs actual across iterations (prox and rates)
 # Then, across years and strata, calculate the bias (mean difference)
-boot_metrics <- rbind(
-  melt(
-    boot_prox_dt[ADP >= 2018, .(
-      METRIC = "PROX", MEAN_DIFF = mean(DIFF), VAR_DIFF = var(DIFF), MEAN_PERC_DIFF = mean(PERC_DIFF), VAR_PERC_DIFF = var(PERC_DIFF)
-    ), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)
-    ][, lapply(.SD, sum), .SDcols = c("MEAN_DIFF", "VAR_DIFF", "MEAN_PERC_DIFF", "VAR_PERC_DIFF"), keyby = .(METRIC, METHOD)],
-    id.vars = c("METRIC", "METHOD")),
-  melt(
-    boot_rates_dt[ADP >= 2018, .(
-      METRIC = "RATES", MEAN_DIFF = mean(DIFF), VAR_DIFF = var(DIFF), MEAN_PERC_DIFF = mean(PERC_DIFF), VAR_PERC_DIFF = var(PERC_DIFF)
-    ), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)
-    ][, lapply(.SD, sum), .SDcols = c("MEAN_DIFF", "VAR_DIFF", "MEAN_PERC_DIFF", "VAR_PERC_DIFF"), keyby = .(METRIC, METHOD)],
-    id.vars = c("METRIC", "METHOD"))
-)
+# boot_metrics <- rbind(
+#   melt(
+#     boot_prox_dt[ADP >= 2018, .(
+#       METRIC = "PROX", MEAN_DIFF = mean(DIFF), VAR_DIFF = var(DIFF), MEAN_PERC_DIFF = mean(PERC_DIFF), VAR_PERC_DIFF = var(PERC_DIFF)
+#     ), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)
+#     ][, lapply(.SD, sum), .SDcols = c("MEAN_DIFF", "VAR_DIFF", "MEAN_PERC_DIFF", "VAR_PERC_DIFF"), keyby = .(METRIC, METHOD)],
+#     id.vars = c("METRIC", "METHOD")),
+#   melt(
+#     boot_rates_dt[ADP >= 2018, .(
+#       METRIC = "RATES", MEAN_DIFF = mean(DIFF), VAR_DIFF = var(DIFF), MEAN_PERC_DIFF = mean(PERC_DIFF), VAR_PERC_DIFF = var(PERC_DIFF)
+#     ), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)
+#     ][, lapply(.SD, sum), .SDcols = c("MEAN_DIFF", "VAR_DIFF", "MEAN_PERC_DIFF", "VAR_PERC_DIFF"), keyby = .(METRIC, METHOD)],
+#     id.vars = c("METRIC", "METHOD"))
+# )
 
-# Calculate average difference and percent difference relative to 'actual'
-boot_prox_dt[ADP >= 2018, .(
-  METRIC = "PROX", MEAN_DIFF = mean(DIFF), MEAN_PERC_DIFF = mean(PERC_DIFF)
-), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)
-][, .(
-  MEAN = mean(MEAN_DIFF),
-  MEAN_P = mean(MEAN_PERC_DIFF),
-  VAR = var(MEAN_DIFF),
-  VAR_P = var(MEAN_PERC_DIFF)), keyby = .(METHOD)]  # swor_1 has the lowest bias but highest variance. Typical bias-variance tradeoff
+# # Calculate average difference and percent difference relative to 'actual'
+# boot_prox_dt[ADP >= 2018, .(
+#   METRIC = "PROX", MEAN_DIFF = mean(DIFF), MEAN_PERC_DIFF = mean(PERC_DIFF)
+# ), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)
+# ][, .(
+#   MEAN = mean(MEAN_DIFF),
+#   MEAN_P = mean(MEAN_PERC_DIFF),
+#   VAR = var(MEAN_DIFF),
+#   VAR_P = var(MEAN_PERC_DIFF)), keyby = .(METHOD)]  # swor_1 has the lowest bias but highest variance. Typical bias-variance tradeoff
 
 
 # TODO USE THESE METRICS
 # MSE : sum((estimate - true value)^2) / (n)
-boot_prox_dt[
+prox_tbl <- boot_prox_dt[
 ][ADP >= 2018, .(BOOT_MEAN = mean(PROX)), keyby = .(ADP, STRATA, BSAI_GOA, METHOD, ACTUAL)
 ][, .(
   BIAS = mean(BOOT_MEAN - ACTUAL), 
-  MPE = 100  * mean((BOOT_MEAN - ACTUAL)/ACTUAL), 
+  #MAPE = mean(abs(BOOT_MEAN - ACTUAL) / abs(ACTUAL))  * 100,
   MSE = mean((BOOT_MEAN - ACTUAL)^2)),
-  keyby = .(METHOD)]
+  keyby = .(METHOD)] %>%
+  flextable() %>% flextable::colformat_double(j = 2:3, digits = 5)
 # PROX: swor_1 has the least bias in proximity, but also the highest MSE (but not large difference)
 
 
-boot_rates_dt[
+rates_tbl <- boot_rates_dt[
 ][ADP >= 2018, .(BOOT_MEAN = mean(SAMPLE_RATE)), keyby = .(ADP, STRATA, BSAI_GOA, METHOD, ACTUAL)
 ][, .(
   BIAS = mean(BOOT_MEAN - ACTUAL), 
-  MPE = 100  * mean((BOOT_MEAN - ACTUAL)/ACTUAL),
+  #MAPE = mean(abs(BOOT_MEAN - ACTUAL) / abs(ACTUAL))  * 100,
   MSE = mean((BOOT_MEAN - ACTUAL)^2)),
-  keyby = .(METHOD)]
+  keyby = .(METHOD)] %>%
+  flextable() %>% flextable::colformat_double(j = 2:3, digits = 5)
+
+
+
+
+# calcualte metrics by stratum across years
+boot_prox_dt[
+][ADP >= 2018, .(BOOT_MEAN = mean(PROX)), keyby = .(ADP, STRATA, BSAI_GOA, METHOD, ACTUAL)
+][, .(
+  BIAS = mean(BOOT_MEAN - ACTUAL),
+  MPE = 100 * mean((BOOT_MEAN - ACTUAL)/ACTUAL),
+  MSE = mean((BOOT_MEAN - ACTUAL)^2)),
+  keyby = .(METHOD, STRATA, BSAI_GOA)] %>%
+  dcast(STRATA + BSAI_GOA ~ METHOD, value.var = c("BIAS", "MPE", "MSE"))
+
+# Best method has the fewest dark tiles
+
+stratum_prox_bias_error <- 
+  melt(
+    boot_prox_dt[
+    ][ADP >= 2018, .(BOOT_MEAN = mean(PROX)), keyby = .(ADP, STRATA, BSAI_GOA, METHOD, ACTUAL)
+    ][, .(
+      BIAS = mean(BOOT_MEAN - ACTUAL),
+      #MAPE = mean(abs(BOOT_MEAN - ACTUAL)/abs(ACTUAL)) * 100,
+      MSE = mean((BOOT_MEAN - ACTUAL)^2)),
+      keyby = .(METHOD, STRATA, BSAI_GOA)],
+    id.vars = c("METHOD", "STRATA", "BSAI_GOA"), value.var = c("BIAS", "MSE") # Removed MAPE
+  )[, relative_value := value/max(abs(value)), by = .(variable, STRATA, BSAI_GOA)][]
+plot_stratum_prox_bias_error <- ggplot(stratum_prox_bias_error, aes(x = METHOD, y = paste0(STRATA, "-", BSAI_GOA), fill = relative_value)) + 
+  facet_grid(. ~ variable) + geom_tile() + scale_fill_gradient2() + geom_text(aes(label = formatC(value, digits = 4, format = "f") )) + 
+  labs(x = "Method", y = "Stratum", fill = "Relative value", subtitle = "Proximity")
+
+stratum_rates_bias_error <- 
+  melt(
+    boot_rates_dt[
+    ][ADP >= 2018, .(BOOT_MEAN = mean(SAMPLE_RATE)), keyby = .(ADP, STRATA, BSAI_GOA, METHOD, ACTUAL)
+    ][, .(
+      BIAS = mean(BOOT_MEAN - ACTUAL),
+      MSE = mean((BOOT_MEAN - ACTUAL)^2)),
+      keyby = .(METHOD, STRATA, BSAI_GOA)],
+    id.vars = c("METHOD", "STRATA", "BSAI_GOA"), value.var = c("BIAS", "MSE")
+  )[, relative_value := value/max(abs(value)), by = .(variable, STRATA, BSAI_GOA)][]
+plot_stratum_rates_bias_error <- ggplot(stratum_rates_bias_error, aes(x = METHOD, y = paste0(STRATA, "-", BSAI_GOA), fill = relative_value)) + 
+  facet_grid(. ~ variable) + geom_tile() + scale_fill_gradient2() + geom_text(aes(label = formatC(value, digits = 4, format = "f") )) + 
+  labs(x = "Method", y = "Stratum", fill = "Relative value", subtitle = "Sample Rates")
+# Although overall bias for swr_1 was lowest, we can see that it's because the bias of EM_FIXED-BSAI offsets other strata.
+
+
+save(
+  plot_prox_lst, plot_rates_lst, plot_trip_duration, plot_prox_diff_mean, plot_rates_diff_mean,
+  plot_stratum_prox_bias_error, plot_stratum_rates_bias_error, prox_tbl, rates_tbl, 
+  file = "analyses/effort_prediction/effort_bootstrap.rdata")
+
+
 
 
 boot_rates_dt[
