@@ -425,6 +425,14 @@ work.data[, N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
           ][N > 1, TRIP_ID := ifelse(STRATA_NEW == "FULL", paste(TRIP_ID, 1), TRIP_ID)
             ][, N := NULL]
 
+# Apply chosen stratification for the final ADP
+if(ADP_version == "Final"){
+work.data[STRATA_NEW %in% c("EM_HAL", "EM_POT"), STRATA_NEW := "EM_FIXED"
+][STRATA_NEW %in% c("HAL", "POT"), STRATA_NEW := "FIXED"
+][FMP %in% c("BS", "AI"), FMP := "BSAI"
+][!STRATA_NEW %in% c("FULL", "ZERO"), STRATA_NEW := paste(STRATA_NEW, FMP, sep = "_")]
+}
+
 # For remaining combo strata trips, default to stratum with the most landed weight
 work.data[, N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
           ][N > 1, STRATA_WEIGHT := sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = TRUE), by = .(TRIP_ID, STRATA_NEW)
@@ -559,35 +567,25 @@ trips_melt <- trips_melt %>%
 # * Check for NAs in trips_melt ----
 if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected in trips_melt")}
 
-# * Add post-strata to trips_melt and work.data ----
-trips_melt <- trips_melt %>% 
-              mutate(P_STRATA = ifelse(strata_ID == "TRW" & TENDER == "Y", "TenTR", strata_ID)) %>%
-              mutate(P_STRATA = ifelse(strata_ID == "POT" & TENDER == "Y", "TenP", P_STRATA))
-
-work.data <- work.data %>% 
-             mutate(P_STRATA = ifelse(STRATA_NEW == "POT" & TENDER == "Y", "TenP", STRATA_NEW)) %>% 
-             mutate(P_STRATA = ifelse(STRATA_NEW == "TRW" & TENDER == "Y", "TenTR", P_STRATA))
-
 # * efrt object ----
 
 # 'efrt' is just a simplified verson of work.data for non-jig PC trips for the past 3 years, and defines pool (OB, EM, or ZE)
 # Uses 'max_date' to trim dataset to last 3 full years (instead of using ADP)
-wd <- unique(work.data[CVG_NEW=="PARTIAL" & AGENCY_GEAR_CODE!="JIG", .(PERMIT=VESSEL_ID, TARGET=TRIP_TARGET_CODE, PORT = PORT_NEW, AREA=REPORTING_AREA_CODE, AGENCY_GEAR_CODE, GEAR=ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", AGENCY_GEAR_CODE), STRATA=STRATA_NEW, P_STRATA, START=min(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), END=max(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE)), keyby=.(ADP, TRIP_ID)])
+wd <- unique(work.data[CVG_NEW=="PARTIAL" & AGENCY_GEAR_CODE!="JIG", .(PERMIT=VESSEL_ID, TARGET=TRIP_TARGET_CODE, PORT = PORT_NEW, AREA=REPORTING_AREA_CODE, AGENCY_GEAR_CODE, GEAR=ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", AGENCY_GEAR_CODE), STRATA=STRATA_NEW, FMP, START=min(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), END=max(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE)), keyby=.(ADP, TRIP_ID)])
 wd[TARGET=="B", TARGET:="P"]  # Convert all 'bottom pollock' to 'pelagic pollock', allowing us to treat all pollock target trips the same
-wd[, POOL := ifelse(STRATA %in% c("EM_HAL", "EM_POT"), "EM", ifelse(STRATA=="ZERO", "ZE", "OB"))]   # define pool
+wd[, POOL := ifelse(grepl("EM", STRATA), "EM", ifelse(STRATA == "ZERO", "ZE", "OB"))]   # define pool
 wd[, MONTH := month(START)]
-wd[, FMP := ifelse(AREA >=600, "GOA", "BSAI")] # define FMP using area, splitting by GOA and BSAI only
-wd <- wd[, .(ADP, POOL, STRATA, P_STRATA, FMP, PORT, AREA, TARGET, AGENCY_GEAR_CODE, GEAR, PERMIT, TRIP_ID, START, END, MONTH)]
+wd <- wd[, .(ADP, POOL, STRATA, FMP, PORT, AREA, TARGET, AGENCY_GEAR_CODE, GEAR, PERMIT, TRIP_ID, START, END, MONTH)]
 efrt <- unique(wd)  # final efrt object to output!
 
 # If any trips fished both PTR and NPT gear, remove instances of PTR - only trips that fished with PTR exclusively can be within the pollock EFP
-trw_dup <- unique(efrt[STRATA=="TRW" & AGENCY_GEAR_CODE %in% c("NPT", "PTR"), .(ADP, POOL, STRATA, P_STRATA, AGENCY_GEAR_CODE, GEAR, PERMIT, TRIP_ID, START, END, MONTH)])
+trw_dup <- unique(efrt[grepl("TRW", STRATA) & AGENCY_GEAR_CODE %in% c("NPT", "PTR"), .(ADP, POOL, STRATA, AGENCY_GEAR_CODE, GEAR, PERMIT, TRIP_ID, START, END, MONTH)])
 trw_dup_id <- unique(trw_dup[, .N, by=TRIP_ID][N>1, TRIP_ID])
 if(as.numeric(diff(table(trw_dup[TRIP_ID %in% trw_dup_id, AGENCY_GEAR_CODE]))) != 0){warning("Something else other than NPT/PTR is creating unique records.")}
 efrt <- unique(efrt[TRIP_ID %in% trw_dup_id & AGENCY_GEAR_CODE == "PTR", AGENCY_GEAR_CODE := "NPT"])        # Remove PTR records by making all trips by these mixed-gear trips have NPT only
 
 # Check that fixed gear duplicates are due only to combo HAL/POT gear trips (which we will retain in AGENCY_GEAR_CODE and GEAR)
-hal_pot_dup <- unique(efrt[POOL%in%c("OB", "ZE") & AGENCY_GEAR_CODE %in% c("HAL", "POT"), .(ADP, POOL, STRATA, P_STRATA, AGENCY_GEAR_CODE, GEAR, PERMIT, TRIP_ID, START, END, MONTH)])
+hal_pot_dup <- unique(efrt[POOL %in% c("OB", "ZE") & AGENCY_GEAR_CODE %in% c("HAL", "POT"), .(ADP, POOL, STRATA, AGENCY_GEAR_CODE, GEAR, PERMIT, TRIP_ID, START, END, MONTH)])
 hal_pot_dup_id <- unique(hal_pot_dup[, .N, by=TRIP_ID][N>1, TRIP_ID])
 if(as.numeric(diff(table(hal_pot_dup[TRIP_ID %in% hal_pot_dup_id, AGENCY_GEAR_CODE]))) != 0){warning("Something other than HAL/POT is creating unique records.")}
 
@@ -611,7 +609,7 @@ efrt[POOL == "ZE", .(N = uniqueN(TRIP_ID)), by = .(POOL, STRATA)][order(POOL, ST
 if((length(unique(trips_melt$TRIP_ID)) == length(unique(efrt[POOL!="ZE", TRIP_ID]))) != TRUE){message("Wait! Some trips are missing metrics in trips_melt!")}
 
 # * Full Coverage Summary ----
-full_efrt <- unique(work.data[CVG_NEW=="FULL", .(POOL="FULL", STRATA, P_STRATA, FMP, AREA=REPORTING_AREA_CODE, TARGET=TRIP_TARGET_CODE, AGENCY_GEAR_CODE, PERMIT, START=min(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), END=max(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), MONTH), keyby=.(ADP, TRIP_ID)])
+full_efrt <- unique(work.data[CVG_NEW=="FULL", .(POOL="FULL", STRATA, FMP, AREA=REPORTING_AREA_CODE, TARGET=TRIP_TARGET_CODE, AGENCY_GEAR_CODE, PERMIT, START=min(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), END=max(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), MONTH), keyby=.(ADP, TRIP_ID)])
 full_efrt[, GEAR := ifelse(AGENCY_GEAR_CODE %in% c("NPT", "PTR"), "TRW", AGENCY_GEAR_CODE)]   # Create GEAR column (i.e. TRW instead of NPT or PTR)
 full_efrt[TARGET=="B", TARGET := "P"]                                           # Simplify 'bottom pollock' and 'pelagic pollock' to have only one 'pollock' target designation
 full_efrt <- unique(full_efrt)
