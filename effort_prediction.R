@@ -18,7 +18,7 @@ efp_list <- fread("source_data/efp_list_2023-09-05.csv")
 # https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
 
 # select necessary columns
-effort_strata <- work.data[CVG_NEW == "PARTIAL" & STRATA_NEW != "ZERO" & AGENCY_GEAR_CODE != "JIG", .(ADP, STRATA = STRATA_NEW, TRIP_TARGET_DATE, TRIP_ID)]
+effort_strata <- work.data[CVG_NEW == "PARTIAL", .(ADP, STRATA = STRATA_NEW, TRIP_TARGET_DATE, TRIP_ID)]
 
 # ensure one trip target date per trip, making it the minimum trip target date
 effort_strata[, TRIP_TARGET_DATE := min(TRIP_TARGET_DATE), by = TRIP_ID]
@@ -159,7 +159,7 @@ p4 <- ggplot(effort_year[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
       scale_x_continuous(breaks = min(effort_year$ADP):ADPyear) +
       scale_y_continuous(labels = comma) +
       expand_limits(y = 0) +
-      labs(x = "Year", y = "Partial Coverage Trips (Excluding Zero Coverage)") +
+      labs(x = "Year", y = "Partial Coverage Trips") +
       theme_classic()
 
 # png("output_figures/TripsPerYear.png", width = 7, height = 5, units = 'in', res=300)
