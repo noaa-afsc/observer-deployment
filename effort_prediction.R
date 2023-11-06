@@ -1,6 +1,7 @@
 # get packages if they aren't already loaded
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
 if(!require("ggplot2"))   install.packages("ggplot2", repos='http://cran.us.r-project.org')
+if(!require("scales"))   install.packages("scales", repos='http://cran.us.r-project.org')
 
 # avoid scientific notation
 options(scipen = 9999)
@@ -17,7 +18,7 @@ efp_list <- fread("source_data/efp_list_2023-09-05.csv")
 # https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
 
 # select necessary columns
-effort_strata <- work.data[CVG_NEW == "PARTIAL" & AGENCY_GEAR_CODE != "JIG", .(ADP, STRATA = STRATA_NEW, TRIP_TARGET_DATE, TRIP_ID)]
+effort_strata <- work.data[CVG_NEW == "PARTIAL" & STRATA_NEW != "ZERO" & AGENCY_GEAR_CODE != "JIG", .(ADP, STRATA = STRATA_NEW, TRIP_TARGET_DATE, TRIP_ID)]
 
 # ensure one trip target date per trip, making it the minimum trip target date
 effort_strata[, TRIP_TARGET_DATE := min(TRIP_TARGET_DATE), by = TRIP_ID]
@@ -156,8 +157,9 @@ p4 <- ggplot(effort_year[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
       geom_errorbar(aes(ymin = lwr, ymax = upr), data = effort_pred_year[ADP == ADPyear, .(ADP, TOTAL_TRIPS = fit, lwr, upr)], color = "red", width = 0.2) +
       geom_line(aes(x = ADP, y = fit), data = effort_pred_year, color = "red") +
       scale_x_continuous(breaks = min(effort_year$ADP):ADPyear) +
+      scale_y_continuous(labels = comma) +
       expand_limits(y = 0) +
-      labs(x = "Year", y = "Partial Coverage Trips") +
+      labs(x = "Year", y = "Partial Coverage Trips (Excluding Zero Coverage)") +
       theme_classic()
 
 # png("output_figures/TripsPerYear.png", width = 7, height = 5, units = 'in', res=300)
