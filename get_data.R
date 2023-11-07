@@ -232,10 +232,10 @@ AKROVL <- AKROVL %>% filter(VESSEL_ID %in% unique(work.data$VESSEL_ID))
 
 VL <- merge(FMAVL, AKROVL, all = TRUE)
 
-# Update vessel length, giving precedence to AKRO lengths
+# Update vessel length, giving precedence to FMA lengths
 work.data <- merge(work.data, VL, all.x = TRUE)
-work.data <- mutate(work.data, LENGTH_OVERALL = ifelse(!is.na(AKROVL), AKROVL, LENGTH_OVERALL))
-work.data <- mutate(work.data, LENGTH_OVERALL = ifelse(is.na(LENGTH_OVERALL), FMAVL, LENGTH_OVERALL))                    
+work.data <- mutate(work.data, LENGTH_OVERALL = ifelse(!is.na(FMAVL), FMAVL, LENGTH_OVERALL))
+work.data <- mutate(work.data, LENGTH_OVERALL = ifelse(is.na(LENGTH_OVERALL), AKROVL, LENGTH_OVERALL))                    
 work.data <- select(work.data, -c(FMAVL, AKROVL))
 
 # * Combine catcher-processors and motherships into one processing sector ----
@@ -341,10 +341,7 @@ under_forties <- filter(work.data, LENGTH_OVERALL < 40 & STRATA_NEW != "ZERO") %
 
 under_forties
 
-# Reduce the list to vessels that are < 40 according to FMA
-under_forties <- filter(under_forties, FMAVL < 40 | is.na(FMAVL))
-
-# Flip STRATA_NEW to ZERO for vessels that are < 40 according to fma
+# Flip STRATA_NEW to ZERO for vessels that are < 40 (according to FMA)
 work.data <- mutate(work.data, CVG_NEW = ifelse(TRIP_ID %in% under_forties$TRIP_ID, "PARTIAL", CVG_NEW),
                                STRATA_NEW = ifelse(TRIP_ID %in% under_forties$TRIP_ID, "ZERO", STRATA_NEW))
 
@@ -356,10 +353,6 @@ over_forties <- filter(work.data, LENGTH_OVERALL > 39 & AGENCY_GEAR_CODE != "JIG
 over_forties
 
 # Flip STRATA_NEW to gear-based strata for vessels that are > 40
-# Do so manually, based on the characteristics of the vessel's trips
-# The VL object contains the most up-to-date vessel lengths, so it could
-# be that a vessel which was < 40 (and therefore zero coverage) is now
-# > 40 (and should therefore be switched to a gear-based stratum)
 work.data <- mutate(work.data, STRATA_NEW = ifelse(TRIP_ID %in% over_forties$TRIP_ID & !(VESSEL_ID %in% em_base$VESSEL_ID), AGENCY_GEAR_CODE, STRATA_NEW))
 
 work.data <- work.data %>% 
@@ -378,13 +371,18 @@ work.data <- work.data %>%
                                         STRATA_NEW)) %>% 
              setDT()
 
-# View jig gear to see if STRATA_NEW makes sense
+# View over_forties strata conversions to see if they make sense
+work.data %>% 
+filter(TRIP_ID %in% over_forties$TRIP_ID) %>% 
+distinct(AGENCY_GEAR_CODE, STRATA_NEW)
+
+# View jig gear strata conversions to see if they make sense
 work.data %>% 
 filter(TRIP_ID %in% work.data[AGENCY_GEAR_CODE=="JIG", TRIP_ID]  & (STRATA != "ZERO" | STRATA_NEW != "ZERO")) %>% 
-distinct(ADP, VESSEL_ID, TRIP_ID, AGENCY_GEAR_CODE, STRATA, STRATA_NEW) %>% 
+distinct(ADP, VESSEL_ID, LENGTH_OVERALL, TRIP_ID, AGENCY_GEAR_CODE, STRATA, STRATA_NEW) %>% 
 arrange(ADP, VESSEL_ID, TRIP_ID)
 
-# View strata conversions to see if they make sense
+# View all strata conversions to see if they make sense
 distinct(work.data, STRATA, AGENCY_GEAR_CODE, STRATA_NEW) %>% 
 arrange(STRATA_NEW, STRATA, AGENCY_GEAR_CODE) %>% 
 print(n = Inf)
