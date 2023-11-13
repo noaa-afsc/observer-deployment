@@ -1,0 +1,97 @@
+---
+title: "2024 ADP Fixed Gear EM Evaluation"
+author: "Geoff_Mayhew"
+date: "2023-11-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE)
+
+library(data.table)
+library(ggplot2)
+library(flextable)
+library(magrittr)    # For Piping
+
+# Download from Final ADP Outputs folder:  https://drive.google.com/file/d/1gbLfqw1ncifSuoHtTsIBDAcTdLSVkHvC/view?usp=drive_link
+load("fgem_results.rdata")
+
+```
+
+
+### Fishing History
+
+Fishing history of requesting vessels (Excluding 5735  EMERALD ISLE as it has no fishing history in VALHALLA).
+
+**Table 1.** Fishing history of vessels requesting to be added to the fixed gear EM Pool as total trips per year (with 2023 being to date) and total since 2013. Earliest year and latest year with fishing as and total across the time series is also given. *LOA* is vessel length overall. *TPY* is trips per year, which is the average number of trips taken per year between the earliest year and the current year.
+
+```{r fishing history}
+setcolorder(fishing_history_N, c("VESSEL_ID", "VESSEL_NAME", "LOA", 2013:2023, "TOTAL", "EARLIEST", "LATEST", "TPY"))
+
+fishing_history_N[order(VESSEL_ID)] %>% flextable() %>%
+  colformat_num(j = c(1, 16, 17), big.mark = "") %>% autofit()
+```
+
+
+### Gear types used
+
+```{r gear used, fig.width = 10, fig.height = 5}
+plot_trips_gear
+```
+
+**Figure 1.** Gear types used for each trip by vessels requesting to be added to the fixed gear EM. For outlines, blue = POT, red = HAL, and purple = BOTH. Fill color corresponds to number of trips taken with that gear type.
+
+
+### Impacts to interspersion (data gaps)
+
+Interspersion was evaluated for 2018-2023 using the 2024 stratum definitions and the 2023 fixed-gear EM vessel list, assuming a 15% selection rate. The 4 vessels requesting to opt out of EM this year were also removed. After quantifying the Observer-Observer FMP-specific interspersion (which was only relevent to the GOA for all the requesting vessels this year), the interspersion was re-evaluated to quantify the impacts of moving each requesting vessel from the OB_FIXED-GOA stratum to the EM_FIXED-GOA stratum. The total delta of interspersion summed across years (*OB_DIFF*)and divided by the total number of trips taken by the vessel in the time series, *EVAL_N*, to arrive the averae per-trip impact to interspersion, *RATIO*. The vessel with the lowest per-trip was then 'selected' as a candidate to add to the fixed gear EM pool, and then the process was repeated for all remaining requesting vessels until all vessels were added in order of increasing impact to interspersion. The order of the addition to the pool is represented by *RANK*. Note then that *OB_DIFF* and *RATIO* reflect not simply each vessel's individual impacts, but after accounting for all the vessels that were 'added' to the pool prior. The summary of these results is in the figure below.
+
+```{r plot_fgem, fig.width = 10, fig.height = 6}
+plot_fgem
+```
+
+**Figure 2.** Summary of fixed gear EM evaluation with impacts to Observer-to-Observer interspersion *OB_DIFF* and the per-trip impact *RATIO*.
+
+Note that when comparing *OB_DIFF* and *RATIO*, we are only comparing the magnitude of these differences relative to the vessels requesting to be added to the fixed gear EM pool, not the rest of the current pool (this is something to be included in the future).
+
+The Sundancer (4659) had the highest per-trip impact to interspersion. This is likely due to the fact that it fishes with both HAL and POT gear on all trips (see **Figure 1**), which makes it relatively more 'valuable' to neighboring trips as it contributes to the interspersion of both gear types.
+
+
+### Impacts to interspersion of EM and ZERO pools
+
+The results of impacts of OB-to-EM and OB-to-ZERO interspersion are also presented below, but without the cumulative effects of growing the EM pool (i.e., simply the difference that each vessel creates relative to the current fixed gear EM pool).
+
+How much does moving each vessel into FGEM affect OB, EM, and ZE interspersion overall (OB, EM, ZE) or per trip (RATIO)
+```{r plot_obze_metrics, fig.width = 10, fig.height = 6}
+ob_em_ze_metrics
+```
+
+**Figure 3.** Summary of fixed gear EM evaluation for OB-OB, OB-EM, and OB-ZE interspersion.
+
+
+### Average trips taken per year by the current fixed-gear EM Pool (applied to prior years)
+
+Looking at current list of fixed-gear EM vessels, we can visualize the distribution of the number of trips taken every year (ignoring vessels that fished 0 trips). We can compare this to *TPY*, trips per year, for the vessels requesting to be added.
+
+```{r plot_fgem_tpy, fig.width = 10, fig.height = 6 }
+plot_fgem_tpy 
+```
+
+**Figure 4.** Histogram of number of trips taken by vessels in the 2023 fixed gear EM pool list.
+
+Generally, of the FGEM vessels that actually fish, median of 5-6 trips per year and average of 6-8 trips.
+
+### Analyst's Notes:
+
+The below are the opinion of Geoff Mayhew only regarding how good of candidates the requesting vessels are to cost-effective members of the fixed gear EM pool without introducing data gaps.
+
+-  2084  COMMANDER       [Good] Fishes 8.5 trips per year and had fairly low impact per trip. Fishes either HAL/MIXED
+-  2348  ALEUT MISTRESS  [Bad] No recent fishing effort, last fished in 2014. Need more data to determine cost effectiveness.
+- 33881  THREE PEARLS    [Bad] Hasn't fished since 2019 (no fishing in last 3 years), and only fished 2-1 trips per year. 
+- 35836  CRYSTAL STAR    [Bad] Fishes 5.5 trips per year but had the 2nd highest impact per trip. Fishes POT gear only.
+-  3717  CARLYNN         [Okay?] Fishes 18.455 trips per year, had most overall impact, but 6th greatest impact per trip.
+-  4383  SOUTHEASTERN    [Bad] Fishes only 2.5 trips per year.
+-  4387  TANYA M         [Okay?] Fishes a lot (16.5 trips per year), but with some impacts to data. Fishes HAL only.
+-  4659  SUNDANCER       [Bad] Fishes 4.6 trips per year and had the highest impact per trip, only fishes with MIXED gear.
+-  5608  GARNET          [Bad] Fishes only 4 trips per year, but more in more recent years, with low impact per trip. Need more data?
+-  5735  EMERALD ISLE    [Bad] No fishing history whatsoever in VALHALLA
