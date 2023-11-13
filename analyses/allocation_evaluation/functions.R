@@ -3579,8 +3579,10 @@ allo_cwb_loop2 <- function(cwb_prop, allo_lst, cost_params, budget, sqrt_cost = 
     steps[i,] <- c(new_diff, new_var)
     
     # if bias goes down and variance goes down, continue 
-    # if bias goes up a lttle but variance goes down, continue
-    
+    # if bias goes up a little but variance goes down, continue
+    if(i > 2) {
+      if(steps[i, 1] == steps[i-2, 1]) GO <- F
+    }
     
     if((new_diff < old_diff) | (new_var < old_var)){
       

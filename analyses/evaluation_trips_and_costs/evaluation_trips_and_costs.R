@@ -25,8 +25,9 @@ library(dplyr)              # For piping and handling sf objects
 ## Load data and data prep ----
 #=============================#
 
-load("analyses/draft_rates/draft_rates_2.rdata")           # Raw output from nalyses/draft_rates/draft_rates.R - box definitions and raw rates
-load("analyses/draft_rates/draft_rates_effort_2.rdata")    # Outputs from analyses/draft_rates/draft_rates.R - compiled rates and effort
+load("results/draft_rates.rdata")           # Raw output from nalyses/draft_rates/draft_rates.R - box definitions and raw rates
+load("results/draft_rates_effort.rdata")    # Outputs from analyses/draft_rates/draft_rates.R - compiled rates and effort
+load("source_data/ak_shp.rdata")            # shp_land, shp_nmfs, and shp_centroids added to global
 
 # Add 'STRATA' back in, as the cost functions need them (and not stratum_col)
 rates <- lapply(rates, function(x0) {
@@ -75,7 +76,7 @@ figures_cost_curves <- ggplot(cost_dt_melt[ADP == 2022 & MON_RATE > 0.025], aes(
 # Figure 2-1
 ggsave(
   figures_cost_curves, 
-  file = "analyses/evaluation_trips_and_costs/tables_and_figures/figure_cost_curves.png", 
+  file = "output_figures/figure_cost_curves.png", 
   width = 6, height = 2, units = "in"
 )
 
@@ -160,9 +161,9 @@ non_eval_rates_5.25M_flex <- non_eval_2022_dt[, ..non_eval_525M_cols] %>% flexta
   fix_border_issues() %>% autofit()
 
 # Tables 5-1, 5-2, and 5-3
-save_as_docx(non_eval_rates_3.5M_flex, path = "analyses/evaluation_trips_and_costs/tables_and_figures/table_rates_low_.docx")
-save_as_docx(non_eval_rates_4.5M_flex, path = "analyses/evaluation_trips_and_costs/tables_and_figures/table_rates_med_.docx")
-save_as_docx(non_eval_rates_5.25M_flex, path = "analyses/evaluation_trips_and_costs/tables_and_figures/table_rates_high_.docx")
+save_as_docx(non_eval_rates_3.5M_flex, path = "output_tables/table_rates_low_.docx")
+save_as_docx(non_eval_rates_4.5M_flex, path = "output_tables/table_rates_med_.docx")
+save_as_docx(non_eval_rates_5.25M_flex, path = "output_tables/table_rates_high_.docx")
 
 #========================================#
 # Trips by Monitoring Method and Gear ---- 
@@ -224,7 +225,7 @@ trips_by_gear_sampled_flex <- trips_by_gear_sampled_dt_2022_wide %>%
   fix_border_issues() %>% autofit()
 
 # Tables for rmarkdown document output [Table 5-5]
-trips_by_gear_sampled_flex %>% save_as_docx(path = "analyses/evaluation_trips_and_costs/tables_and_figures/table_trips_by_gear.docx")
+trips_by_gear_sampled_flex %>% save_as_docx(path = "output_tables/table_trips_by_gear.docx")
 
 
 #==================#
@@ -337,7 +338,7 @@ design_monitoring_cost_rates_flex <- design_monitoring_cost_rates_dt_wide %>% fl
 
 # Table 5-4
 design_monitoring_cost_rates_flex  
-save_as_docx(design_monitoring_cost_rates_flex, path = "analyses/evaluation_trips_and_costs/tables_and_figures/table_monitoring_costs.docx")
+save_as_docx(design_monitoring_cost_rates_flex, path = "output_tables/table_monitoring_costs.docx")
 
 
 #=========================#
@@ -420,7 +421,7 @@ expense_variances_lst <- mapply(
 
 expense_2022 <- rbindlist(expense_variances_lst, idcol = "DESIGN", fill = T)
 expense_2022[, c("BUDGET", "ADP") := tstrsplit(BUDGET.ADP, split = "[.]")][, BUDGET.ADP := NULL]
-expense_2022_cv <- expense_variances_2022[, .(EXP_SD = sd(TOTAL), EXP_MAX = max(TOTAL), EXP_MIN = min(TOTAL), EXP_MEAN = mean(TOTAL)), by = .(ADP, BUDGET, DESIGN)]
+expense_2022_cv <- expense_2022[, .(EXP_SD = sd(TOTAL), EXP_MAX = max(TOTAL), EXP_MIN = min(TOTAL), EXP_MEAN = mean(TOTAL)), by = .(ADP, BUDGET, DESIGN)]
 expense_2022_cv[, c("Stratification", "Allocation") := tstrsplit(DESIGN, split  = "[.]")][, DESIGN := NULL]
 expense_2022_cv[, Allocation := factor(Allocation, levels = c("EQUAL", "STATUS_QUO", "CWB", "PROX"))]
 expense_2022_cv[, Stratification := factor(Stratification, levels = c("CURRENT", "FMP", "FIXED_FMP"))]
@@ -437,9 +438,9 @@ expenses_cv_2022_plot <- ggplot(expense_2022_cv, aes(x = ALLO_LBL, y = EXP_CV)) 
   labs(x = "Allocation method", y = "CV of expenses") 
 
 # Figure 5-1
-ggsave(expenses_cv_2022_plot, file = "analyses/evaluation_interspersion/figure_eval_expenses_cv.png", width = 8, height = 6, units = "in", dpi = 300)
+ggsave(expenses_cv_2022_plot, file = "output_figures/figure_eval_expenses_cv.png", width = 8, height = 6, units = "in", dpi = 300)
 
 # For Scorecard!
 scorecard_expense_cv <- expense_2022_cv[, .(BUDGET, Stratification, Allocation, variable = "CV", value = EXP_CV, BASELINE, DIFF)]
-save(scorecard_expense_cv, file = "analyses/evaluation_trips_and_costs/scorecard_expense_cv.rdata")
+save(scorecard_expense_cv, file = "results/scorecard_expense_cv.rdata")
 # Saved to google drive: https://drive.google.com/file/d/1RM16ONVHDtWfaIDMnX5znRa4mWxXDr5x/view?usp=drive_link
