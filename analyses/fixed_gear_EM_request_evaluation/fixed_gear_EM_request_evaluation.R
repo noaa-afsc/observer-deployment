@@ -443,6 +443,13 @@ save(fishing_history_N, plot_fgem, ob_em_ze_metrics, plot_fgem_tpy, plot_trips_g
 
 # Relative to all of FGEM vessels, knowing the percentile would be informative (putting them back into OB to compare the difference)
 
+#======================================================================================================================#
+# Incomplete ----
+#======================================================================================================================#
+
+# The below is not done - was working towards a way to visualize where/when fishing effort from one vessel occurs in 
+# relation to the rest of fishing effort.
+
 #=============#
 ## Mapping ----
 #=============#
@@ -545,8 +552,6 @@ trips_4659 <- setnames(data.table(table(unlist(apply(trips_4659, MARGIN = 1, FUN
 a1[trips_4659, on = .(BOX_ID)]
 
 init.box$og_data[, BOX_n := .N, keyby = BOX_ID]
-
-
 
 trips_4659 <- unique(fixed.pc_effort[PERMIT == 4659, .(TRIP_ID, GEAR)])
 trips_4659 <- init.box$og_data[trips_4659, on = .(TRIP_ID)][, .(VES_N = uniqueN(TRIP_ID)), keyby = .(GEAR, BOX_ID)]
