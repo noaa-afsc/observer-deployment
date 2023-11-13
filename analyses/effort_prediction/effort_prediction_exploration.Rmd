@@ -1,0 +1,147 @@
+---
+title: "PC Time Series"
+author: "Geoff_Mayhew"
+date: "2023-10-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Load packages
+library(data.table)
+library(ggplot2)
+library(gridExtra)
+
+knitr::opts_chunk$set(echo = F, warning = F)
+load("effort_prediction_exploration.rdata")
+```
+
+### Summaries {.tabset .tabset-pills}
+
+Split by monitoring method and FMP, summarizing by gear type only (counts of trips on top and proportions of trips on bottom), fishing effort has clearly
+changed over time. 
+
+Generally, 
+
+- In GOA, TRW has decreased, POT has increased, and HAL has been relatively constant. ZERO is very consistent.
+- In BSAI, all effort has decreased, especially in OB and ZERO. Proportions change little, with some POT new to ZERO since 2020.
+
+When including Trip Target,
+- Overall, P. Cod makes up a small portion of catch, especially in recent years, with remaining effort is in BSAI with POT gear. Zero is consistently dominated by HAL-gear halibut, with some HAL-gear P.cod and Pot-gear sablefish.
+- In GOA, HAL generally splits between halibut and sablefish 50/50, but more recently, 60/40 or higher. POT has largely shifted from P. cod to sablefish. Trawl used to fish P. Cod and Other but is almost entirely pollock now (with a few cod trips in OB_TRW, but may be all included in PCTC). 
+- In BSAI, HAL targets mostly halibut, POT has shift away from P. Cod and towards sablefish, and TRW has been very consistent for P. Cod only. BSAI-ZERO mostly targets halibut, with the few recent POT trips mostly targeting P. cod.
+
+#### Gear
+
+```{r plot_gear} 
+grid.arrange(effort_prediction_exploration_plots$GEAR)
+```
+
+#### Gear + Target
+
+```{r plot_gear_target}
+grid.arrange(effort_prediction_exploration_plots$GEAR_TARGET)
+```
+
+#### Split Gear
+
+```{r plot_split_gear}
+grid.arrange(effort_prediction_exploration_plots$SPLIT_GEAR)
+```
+
+#### Split Gear by Target
+
+```{r plot_split_gear_target}
+grid.arrange(effort_prediction_exploration_plots$SPLIT_GEAR_TARGET)
+```
+Figure 1. History (2015-2023 to date) of fishing effort as number of trips, split gear type and/or target.
+
+### Proximity Index 
+
+Recall that we use the *proximity index* in the proximity allocation method, and is essentially a stratum-specific version of *interspersion index*'*, i.e., a stratum's expected proportion of trips sampled or neighboring a sampled trip given a sample rate. If we assume a 15% sampling rate for ALL strata, using the 2024 ADP stratum definition (monitoring method (OB/EM/Zero), BSAI/GOA and FIXED/TRW), we can calculate the resulting proximity indices. At a given rate, proximity gives us a relative idea of whether the trips in a stratum are more tightly clumped (higher proximity) or more diffues (lower proximity) in space and time.
+
+```{r plot_prox1}
+prox1
+```
+Figure 2. Proximity indices of all strata as a function of the number of trips in each stratum, for fishing effort 2015-2023 using 2024 stratum definitions.
+
+We see that across strata, proximity has a consistent relationshup with the # trips in each stratum (approximately logarithmic). This makes sense, because if keep the bounds of fishing effort in terms of time and space constant, but add more trips, by definition, the stratum becomes more clumped'. We also see that EM_FIXED and EM_TRW had similar trip counts over the time series, but EM_TRW has higher proximity, telling us that in general, EM_TRW is more clumped than EM_FIXED.
+
+If we log-transform the # of trips, we can linearize this relationship.
+```{r plot_prox2}
+prox2
+```
+Figure 3. Proximity indices of all strata as a function of log of the number of trips in each stratum, for fishing effort 2015-2023 using 2024 stratum definitions.
+
+So generally, if the distribution of fishing effort doesn't change much in time and space for a stratum, but the number of trips in the stratum changes, we can reasonably expect how the proximity index might respond.
+
+Using this idea, we can try to see if the spatiotemporal distribution of fishing effort in a stratum changes year to year by accounting for changes in the number of trips fished each year. We do this by calculating *proximity* / *log(# trips)*, or our *clumpiness* metric. We can plot the same data in Figure 2 but split out by stratum, and show proximity, STRATA_N, and our *clumpiness* metric.
+
+```{r plot_prox3}
+prox3
+```
+Figure 4. Proximity, number of trips, and *clumpiness* for fishing effort 2015-2023 to date using 2024 stratum definitions.
+
+What we see is that in the time series, most strata have a pretty consistent *clumpiness* metric over the time series. EM_FIXED-BSAI and OB_TRW-BSAI are outliers, but this is mostly a result of extremely low *STRATA_N*. The increasing clumpiness if OB_TRW-GOA can be explained by the gradual decline of fishing effort targetting Pacific cod and flatfish, and the remaining fishing effort is highly-clumped pollock-target fishing effort. 
+
+In theory, if we know the proximity values of fishing from the previous year, use it to generally represent the time and space distribution of fishing for the next yea, and come up with an expectation for fishing effort in the next year (effort prediction), combing the two would give us an expectation of proximity for the next year.
+
+###  Interspersion Index {.tabset .tabset-pills}
+
+We can again assume 15% sample rates and see the resulting interspersion of each monitoring method (i.e., within a monitoring method, we can calculate the expected proportion of trips monitored or near a monitored trip that fished with the same GEAR type). This allows us to split out the HAL and POT trips in OB_FIXED, EM_FIXED, and ZERO. 
+
+Let's look at the resulting interspersion and *clumpiness*, using interspersion / log(# trips) 
+
+#### Interspersion 
+
+```{r plot_insp1}
+insp1
+```
+
+#### Interspersion/log(# trips)
+
+```{r plot_insp2}
+insp2
+```
+
+#### Interspersion/log(# trips) No Zero
+
+```{r plot_insp3}
+insp3
+```
+
+Figure  5. *Interspersion* and *Intperspersion/log(# trips)* for fishing effort 2015-2023 using 2024 stratum definitions.
+
+These figures are stretched out by ZERO-POT strata pretty badly, where there are very few trips but are generally very clumped (probably the same 1 or 2 boats). If we remove Zero we can see the trends in each group a little better. 
+
+Omitting OB_TRW-BSAI (which has very few, clumped trips), we see that most groups have a consistent trend (clumpiness increasing slowly year over year) except for POT fishing effort, which is perhaps not very surprising. These boats changed their behavior a lot around 2020, but generally, 2021, 2022 and 2023 to date have been similar. 
+
+
+### Proximity as a function of sample rate
+
+Proximity is also a factor of sample rate. The general arrangements of the strata are largely the same, where as sample rate increases, all proximity values move towards one. Differences in the spatiotemporal distribution of fishing effort within the strata are more noticeable at lower sample rates.
+
+```{r plot_prox_by_rate_1, fig.width = 8, fig.height = 3}
+prox_by_rate_1
+```
+
+Here is the same figure, but with y-axes free.
+
+```{r plot_prox_by_rate_2, fig.width = 8, fig.height = 3}
+prox_by_rate_2
+```
+
+
+### Sampling with replacement
+
+One concern with the current effort prediction protocol is that we sample with replacement when bootstrapping new fishing effort objects. For example, if we sample a stratum with 1,000 trips, it is highly unlikely that all 1,000 trips will be sampled once each, and that in reality some trips will be sampled 0 times whereas other will be sampled 2, 3, 4, or more times. Therefore, there is a risk of creating bootstrapped fishing effort objects that have a lower diversity in the spatiotemporal distribution and may inadvertently result in higher proximity measurements during allocation, leading to a lower-than desired selection rate.
+
+
+
+```{r bootstrap_1}
+bootstrap_1
+```
+Same thing but facet wrapped with free y-axes.
+
+```{r bootstrap_2, fig.width = 8, fig.height = 8}
+bootstrap_2
+```
