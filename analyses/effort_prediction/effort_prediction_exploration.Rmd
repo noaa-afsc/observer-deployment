@@ -12,7 +12,7 @@ library(ggplot2)
 library(gridExtra)
 
 knitr::opts_chunk$set(echo = F, warning = F)
-load("effort_prediction_exploration.rdata")
+load("effort_prediction_exploration.rdata")  # In Geoff's ancilliary documents folder: https://drive.google.com/file/d/1kGiCbeu4QSjLL0LSrQHlV5ffOFUoFit6/view?usp=drive_link
 ```
 
 ### Summaries {.tabset .tabset-pills}
