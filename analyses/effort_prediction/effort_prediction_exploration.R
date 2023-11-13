@@ -399,7 +399,7 @@ save(
   prox_by_rate_1, prox_by_rate_2,
   bootstrap_results_dt, bootstrap_1, bootstrap_2,
   file = "analyses/effort_prediction/effort_prediction_exploration.rdata")
-
+# Saved to Geoff's ancillary documents folder: https://drive.google.com/file/d/1kGiCbeu4QSjLL0LSrQHlV5ffOFUoFit6/view?usp=drive_link
 
 #======================================================================================================================#
 # Investigate Alternative Bootstrapping Methods  ----
@@ -1305,7 +1305,8 @@ save(
   plot_prox_lst, plot_rates_lst, plot_trip_duration, plot_prox_diff_mean, plot_rates_diff_mean,
   plot_stratum_prox_bias_error, plot_stratum_rates_bias_error, prox_tbl, rates_tbl, 
   file = "analyses/effort_prediction/effort_bootstrap.rdata")
-
+# Saved to Geoff's ancillary documents folder: https://drive.google.com/file/d/1DOtwnwyVKuotQ_VrKQybvzwP7SlLwCgN/view?usp=drive_link
+                                     
 #======================================================================================================================#
 # Proportions of fishing effort (trips) ----
 #======================================================================================================================#
