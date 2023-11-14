@@ -44,51 +44,78 @@ effort_strata[, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) > ADP, 366, JULIAN_
 # isolate the latest date for which we have data in the most recent year of valhalla
 max_date <- max(effort_strata[ADP == ADPyear - 1, JULIAN_DATE])
 
-# count trips through October and December by year and stratum
-effort_strata <- effort_strata[, .(THRU_OCT_TRIPS = sum(TRIPS[JULIAN_DATE <= max_date]), TOTAL_TRIPS = sum(TRIPS)), by = .(ADP, STRATA)]
+# count trips through max_date and total trips by year and stratum
+effort_strata <- effort_strata[, .(MAX_DATE_TRIPS = sum(TRIPS[JULIAN_DATE <= max_date]), TOTAL_TRIPS = sum(TRIPS)), by = .(ADP, STRATA)]
+
+# make total trips NA for ADPyear - 1, since the year is not over
+effort_strata[ADP == ADPyear - 1, TOTAL_TRIPS := NA]
 
 # model total trips against year, stratum, and trips through October
-effort_mod <- lm(TOTAL_TRIPS ~ ADP * STRATA * THRU_OCT_TRIPS, data = effort_strata[ADP < ADPyear - 1])
+effort_mod1 <- lm(TOTAL_TRIPS ~ ADP, data = effort_strata[ADP < ADPyear - 1])
+effort_mod2 <- lm(TOTAL_TRIPS ~ ADP * STRATA, data = effort_strata[ADP < ADPyear - 1])
+effort_mod3 <- lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1])
+
+# evaluate candidate models
+AIC(effort_mod1, effort_mod2, effort_mod3)
+
+# choose a winning model
+effort_mod <- effort_mod3
+rm(effort_mod1, effort_mod2, effort_mod3)
+
+# predict ADPyear - 6 effort
+effort_strata[ADP == ADPyear - 6, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 6]), effort_strata[ADP == ADPyear - 6])]
+
+# predict ADPyear - 5 effort
+effort_strata[ADP == ADPyear - 5, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 5]), effort_strata[ADP == ADPyear - 5])]
+
+# predict ADPyear - 4 effort
+effort_strata[ADP == ADPyear - 4, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 4]), effort_strata[ADP == ADPyear - 4])]
+
+# predict ADPyear - 3 effort
+effort_strata[ADP == ADPyear - 3, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 3]), effort_strata[ADP == ADPyear - 3])]
+
+# predict ADPyear - 2 effort
+effort_strata[ADP == ADPyear - 2, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 2]), effort_strata[ADP == ADPyear - 2])]
 
 # predict ADPyear - 1 effort
-new_data <- effort_strata[ADP == ADPyear - 1]
-effort_strata[ADP == ADPyear - 1, TOTAL_TRIPS := predict(effort_mod, new_data)]
+effort_strata[ADP == ADPyear - 1, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1]), effort_strata[ADP == ADPyear - 1])]
 
-# plot trips through December against trips through October by stratum
-p1 <- ggplot(effort_strata[ADP < ADPyear - 1], aes(x = THRU_OCT_TRIPS, y = TOTAL_TRIPS)) +
-      facet_wrap(STRATA ~ ., scales = "free") +
+# calculate residuals
+effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
+
+# plot retrospective predictions against actuals for ADPyear - 1
+p1 <- ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
       geom_point() +
-      geom_point(data = effort_strata[ADP == ADPyear - 1], color = "red") +
-      labs(x = "Trips through October", y = "Trips through December") +
+      geom_abline(intercept = 0, slope = 1) +
+      theme_bw() +
+      labs(x = "True stratum-specific trips", y = "Predicted stratum-specific trips", color = "Stratum")
+
+# plot retrospective residuals for ADPyear - 1
+p2 <- ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = RESIDUALS)) +
+      geom_histogram(bins = 20) +
+      geom_vline(xintercept = 0, lty = 2, color = "red") +
       theme_bw()
 
-# plot trips through December against year by stratum
-p2 <- ggplot(effort_strata[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
-      facet_wrap(STRATA ~ ., scales = "free") +
+# roll predictions forward one year
+effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], on = .(ADP, STRATA), all = TRUE)
+
+# recalculate residuals
+effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
+
+# plot retrospecitve predictions against actuals for ADPyear
+p3 <- ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
       geom_point() +
-      geom_point(data = effort_strata[ADP == ADPyear - 1], color = "red") +
-      geom_line(data = effort_strata) +
-      scale_x_continuous(breaks = min(effort_strata$ADP):ADPyear - 1) +
-      expand_limits(y = 0) +
-      labs(x = "Year", y = "Trips through December") +
+      geom_abline(intercept = 0, slope = 1) +
+      theme_bw() +
+      labs(x = "True stratum-specific trips", y = "Predicted stratum-specific trips", color = "Stratum")
+
+# plot retrospective residuals for ADPyear 
+p4 <- ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
+      geom_histogram(bins = 20) +
+      geom_vline(xintercept = 0, lty = 2, color = "red") +
       theme_bw()
 
-# sum trips by year
-effort_year <- effort_strata[, .(TOTAL_TRIPS = sum(TOTAL_TRIPS)), by = ADP]
-
-# plot trips through December against year
-p3 <- ggplot(effort_year, aes(x = ADP, y = TOTAL_TRIPS)) +
-      geom_point() +
-      geom_point(data = effort_year[ADP == ADPyear - 1], color = "red") +
-      scale_x_continuous(breaks = min(effort_strata$ADP):ADPyear - 1) +
-      expand_limits(y = 0) +
-      labs(x = "Year", y = "Trips through December") +
-      theme_bw()
-
-# model total trips against year and stratum
-effort_mod <- lm(TOTAL_TRIPS ~ ADP * STRATA, data = effort_strata)
-
-# predict ADPyear effort with 95% confidence interval  
+# predict total effort across strata with 95% prediction interval for ADPyear - 1  
 # https://stackoverflow.com/questions/39337862/linear-model-with-lm-how-to-get-prediction-variance-of-sum-of-predicted-value
 lm_predict <- function (lmObject, newdata, diag = TRUE) {
   ## input checking
@@ -122,23 +149,26 @@ lm_predict <- function (lmObject, newdata, diag = TRUE) {
   list(fit = pred, var.fit = VCOV, df = lmObject$df.residual, residual.var = sig2)
 }
 
-# create new data
-new_data <- CJ(ADP = min(effort_strata$ADP):ADPyear, STRATA = unique(effort_strata$STRATA))
+# run model on independent variable values from ADPyear - 1
+pred <- lm_predict(effort_mod, effort_strata[ADP == ADPyear - 1], diag = FALSE)
 
-# predict effort
-pred <- lm_predict(effort_mod, new_data, diag = FALSE)
+# verify that these match the ADPyear - 1 predictions that have already been rolled over to ADPyear
+identical(pred$fit, effort_strata[ADP == ADPyear, TOTAL_TRIPS_PRED])
 
-# save fitted values
-effort_pred_strata <- copy(new_data)[, fit := pred$fit]
+# save fitted values from the new function
+effort_strata[, TOTAL_TRIPS_PRED := ifelse(ADP >= ADPyear - 1, rep(pred$fit, 2), NA)][, RESIDUALS := NULL]
 
-# sum fits by year
-effort_pred_year <- effort_pred_strata[, .(fit = sum(fit)), by = .(ADP)]
+# make total trips equal to predictions for years >= ADPyear - 1
+effort_strata[!is.na(TOTAL_TRIPS_PRED), TOTAL_TRIPS := TOTAL_TRIPS_PRED][, ":=" (PREDICTION = !is.na(TOTAL_TRIPS_PRED), TOTAL_TRIPS_PRED = NULL)]
+
+# summarize by year
+effort_year <- effort_strata[, .(TOTAL_TRIPS = sum(TOTAL_TRIPS), PREDICTION = unique(PREDICTION)), by = .(ADP)]
 
 # adjust the variance-covariance matrix with residual variance
 VCOV_adj <- with(pred, var.fit + diag(residual.var, nrow(var.fit)))
 
 # sum adjusted variance
-effort_pred_year[, var := sum(VCOV_adj[(((ADP - 2012) * 7) - 6):((ADP - 2012) * 7), (((ADP - 2012) * 7) - 6):((ADP - 2012) * 7)]), by = ADP]
+effort_year[ADP >= ADPyear - 1, var := rep(sum(VCOV_adj), 2)]
 
 # set alpha level for the prediction interval
 alpha <- 0.95
@@ -146,24 +176,52 @@ alpha <- 0.95
 # estimate t-values for the prediction interval
 Qt <- qt((1 - alpha) / 2, effort_mod$df.residual, lower.tail = FALSE)
 
-# estimate the prediction interval
-effort_pred_year[, ':=' (lwr = fit - (Qt * sqrt(var)), upr = fit + (Qt * sqrt(var)))]
+# estimate the prediction intervals for year-level estimates
+effort_year[, ':=' (lwr = TOTAL_TRIPS - (Qt * sqrt(var)), upr = TOTAL_TRIPS + (Qt * sqrt(var)), var = NULL)]
 
-# plot data, prediction, and prediction interval
-p4 <- ggplot(effort_year[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
-      geom_point() +
-      geom_point(data = effort_year[ADP == ADPyear - 1], color = "red") +
-      geom_point(aes(x = ADP, y = fit), data = effort_pred_year[ADP == ADPyear], color = "red") +
-      geom_errorbar(aes(ymin = lwr, ymax = upr), data = effort_pred_year[ADP == ADPyear, .(ADP, TOTAL_TRIPS = fit, lwr, upr)], color = "red", width = 0.2) +
-      geom_line(aes(x = ADP, y = fit), data = effort_pred_year, color = "red") +
+# estimate the prediction intervals for stratum-level estimates
+pred <- data.frame(predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1]), effort_strata[ADP == ADPyear - 1], interval = "prediction"))
+effort_strata[ADP >= ADPyear - 1, ":=" (lwr = rep(pred$lwr, 2), upr = rep(pred$upr, 2))]
+
+# plot trips through December against trips through October by stratum through ADPyear - 1
+p5 <- ggplot(effort_strata[ADP <= ADPyear - 1], aes(x = MAX_DATE_TRIPS, y = TOTAL_TRIPS)) +
+      facet_wrap(STRATA ~ ., scales = "free") +
+      geom_point(aes(color = PREDICTION)) +
+      scale_color_manual(values = c("black", "red")) +
+      labs(x = "Trips through October", y = "Trips through December") +
+      theme_bw() +
+      theme(legend.position = "none")
+
+# plot trips through December against year by stratum through ADPyear
+p6 <- ggplot(effort_strata, aes(x = ADP, y = TOTAL_TRIPS)) +
+      facet_wrap(STRATA ~ ., scales = "free") +
+      geom_point(aes(color = PREDICTION)) +
+      scale_color_manual(values = c("black", "red")) +
+      geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.2, color = "red") + 
+      geom_line() + 
+      geom_line(data = effort_strata[ADP >= ADPyear - 1], color = "red") +
+      scale_x_continuous(breaks = unique(effort_strata$ADP)) +
+      expand_limits(y = 0) +
+      labs(x = "Year", y = "Trips through December") +
+      theme_bw() +
+      theme(legend.position = "none")
+
+# plot trips through December against year through ADPyear
+p7 <- ggplot(effort_year, aes(x = ADP, y = TOTAL_TRIPS)) +
+      geom_point(aes(color = PREDICTION)) +
+      scale_color_manual(values = c("black", "red")) +
+      geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.2, color = "red") + 
+      geom_line() + 
+      geom_line(data = effort_year[ADP >= ADPyear - 1], color = "red") +
       scale_x_continuous(breaks = min(effort_year$ADP):ADPyear) +
       scale_y_continuous(labels = comma) +
       expand_limits(y = 0) +
       labs(x = "Year", y = "Partial Coverage Trips") +
-      theme_classic()
+      theme_classic() +
+      theme(legend.position = "none")
 
 # png("output_figures/TripsPerYear.png", width = 7, height = 5, units = 'in', res=300)
-# p4
+# p7
 # dev.off()
 
 # estimate probability of trawl EM boats not taking an observer (efp_prob; based on data from vessels that have been in 
@@ -182,4 +240,4 @@ efp_prob <- unique(work.data[
 ][STRATA == "EM_TRW_EFP"]         
 
 # save effort predictions (to_draw) and the population of trips to sample from (draw_from)
-save(list = c("effort_pred_year", "effort_pred_strata", "efp_prob"), file = "source_data/effort_prediction.rdata")
+save(list = c("effort_year", "effort_strata", "efp_prob"), file = "source_data/effort_prediction.rdata")
