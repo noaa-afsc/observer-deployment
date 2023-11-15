@@ -177,11 +177,11 @@ alpha <- 0.95
 Qt <- qt((1 - alpha) / 2, effort_mod$df.residual, lower.tail = FALSE)
 
 # estimate the prediction intervals for year-level estimates
-effort_year[, ':=' (lwr = TOTAL_TRIPS - (Qt * sqrt(var)), upr = TOTAL_TRIPS + (Qt * sqrt(var)), var = NULL)]
+effort_year[, ':=' (se = sqrt(var), lwr = TOTAL_TRIPS - (Qt * sqrt(var)), upr = TOTAL_TRIPS + (Qt * sqrt(var)), var = NULL)]
 
 # estimate the prediction intervals for stratum-level estimates
 pred <- data.frame(predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1]), effort_strata[ADP == ADPyear - 1], interval = "prediction"))
-effort_strata[ADP >= ADPyear - 1, ":=" (lwr = rep(pred$lwr, 2), upr = rep(pred$upr, 2))]
+effort_strata[ADP >= ADPyear - 1, ":=" (se = (rep(pred$upr, 2) - TOTAL_TRIPS) / Qt, lwr = rep(pred$lwr, 2), upr = rep(pred$upr, 2))]
 
 # plot trips through December against trips through October by stratum through ADPyear - 1
 p5 <- ggplot(effort_strata[ADP <= ADPyear - 1], aes(x = MAX_DATE_TRIPS, y = TOTAL_TRIPS)) +
