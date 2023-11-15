@@ -127,6 +127,31 @@ fixed_fmp.prox <- rbindlist(lapply(budget_lst, function(x) cbind(BUDGET = x, pro
 attr(prox_rates_from_budget2(fixed_fmp.prox_index, budget = budget_lst[[1]]), "costs")[ADP == 2022]
 fixed_fmp.prox[ADP == 2022, .(STRATUM_COL, STRATA_N, SAMPLE_RATE = SAMPLE_RATE * 100, n)][order(-STRATUM_COL)]
 
+#=====================================================#
+### Create summary of rates for the 2024 Draft ADP ####
+
+# Save draft adp rates for Council. 'draft_rates.rdata' and 'draft_rates_2.rdata' are not these rates, but the results
+# of the analyses for the comparison of designs in the 2024 ADP. 'draft_rates_2024' will be the rates posted in the 
+# executive summary of the 2024 Draft ADP.
+rates_adp_2024_draft <- fixed_fmp.prox[ADP == 2022, .(STRATA = STRATUM_COL, SAMPLE_RATE)]
+
+effort_summary <- unique(copy(pc_effort_dt)[
+][ADP == 2022  
+][STRATA %like% "HAL|POT", STRATA := paste0(POOL, "_", "FIXED")
+][, .(ADP, POOL, STRATA, BSAI_GOA, TRIP_ID, DAYS)])[
+][, STRATA := ifelse(STRATA == "ZERO", "ZERO", paste0(STRATA, "-", BSAI_GOA))]
+effort_summary <- effort_summary[, .(N = uniqueN(TRIP_ID), D = sum(DAYS)), keyby = .(ADP, POOL, STRATA)]
+# Convert ADP to draft ADP year
+effort_summary[, ADP := 2024]
+# Merge in sample rates
+rates_adp_2024_draft <- rates_adp_2024_draft[effort_summary, on = .(STRATA)]
+# Manually assign rates for strata outside the allocation process.
+rates_adp_2024_draft[STRATA == "EM_TRW-GOA", SAMPLE_RATE := 0.3333]
+rates_adp_2024_draft[STRATA == "ZERO", SAMPLE_RATE := 0]
+setcolorder(rates_adp_2024_draft, c("ADP", "POOL", "STRATA", "N", "D", "SAMPLE_RATE"))
+
+save(rates_adp_2024_draft, file = "analyses/draft_rates/rates_adp_2024_draft.rdata")
+# Uploaded to google drive `Draft ADP Outputs` Folder: https://drive.google.com/file/d/1L5O6muYiAvbMg_WQkWy307dHYjYVvBBb/view?usp=drive_link
 
 #=======================#
 ### FixedxFMP x CWB ####
