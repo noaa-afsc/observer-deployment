@@ -138,9 +138,9 @@ rates_adp_2024_draft <- fixed_fmp.prox[ADP == 2022, .(STRATA = STRATUM_COL, SAMP
 effort_summary <- unique(copy(pc_effort_dt)[
 ][ADP == 2022  
 ][STRATA %like% "HAL|POT", STRATA := paste0(POOL, "_", "FIXED")
-][, .(ADP, POOL, STRATA, BSAI_GOA, TRIP_ID, DAYS)])[
+][, .(ADP, POOL, STRATA, BSAI_GOA, PERMIT, TRIP_ID, DAYS)])[
 ][, STRATA := ifelse(STRATA == "ZERO", "ZERO", paste0(STRATA, "-", BSAI_GOA))]
-effort_summary <- effort_summary[, .(N = uniqueN(TRIP_ID), D = sum(DAYS)), keyby = .(ADP, POOL, STRATA)]
+effort_summary <- effort_summary[, .(V = uniqueN(PERMIT), N = uniqueN(TRIP_ID), D = sum(DAYS)), keyby = .(ADP, POOL, STRATA)]
 # Convert ADP to draft ADP year
 effort_summary[, ADP := 2024]
 # Merge in sample rates
@@ -148,8 +148,9 @@ rates_adp_2024_draft <- rates_adp_2024_draft[effort_summary, on = .(STRATA)]
 # Manually assign rates for strata outside the allocation process.
 rates_adp_2024_draft[STRATA == "EM_TRW-GOA", SAMPLE_RATE := 0.3333]
 rates_adp_2024_draft[STRATA == "ZERO", SAMPLE_RATE := 0]
-setcolorder(rates_adp_2024_draft, c("ADP", "POOL", "STRATA", "N", "D", "SAMPLE_RATE"))
-
+setcolorder(rates_adp_2024_draft, c("ADP", "POOL", "STRATA", "V", "N", "D", "SAMPLE_RATE"))
+rates_adp_2024_draft[, POOL := factor(POOL, levels = c("OB", "EM", "ZE"))]
+setorder(rates_adp_2024_draft, POOL)
 save(rates_adp_2024_draft, file = "analyses/draft_rates/rates_adp_2024_draft.rdata")
 # Uploaded to google drive `Draft ADP Outputs` Folder: https://drive.google.com/file/d/1L5O6muYiAvbMg_WQkWy307dHYjYVvBBb/view?usp=drive_link
 
