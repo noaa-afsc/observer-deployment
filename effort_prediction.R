@@ -14,7 +14,7 @@ load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
 # https://drive.google.com/file/d/1xH-P54wW3vPXtaQmgEDxb3YgHh-yJlp8/view?usp=drive_link
 
 # get list of trawl EM EFP vessels
-efp_list <- fread("source_data/efp_list_2023-09-05.csv")
+efp_list <- fread("source_data/efp_list_2023-09-05.csv")[, PERMIT := as.character(PERMIT)]
 # https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
 
 # select necessary columns
@@ -229,12 +229,13 @@ p7 <- ggplot(effort_year, aes(x = ADP, y = TOTAL_TRIPS)) +
 # of the 2023 fall fisheries. by including trips after the 2022 spring fisheries have closed and before the 2023 fall 
 # fisheries have opened, we calculate efp_prob based on the fall 2022 and spring 2023 seasons (the two most recent full 
 # seasons, as the fall 2023 fishery was not finished by the time Valhalla was compiled).  
-efp_prob <- unique(work.data[
+efp_prob <- efp_list[unique(work.data[
   TRIP_TARGET_DATE > as.Date("2022-05-31") & TRIP_TARGET_DATE < as.Date("2023-09-01") & 
-    VESSEL_ID %in% efp_list$PERMIT[efp_list$YEAR_ADDED < ADPyear] &
     TRIP_TARGET_CODE %in% c("P", "B") & AGENCY_GEAR_CODE %in% c("NPT", "PTR"),
-  .(TRIP_ID, COVERAGE_TYPE, STRATA, AGENCY_GEAR_CODE)
-])[, .SD[all(AGENCY_GEAR_CODE == "PTR")], by = .(TRIP_ID)
+  .(ADP, VESSEL_ID, TRIP_ID, COVERAGE_TYPE, STRATA, AGENCY_GEAR_CODE)
+]), on = c(PERMIT = "VESSEL_ID")
+][YEAR_ADDED <= ADP
+][, .SD[all(AGENCY_GEAR_CODE == "PTR")], by = .(TRIP_ID)
 ][, .N, by = .(COVERAGE_TYPE, STRATA)
 ][, .(STRATA, N, EFP_PROB = N / sum(N)), by = .(COVERAGE_TYPE)
 ][STRATA == "EM_TRW_EFP"]         
