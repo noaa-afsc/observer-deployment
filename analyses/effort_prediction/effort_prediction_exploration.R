@@ -569,6 +569,8 @@ ggplot(og_rates, aes(x = ADP, y = n, fill = STRATUM_COL)) + geom_col(position = 
 ## Prepare Bootstrapping ----
 #======================================================================================================================#
 
+# If you want to skip the bootstrapping, which takes a few hours, can quick-load the results under 'Bootstrap Outputs'
+
 # Define number of bootstrap iterations
 bootstrap_iter <- 100
 
@@ -993,6 +995,21 @@ for(j in seq_along(adp_years_to_predict)) {
 
 # save(swor_1_lst, file = "analyses/effort_prediction/swor_1_lst.rdata")
 
+#=======================================================================================================================#
+## Bootstrap Outputs ----
+#=======================================================================================================================#
+
+# Save all bootstrap results into one rdata file
+save(
+  og_prox, og_rates, swr_1_lst, swor_3_lst, swor_2_lst, swor_1_lst,
+  file = "analyses/effort_prediction/effort_prediction_bootstrap_raw.rdata")
+
+# Saved to 2024 Google folder, Geoff's Ancillary folder: 
+# https://drive.google.com/file/d/1leyESZRVGa-DkQukeRISjSYTLyT2EwiF/view?usp=drive_link
+
+## Quick-load bootstrap results
+# load( "analyses/effort_prediction/effort_prediction_bootstrap_raw.rdata")
+
 
 # og_prox, og_rates, swr_1_lst, swor_3_lst, swor_2_lst, swor_1_lst
 
@@ -1144,7 +1161,7 @@ plot_prox_diff <- ggplot(boot_prox_dt[ADP >= 2018], aes(x = as.character(ADP), y
   geom_boxplot(aes(color = METHOD), fill = NA) + 
   geom_text(data = og_prox_dt[ADP >= 2018], aes(label = STRATA_N, y = 0.4), size = 2, vjust = 0) +
   scale_color_manual(values = c(swr_1 = "cyan3", swor_3 = "blue", swor_2 = "purple", swor_1 = "magenta")) + 
-  labs(x = "Year", y = "Diff in Proximity (Boot - Actual)", color = "Method") + 
+  labs(x = "Year", y = "Difference in Proximity (Predicted - Actual)", color = "Method") + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 # Raw difference in proximity for well within 5% for GOA strata, but generally within 10% for BSAI strata, but 
 # OB_TRW-BSAI is highly variable and can vary +/- 0.3 points! Very small stratum
@@ -1155,7 +1172,7 @@ plot_prox_perc_diff <- ggplot(boot_prox_dt[ADP >= 2018], aes(x = as.character(AD
   geom_boxplot(aes(color = METHOD), fill = NA) + 
   geom_text(data = og_prox_dt[ADP >= 2018], aes(label = STRATA_N, y = 0.4), size = 2, vjust = 0) +
   scale_color_manual(values = c(swr_1 = "cyan3", swor_3 = "blue", swor_2 = "purple", swor_1 = "magenta")) + 
-  labs(x = "Year", y = "% Diff in Proximity (Boot - Actual)/Actual", color = "Method") + 
+  labs(x = "Year", y = "% Difference in Proximity (Predicted - Actual)/Actual", color = "Method") + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 # Percent difference in proximity can be vastly different for some methods in certain years (especially for 1-year methods
 # following a very low effort year).
@@ -1169,7 +1186,7 @@ plot_prox_diff_mean <- ggplot(boot_prox_dt[ADP >= 2018, .(MEAN_DIFF = mean(DIFF)
   geom_line(aes(x = as.character(ADP), y = MEAN_DIFF, color = METHOD, group = interaction(METHOD, STRATA, BSAI_GOA)), linewidth = 1) + 
   scale_color_manual(values = c(swr_1 = "cyan3", swor_3 = "blue", swor_2 = "purple", swor_1 = "magenta")) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
-  labs(x = "Year", y = "Prox (Boot - Actual)", color = "Method") +
+  labs(x = "Year", y = "Difference in Proximity (Predicted - Actual)", color = "Method") +
   geom_text(data =og_prox_dt[ADP >= 2018], aes(label = STRATA_N, x = as.character(ADP)), y = 0.3, size = 2)
 # All methods generally get prox within 0.1, if not 0.05. Exception is OB_TRW. Notice that stratum size changes greatly 
 # between years. Bouncing from 31 to 14 to 37 to 15 will has a large impact on predicting proximity. However, we are unlikely
@@ -1306,7 +1323,75 @@ save(
   plot_stratum_prox_bias_error, plot_stratum_rates_bias_error, prox_tbl, rates_tbl, 
   file = "analyses/effort_prediction/effort_bootstrap.rdata")
 # Saved to Geoff's ancillary documents folder: https://drive.google.com/file/d/1DOtwnwyVKuotQ_VrKQybvzwP7SlLwCgN/view?usp=drive_link
-                                     
+     
+
+#======================================================================================================================#
+# Modify plots and save as pngs for 2024 Final ADP - Appendix D ----
+#======================================================================================================================#
+
+# Table of trip counts by stratum and year
+table_d_1 <- dcast(
+  copy(og_prox$strata_n_dt[ADP >= 2018])[, Stratum := paste0(STRATA, "-", BSAI_GOA)],
+  Stratum ~ ADP, value.var = "STRATA_N")
+table_d_1_flex <- table_d_1 %>% flextable() %>% autofit() 
+
+figure_d_1 <- ggplot(boot_res, aes(x = as.character(ADP), y = ISPN)) + 
+  facet_nested(STRATA + BSAI_GOA ~ factor(Method, levels = c("swr_1", "swor_3", "swor_2", "swor_1")), scales = "free", labeller = as_labeller(toupper)) +
+  geom_line(data = og_prox$ispn_dt[ADP >= 2018 & SAMPLE_RATE == 0.15], aes(group = interaction(STRATA, BSAI_GOA))) +
+  geom_violin(aes(color = toupper(Method)), draw_quantiles = 0.5, fill = NA, position = "identity") + 
+  geom_point(data = og_prox$ispn_dt[ADP >= 2018 & SAMPLE_RATE == 0.15]) + 
+  scale_color_manual(values = c(SWR_1 = "cyan3", SWOR_3 = "blue", SWOR_2 = "purple", SWOR_1 = "magenta"), breaks = c("SWR_1", "SWOR_3", "SWOR_2", "SWOR_1")) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
+  labs(x = "Year", y = "Proximity", color = "Method")
+
+figure_d_2 <- ggplot(boot_prox_dt[ADP >= 2018, .(MEAN_DIFF = mean(DIFF)), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)]) + 
+  facet_nested(. ~ STRATA + BSAI_GOA) + 
+  geom_hline(yintercept = 0) + 
+  geom_line(aes(x = as.character(ADP), y = MEAN_DIFF, color = toupper(METHOD), group = interaction(METHOD, STRATA, BSAI_GOA)), linewidth = 1) + 
+  scale_color_manual(values = c(SWR_1 = "cyan3", SWOR_3 = "blue", SWOR_2 = "purple", SWOR_1 = "magenta"), breaks = c("SWR_1", "SWOR_3", "SWOR_2", "SWOR_1")) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
+  labs(x = "Year", y = "Difference in Proximity (Predicted - Actual)", color = "Method") 
+
+figure_d_3 <- ggplot(stratum_prox_bias_error, aes(x = toupper(METHOD), y = paste0(STRATA, "-", BSAI_GOA), fill = relative_value)) + 
+  facet_grid(. ~ variable, labeller = as_labeller(c(`BIAS` = "Bias", `MSE` = "MSE"))) + 
+  geom_tile() + scale_fill_gradient2() + geom_text(aes(label = formatC(value, digits = 4, format = "f") )) + 
+  scale_x_discrete(limits = c("SWR_1", "SWOR_3", "SWOR_2", "SWOR_1")) +
+  labs(x = "Method", y = "Stratum", fill = "Relative value", subtitle = "Proximity")
+
+table_d_2_flex <- copy(prox_tbl) %>% set_header_labels(values = c("Method", "Bias", "MSE"))
+
+figure_d_4 <- ggplot(boot_res[!is.na(SAMPLE_RATE)], aes(x = as.character(ADP), y = SAMPLE_RATE)) + 
+  facet_nested(STRATA + BSAI_GOA ~ factor(Method, levels = c("swr_1", "swor_3", "swor_2", "swor_1")), scales = "free", labeller = as_labeller(toupper)) +
+  geom_line(data = og_rates[ADP >= 2018], aes(group = interaction(STRATA, BSAI_GOA))) +
+  geom_violin(aes(color = toupper(Method)), draw_quantiles = 0.5, fill = NA, position = "identity", na.rm = T) + 
+  geom_point(data = og_rates[ADP >= 2018]) + 
+  scale_color_manual(values = c(SWR_1 = "cyan3", SWOR_3 = "blue", SWOR_2 = "purple", SWOR_1 = "magenta"), breaks = c("SWR_1", "SWOR_3", "SWOR_2", "SWOR_1")) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
+  labs(x = "Year", y = "Sample Rate", color = "Method")
+
+figure_d_5 <- ggplot(boot_rates_dt[ADP >= 2018, .(MEAN_DIFF = mean(DIFF)), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)]) + 
+  facet_nested(. ~ STRATA + BSAI_GOA) + 
+  geom_hline(yintercept = 0) + 
+  geom_line(aes(x = as.character(ADP), y = MEAN_DIFF, color = toupper(METHOD), group = interaction(METHOD, STRATA, BSAI_GOA)), linewidth = 1) + 
+  scale_color_manual(values = c(SWR_1 = "cyan3", SWOR_3 = "blue", SWOR_2 = "purple", SWOR_1 = "magenta"), breaks = c("SWR_1", "SWOR_3", "SWOR_2", "SWOR_1")) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
+  labs(x = "Year", y = "Difference in Sample Rate (Predicted - Actual)", color = "Method")
+
+figure_d_6 <- ggplot(stratum_rates_bias_error, aes(x = toupper(METHOD), y = paste0(STRATA, "-", BSAI_GOA), fill = relative_value)) + 
+  facet_grid(. ~ variable, labeller = as_labeller(c(`BIAS` = "Bias", `MSE` = "MSE"))) + geom_tile() + scale_fill_gradient2() + geom_text(aes(label = formatC(value, digits = 4, format = "f") )) + 
+  scale_x_discrete(limits = c("SWR_1", "SWOR_3", "SWOR_2", "SWOR_1")) +
+  labs(x = "Method", y = "Stratum", fill = "Relative value", subtitle = "Sample Rates")
+  
+
+table_d_3_flex <- copy(rates_tbl) %>% set_header_labels(values = c("Method", "Bias", "MSE"))
+
+save(
+  table_d_1_flex, table_d_2_flex, table_d_3_flex,
+  figure_d_1, figure_d_2, figure_d_3, figure_d_4, figure_d_5, figure_d_6,
+  file = "analyses/effort_prediction/appendix_D.rdata")
+# Saved to Final ADP Outputs folder: https://drive.google.com/file/d/1RWNTDbds03Tvfi_k6j3S_QecITmqOdZa/view?usp=drive_link
+
+                                
 #======================================================================================================================#
 # Proportions of fishing effort (trips) ----
 #======================================================================================================================#
