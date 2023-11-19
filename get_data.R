@@ -142,6 +142,11 @@ em_requests <-
                    AND em_request_status = 'NEW'
                    AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'"))
 
+# Hardcode EM removals and approvals
+em_base <- em_base %>% 
+           filter(!(VESSEL_ID %in% c(4029, 31364, 2899, 90))) %>% 
+           plyr::rbind.fill(data.table(VESSEL_ID = c(2084, 3717, 4387), VESSEL_NAME = c("COMMANDER", "CARLYNN", "TANYA M")))
+  
 # * Trawl EM ----
 trawl_em <- read.csv("source_data/efp_list_2023-09-05.csv")
 # https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
@@ -158,7 +163,7 @@ FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT as vessel_id, length a
 work.data <- dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla"))
 
 # Load data from current year
-load("source_data/2023-10-10cas_valhalla.RData")
+load("source_data/2023-11-17cas_valhalla.RData")
 # https://drive.google.com/file/d/1_cSszEnp7WgAx3alI7nlg6fkXQZz-0eq/view?usp=drive_link
 
 # Append data from current year to data from prior year
@@ -607,7 +612,7 @@ efrt[POOL == "ZE", .(N = uniqueN(TRIP_ID)), by = .(POOL, STRATA)][order(POOL, ST
 if((length(unique(trips_melt$TRIP_ID)) == length(unique(efrt[POOL!="ZE", TRIP_ID]))) != TRUE){message("Wait! Some trips are missing metrics in trips_melt!")}
 
 # * Full Coverage Summary ----
-full_efrt <- unique(work.data[CVG_NEW=="FULL", .(POOL="FULL", STRATA, FMP, AREA=REPORTING_AREA_CODE, TARGET=TRIP_TARGET_CODE, AGENCY_GEAR_CODE, PERMIT, START=min(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), END=max(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), MONTH), keyby=.(ADP, TRIP_ID)])
+full_efrt <- unique(work.data[CVG_NEW=="FULL", .(POOL="FULL", STRATA=STRATA_NEW, FMP, AREA=REPORTING_AREA_CODE, TARGET=TRIP_TARGET_CODE, AGENCY_GEAR_CODE, PERMIT, START=min(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), END=max(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), MONTH), keyby=.(ADP, TRIP_ID)])
 full_efrt[, GEAR := ifelse(AGENCY_GEAR_CODE %in% c("NPT", "PTR"), "TRW", AGENCY_GEAR_CODE)]   # Create GEAR column (i.e. TRW instead of NPT or PTR)
 full_efrt[TARGET=="B", TARGET := "P"]                                           # Simplify 'bottom pollock' and 'pelagic pollock' to have only one 'pollock' target designation
 full_efrt <- unique(full_efrt)
