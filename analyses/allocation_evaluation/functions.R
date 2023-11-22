@@ -3609,10 +3609,7 @@ calculate_cost_prox <- function(index_rates, cost_params, allo_lst, max_budget) 
   index_rates_copy[, MON_RATE := SAMPLE_RATE]
   
   # Now for each index, calculate costs
-  # TODO calculating costs by year, and adding a break when costs reach a ridiculously high amount, can speed things up.
-  
-  
-  rbindlist(lapply(
+  out <- rbindlist(lapply(
     split(index_rates_copy, by = "ADP"),
     function(x) {
       
@@ -3634,6 +3631,10 @@ calculate_cost_prox <- function(index_rates, cost_params, allo_lst, max_budget) 
       rbindlist(index_rates_lst)
     }
   ))
+  
+  # Remove copied objects
+  rm(index_rates_copy,  allo_lst_effort)
+  out
   
 }
 calculate_index2 <- function(ispn_res, cost_params, allo_lst, max_budget) {
@@ -3792,4 +3793,142 @@ calculate_index3 <- function(ispn_res, cost_params, allo_lst, max_budget) {
   # TODO Return the costs in the list
   index_out <- list(rates = index_rates, melt = index_rates_melt, params = ispn_res$params, costs = index_cost)
   index_out
+}
+
+# This function is a faster version of allocating rates according to the Proximity allocation method given a budget.
+# (a replacement for calculate_interspersion_gs(), calculate_index2(), and prox_rates_from_budget2())
+# The original procedure was to feed a wide and high-resolution vector of sample rates to all strata to calculate the
+# proximity/cv_scaling/index of each stratum at each rate, then cost out each index, then filter indices by budget.
+# This method does a short 'hone' so metrics are not calculated for a stratum at rates far away from what is relevant
+# from the budget, saving time.
+allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_interval = 0.001, range_var = 1) { 
+  
+  # TODO This function could still be faster. `index_interval` should be replaced by a level of resolution that we want 
+  # to achieve for the index afforded, and rates should be honed for each stratum to achieve that. Initialize 
+  # proximity/cv_scaling/index range with coarse resolution of rates, if needed subdivide those until a particular
+  # resolution of indices is acquired, find the cost of each of those indices, hone in on a particular range, repeatedly
+  # adjusting rates until the specified resolution of indices is acquired. 
+  
+  # Have to do this by year, so feed the data one year at a time
+  group_cols <- c(box_def$params$year_col, box_def$params$stratum_cols)
+  stratum_cols <- box_def$params$stratum_cols
+  year_col <- box_def$params$year_col
+  
+  year_vec <- unique(box_def$strata_n_dt$ADP)
+  
+  # TODO FOR NOW, OMIT ZERO and EM_TRW as we will not allocate to either in 2024
+  box_def$strata_n_dt <- box_def$strata_n_dt[!(STRATA %like% "ZERO|EM_TRW")]
+  box_def$dt_out <- box_def$dt_out[!(STRATA %like% "ZERO|EM_TRW")]
+  box_def$box_smry <- box_def$box_smry[!(names(box_def$box_smry) %like% "ZERO|EM_TRW")]
+  
+  year_res <- vector(mode = "list", length = length(year_vec))
+  
+  for(i in year_vec) {
+    
+    box_def_sub.prox.range <- calculate_interspersion_gs(box_def, sample_rate_vec = c(0.0001, seq(0.05, 1, by = 0.001)), omit_strata = "ZERO" )$ispn_dt[ADP == i]
+    # Calculate index for each stratum
+    box_def_sub.prox.range[
+    ][, n := SAMPLE_RATE * STRATA_N
+    ][, FPC := (STRATA_N - n) / STRATA_N
+    ][, CV_SCALING := sqrt(FPC * (1/n))
+    ][, INDEX := ISPN * (1 - CV_SCALING)][is.na(INDEX), INDEX := 0]
+    setorderv(box_def_sub.prox.range, c(stratum_cols, "INDEX"))
+    # Approximate the costs of a range of indices 
+    index_vec <- seq(0, 1, by = 0.025)
+    index_vec_rates_costs <- lapply(
+      index_vec, 
+      function(x) {
+        res <- box_def_sub.prox.range[, .SD[findInterval(x, INDEX)], by = c(box_def$params$stratum_cols)]
+        stratum_column <- apply(res[, ..stratum_cols], 1, paste, collapse = "-")
+        res[, STRATUM_COL := stratum_column]
+        res[, INDEX := x]
+        index_cost <- calculate_cost_prox(res, cost_params, allo_lst, max_budget) # this is the most this index would cost
+        if( nrow(index_cost) > 0 ) res[, INDEX_COST := index_cost$INDEX_COST]
+        res
+      }
+    )
+    
+    # Omit any indices that go over the maximum budget
+    index_costs <- sapply(index_vec_rates_costs, function(x) unique(x$INDEX_COST))
+    for(j in seq_along(index_costs)) {
+      if( is.null(index_costs[[j]])) {
+        index_costs <- unlist(index_costs[1:(j - 1)])
+        break()
+      } else if (j > 1) {
+        if( index_costs[[j]] < index_costs[[j - 1]]) {
+          index_costs <- unlist(index_costs[1:(j - 1)])
+          break()
+        }
+      }
+    }
+    
+    # Find the range of indices to explore
+    index_near_budget <- findInterval(budget, index_costs)
+    index_range <- index_vec[c(index_near_budget - range_var, index_near_budget + 1)]  # I can afford an index somewhere in this range
+    # Get all stratum names
+    strata_dt <- unique(box_def$strata_n_dt[, ..stratum_cols])
+    prox_by_stratum_lst <- vector(mode = "list", length = nrow(strata_dt))
+    # Calculate proximity for each stratum using a focused range of sample rates
+    for(k in 1:nrow(strata_dt)) {
+      # k <- 1
+      
+      stratum_year <- paste0(i, ".", paste(strata_dt[k], collapse = "." ))
+      # Make a new box definition specific to the stratum of focus
+      box_stratum <- list(
+        box_smry = box_def$box_smry[stratum_year],
+        strata_n_dt = box_def$strata_n_dt,
+        params = box_def$params
+      )
+      # Find the stratum's range of sample rates
+      sample_range <- sapply(
+        index_vec_rates_costs[c(index_near_budget - range_var, index_near_budget + 1)],             # FIXME I have to do +2 instead of +1. findInterval always underestimates?
+        function(x) x[strata_dt[k], on = c(box_def$params$stratum_cols), SAMPLE_RATE]
+      )
+      # box_res <- copy(box_stratum); omit_strata <- NULL; sample_rate_vec <- seq(0.5, 575, by = 0.0001)
+      # Now, we go back calculating rates ever 0.0001 here.
+      prox_by_stratum <- calculate_interspersion_gs(box_stratum, sample_rate_vec = seq(sample_range[1], sample_range[2], by = 0.0001))$ispn_dt
+      prox_by_stratum[
+      ][, n := SAMPLE_RATE * STRATA_N
+      ][, FPC := (STRATA_N - n) / STRATA_N
+      ][, CV_SCALING := sqrt(FPC * (1/n))
+      ][, INDEX := ISPN * (1 - CV_SCALING)]
+      prox_by_stratum_lst[[k]]  <- prox_by_stratum
+      
+    }
+    prox_by_list_dt <- rbindlist(prox_by_stratum_lst)
+    
+    # find the common range of indices
+    # Find range if INDEX that is common to all strata x ADP
+    prox_by_list_dt[, as.list(setNames(range(INDEX), c("MIN", "MAX"))), by = c(stratum_cols)]
+    
+    index_range_afforded <- prox_by_list_dt[
+    ][, .(MIN = min(INDEX), MAX = max(INDEX)), by = group_cols
+    ][, .(MIN = max(MIN),  MAX = min(MAX)), by = year_col]
+    
+    prox_by_list_dt <- prox_by_list_dt[, .SD[between(INDEX, index_range_afforded$MIN, index_range_afforded$MAX )], by = c(stratum_cols)]
+    
+    # I can set index_interval to 0.0001 to really get the closes to affording the budget. Does take 10x longer...
+    prox_index_search <- seq(round(index_range_afforded$MIN,3), round(index_range_afforded$MAX,3), by = index_interval)
+    index_costs2 <- lapply(prox_index_search, function(x) {
+      x1 <- data.table(INDEX = x)
+      x2 <- prox_by_list_dt[, .SD[x1, on = .(INDEX), roll = "nearest"], by = c(stratum_cols)]
+      stratum_column <- apply(x2[, ..stratum_cols], 1, paste, collapse = "-")
+      x2$STRATUM_COL <- stratum_column
+      x2
+    })
+    # Calculate the cost of each index
+    index_costs_vec <- sapply(index_costs2, function(x) {
+      calculate_cost_prox(x, cost_params, allo_lst, max_budget)$INDEX_COST
+    })
+    
+    # Find the index that is closest to the budget
+    closest_to_budget <- findInterval(budget, unlist(index_costs_vec))
+    out <- index_costs2[[closest_to_budget]]
+    out[, INDEX_COST := unlist(index_costs_vec)[closest_to_budget]]
+    year_res[[which(year_vec == i)]] <- out
+  }
+  
+  # Return the allocated rates, collasping the list of rates by year
+  rbindlist(year_res)
+  
 }
