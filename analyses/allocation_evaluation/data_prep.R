@@ -20,8 +20,25 @@ library(lubridate)
 #load("source_data/2024_Draft_ADP_data.rdata")
 
 # 2024 ADP final data set:
+
+#========#
+# FIXME Get this version to work. effort_prediction.R loads fine but this version returns an error.
 # https://drive.google.com/file/d/1xH-P54wW3vPXtaQmgEDxb3YgHh-yJlp8/view?usp=drive_link
-load("source_data/2024_Final_ADP_data.rdata")
+if(F) load("source_data/2024_Final_ADP_data.rdata") else {
+  # For now, using this version and hard-coding some fixes that are in the final version:
+  # Loading the most recent version I can run without error:
+  load("source_data/2024_Final_ADP_data_ver6.rdata")  # Version 6 of the file above (7 being the most current)
+  # Hard-code changes to the FG-EM pool (4 vessels that opted out)
+  fg_em <- fg_em[!(PERMIT %in% c(792, 32413, 3297, 3102))]
+  work.data[VESSEL_ID %in% c(792, 32413, 3297, 3102), STRATA_NEW := gsub("EM_", "", STRATA_NEW)]
+  trips_melt[
+    TRIP_ID %in% work.data[VESSEL_ID %in% c(792, 32413, 3297, 3102), unique(TRIP_ID)],
+    strata_ID := gsub("EM_", "", strata_ID)][, comboID := paste(strata_scheme, strata_ID, Metric, sep = ".")]
+} 
+
+
+#========#
+
 
 # Change TRIP_ID to integer class, keeping original TRIP_ID for posterity as (wd_TRIP_ID, or 'work.data TRIP_ID')
 work.data[, wd_TRIP_ID := TRIP_ID][, TRIP_ID := NULL][, TRIP_ID := .GRP, keyby = .(wd_TRIP_ID)]
@@ -349,30 +366,32 @@ td_init$DIAG  # Pretty far off
 
 td_mod1 <- model_trip_duration(work.data, use_mod="DAYS ~ RAW + ADP*AGENCY_GEAR_CODE")
 td_mod1$DIAG  # All within 3%, except 2016 PTR (-4.64%)
-mean(td_mod1$DIAG$YEAR_GEAR$PERC)  # -0.1277
-var(td_mod1$DIAG$YEAR_GEAR$PERC)   #  2.037
+mean(td_mod1$DIAG$YEAR_GEAR$PERC)  # 0.0818
+var(td_mod1$DIAG$YEAR_GEAR$PERC)   # 2.420
 
 td_mod2 <- model_trip_duration(work.data, use_mod="DAYS ~ RAW + ADP*AGENCY_GEAR_CODE + TENDER")
-td_mod2$DIAG  #All within 3%
-mean(td_mod2$DIAG$YEAR_GEAR$PERC) # 0.2885   more biased, less variance
-var(td_mod2$DIAG$YEAR_GEAR$PERC)  # 1.434
+td_mod2$DIAG  #All within 3%, except 2023 PTR is +3.72
+mean(td_mod2$DIAG$YEAR_GEAR$PERC) # 0.664   more biased
+var(td_mod2$DIAG$YEAR_GEAR$PERC)  # 2.422
 
 hist(td_mod1$DIAG$YEAR_GEAR$PERC)  # One over 4%, kind of skewed
-hist(td_mod2$DIAG$YEAR_GEAR$PERC)  # all within 3%, still a bit skewed
+hist(td_mod2$DIAG$YEAR_GEAR$PERC)  # Most within 3%, still a bit skewed
 
 dcast(td_mod1$DIAG$YEAR_GEAR, GEAR ~ ADP, value.var = "PERC")  # Several above 2%, one more than 4.6% biased (2016 PTR)
 dcast(td_mod2$DIAG$YEAR_GEAR, GEAR ~ ADP, value.var = "PERC")  # Aside from 2022/2023, PTR consistently positively biased
 
 # Gear type BIAS
-td_mod1$DIAG$YEAR_GEAR[, mean(PERC), by = GEAR]  # NPT -0.457, PTR -0.364, 
-td_mod2$DIAG$YEAR_GEAR[, mean(PERC), by = GEAR]  # PTR 0.670
+td_mod1$DIAG$YEAR_GEAR[, mean(PERC), by = GEAR]  # POT is +0.40, PTR is +0.314
+td_mod2$DIAG$YEAR_GEAR[, mean(PERC), by = GEAR]  # PTR +1.366
 
 
 # Let's apply mod1 for now (it's what we've used in recent years). Can only be applied to 2015 data onward, but not 2013 (no data in billdays?)
 td_mod1$TD_MOD$xlevels  # 2014 is there but was only applied to like one POT trip, so year 2014 doesn't exist for other gear types!
 
+# Subset all 'observer' pool trips and predict the duration of observer assignment
 td_pred <- unique(work.data[
-  ADP >= 2015 & CVG_NEW == "PARTIAL" & STRATA_NEW %in% c("HAL", "POT", "TRW") & AGENCY_GEAR_CODE != "JIG", 
+  # strata_new vector changed from c("HAL", POT", "TRW")
+  ADP >= 2015 & CVG_NEW == "PARTIAL" & STRATA_NEW %in% c("FIXED_GOA", "FIXED_BSAI", "TRW_GOA", "TRW_BSAI") & AGENCY_GEAR_CODE != "JIG", 
   .(AGENCY_GEAR_CODE, START = min(TRIP_TARGET_DATE, LANDING_DATE, na.rm = T), END = max(TRIP_TARGET_DATE, LANDING_DATE, na.rm = T)), 
   by = .(ADP, TRIP_ID)])
 td_pred[, RAW := as.numeric(END - START, units = "days")][, ADP := as.factor(as.character(ADP))]
@@ -429,7 +448,8 @@ pc_effort_dt <- unique(
 
 # Merge in predicted number of observed days
 pc_effort_dt[, DAYS := td_pred[pc_effort_dt, DAYS, on = .(TRIP_ID)]]
-if(nrow(pc_effort_dt[STRATA %in% c("HAL", "POT", "TRW") & is.na(DAYS)])) stop("Some OB trips missing DAYS?")
+# strata vector changed from c("HAL", POT", "TRW")
+if(nrow(pc_effort_dt[STRATA %in% c("FIXED_GOA", "FIXED_BSAI", "TRW_GOA", "TRW_BSAI") & is.na(DAYS)])) stop("Some OB trips missing DAYS?")
 
  # Estimate DAYS for non-observed trips 
 # This function counts number of unique days between each trip target date and landing date
@@ -467,17 +487,16 @@ pc_effort_dt <- pc_effort_dt[!is.na(LANDING_DATE)]
 # Rename strata to include POOL
 unique(pc_effort_dt$STRATA)
 if(any(unique(pc_effort_dt$STRATA) == "FULL")) stop("There are some FULL coverage trips in the partial coverage dataset!")
-# FIXME I believe some new PCTC vessels were added and although the STRATA_NEW column was updated, CVG_NEW was both 
-# FULL and PARTIAL for some TRIP_IDs
-pc_effort_dt <- pc_effort_dt[STRATA != "FULL"]
 
+# Re-label STRATA so that it also specifies pool, and separates monitoring method/gear from BSAI with '-'
 pc_effort_dt[, STRATA := fcase(
-  STRATA == "HAL", "OB_HAL",
-  STRATA == "POT" ,"OB_POT",
-  STRATA == "TRW", "OB_TRW",
-  STRATA == "EM_HAL", "EM_HAL",
-  STRATA == "EM_POT", "EM_POT",
-  STRATA == "EM_TRW_EFP", "EM_TRW",
+  STRATA == "FIXED_GOA", "OB_FIXED-GOA",
+  STRATA == "FIXED_BSAI" ,"OB_FIXED-BSAI",
+  STRATA == "TRW_GOA", "OB_TRW-GOA",
+  STRATA == "TRW_BSAI", "OB_TRW-BSAI",
+  STRATA == "EM_FIXED_GOA", "EM_FIXED-GOA",
+  STRATA == "EM_FIXED_BSAI", "EM_FIXED-BSAI",
+  STRATA == "EM_TRW_EFP_GOA", "EM_TRW-GOA",
   STRATA == "ZERO", "ZERO"
 )]
 
@@ -487,6 +506,7 @@ setcolorder(pc_effort_dt, neworder = c(
   "ADP", "POOL", "PERMIT", "TRIP_ID", "STRATA", "AGENCY_GEAR_CODE", "GEAR", "TRIP_TARGET_DATE", "LANDING_DATE", "AREA", 
   "ADFG_STAT_AREA_CODE", "BSAI_GOA", "BS_AI_GOA", "TARGET", "DAYS", "wd_TRIP_ID"
 ))
+setorder(pc_effort_dt, ADP, POOL, PERMIT, TRIP_TARGET_DATE)
 
 # Rename TRIP_ID in trips_melt to wd_TRIP_ID so that it matches pc_effort_dt
 trip_id_tbl <- unique(work.data[, .(TRIP_ID, wd_TRIP_ID)])
@@ -495,6 +515,11 @@ trips_melt[, TRIP_ID := trip_id_tbl[trips_melt, TRIP_ID, on = .(wd_TRIP_ID)]]
 
 # For some reason, my shapefiles don't include ADFG STAT AREA 515832. Seem like it was merged into 515831. 
 pc_effort_dt[ADFG_STAT_AREA_CODE == 515832, ADFG_STAT_AREA_CODE := 515831]
+pc_effort_dt <- unique(pc_effort_dt)
+
+# Double-check that all trips have a non-NA for STRATA
+if(nrow(pc_effort_dt[is.na(STRATA)])) stop("Some trips don't have a non-NA STRATA")
+
 
 if(F) save(pc_effort_dt, trips_melt, file = "analyses/allocation_evaluation/allocation_evaluation.Rdata")
 
@@ -502,6 +527,10 @@ if(F) save(pc_effort_dt, trips_melt, file = "analyses/allocation_evaluation/allo
 # 'Draft ADP Outputs folder': https://drive.google.com/file/d/13AZTKA7VyPP0ZW9rM8JRTyDBdclFW8Bu/view?usp=drive_link
 if(F) save(pc_effort_dt, trips_melt, file = "analyses/draft_rates/data_prep_outputs.Rdata")
 
-# Used for 2024 Final
+# Used for 2024 Final analyses prior to update of get_data with updated STRATA_NEW and final rates
 # 'Final ADP Outputs folder': https://drive.google.com/file/d/1Iet_Fh_8u06UcGwCrZGGWTARpvAAjzky/view?usp=drive_link
 if(F) save(pc_effort_dt, trips_melt, file = "analyses/allocation_evaluation/data_prep_final.Rdata")                             
+
+# Used for 2024 Final for final rates
+# `Final ADP Outputs folder`: https://drive.google.com/file/d/1es9xbllp-dlMSs288Cc7j7aL-Zlp_0zK/view?usp=drive_link
+if(F) save(pc_effort_dt, trips_melt, full_efrt, fg_em, file = "analyses/allocation_evaluation/data_prep_final_2024.Rdata")                             
