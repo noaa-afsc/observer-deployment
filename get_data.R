@@ -142,9 +142,13 @@ em_requests <-
                    AND em_request_status = 'NEW'
                    AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'"))
 
-# Hardcode EM removals and approvals
+# Hardcode EM removals, opt-outs, and approvals
 em_base <- em_base %>% 
-           filter(!(VESSEL_ID %in% c(4029, 31364, 2899, 90))) %>% 
+           # removal
+           filter(VESSEL_ID != 90) %>% 
+           # opt-outs
+           filter(!(VESSEL_ID %in% c(792, 32413, 3297, 3102))) %>% 
+           # approvals
            plyr::rbind.fill(data.table(VESSEL_ID = c(2084, 3717, 4387), VESSEL_NAME = c("COMMANDER", "CARLYNN", "TANYA M")))
   
 # * Trawl EM ----

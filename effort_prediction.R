@@ -1,6 +1,7 @@
 # get packages if they aren't already loaded
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
 if(!require("ggplot2"))   install.packages("ggplot2", repos='http://cran.us.r-project.org')
+if(!require("gridExtra"))   install.packages("gridExtra", repos='http://cran.us.r-project.org')
 if(!require("scales"))   install.packages("scales", repos='http://cran.us.r-project.org')
 
 # avoid scientific notation
@@ -88,13 +89,20 @@ p1 <- ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = TOTA
       geom_point() +
       geom_abline(intercept = 0, slope = 1) +
       theme_bw() +
-      labs(x = "True stratum-specific trips", y = "Predicted stratum-specific trips", color = "Stratum")
+      theme(legend.position = "bottom") +
+      labs(x = "True stratum-specific trips in ADPyear - 1", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
 
 # plot retrospective residuals for ADPyear - 1
 p2 <- ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = RESIDUALS)) +
       geom_histogram(bins = 20) +
-      geom_vline(xintercept = 0, lty = 2, color = "red") +
-      theme_bw()
+      geom_vline(xintercept = 0, color = "red") +
+      geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "red") +
+      theme_bw() +
+      labs(x = "Residuals")
+
+# png("output_figures/EffortPredictionResiduals1.png", width = 7, height = 10, units = 'in', res=300)
+# grid.arrange(p1, p2)
+# dev.off()
 
 # roll predictions forward one year
 effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], on = .(ADP, STRATA), all = TRUE)
@@ -107,13 +115,20 @@ p3 <- ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TR
       geom_point() +
       geom_abline(intercept = 0, slope = 1) +
       theme_bw() +
-      labs(x = "True stratum-specific trips", y = "Predicted stratum-specific trips", color = "Stratum")
+      theme(legend.position = "bottom") +
+      labs(x = "True stratum-specific trips in ADPyear", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
 
 # plot retrospective residuals for ADPyear 
 p4 <- ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
       geom_histogram(bins = 20) +
-      geom_vline(xintercept = 0, lty = 2, color = "red") +
-      theme_bw()
+      geom_vline(xintercept = 0, color = "red") +
+      geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "red") +
+      theme_bw() +
+      labs(x = "Residuals")
+
+# png("output_figures/EffortPredictionResiduals2.png", width = 7, height = 10, units = 'in', res=300)
+# grid.arrange(p3, p4)
+# dev.off()
 
 # predict total effort across strata with 95% prediction interval for ADPyear - 1  
 # https://stackoverflow.com/questions/39337862/linear-model-with-lm-how-to-get-prediction-variance-of-sum-of-predicted-value
@@ -188,9 +203,13 @@ p5 <- ggplot(effort_strata[ADP <= ADPyear - 1], aes(x = MAX_DATE_TRIPS, y = TOTA
       facet_wrap(STRATA ~ ., scales = "free") +
       geom_point(aes(color = PREDICTION)) +
       scale_color_manual(values = c("black", "red")) +
-      labs(x = "Trips through October", y = "Trips through December") +
+      labs(x = "Trips Through Date of Analysis", y = "Trips Through December") +
       theme_bw() +
       theme(legend.position = "none")
+
+# png("output_figures/MaxDateTrips.png", width = 7, height = 5, units = 'in', res=300)
+# p5
+# dev.off()
 
 # plot trips through December against year by stratum through ADPyear
 p6 <- ggplot(effort_strata, aes(x = ADP, y = TOTAL_TRIPS)) +
