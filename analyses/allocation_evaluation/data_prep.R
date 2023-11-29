@@ -17,7 +17,11 @@ library(lubridate)
 
 # 2024 ADP sandbox data set:
 # https://drive.google.com/file/d/1Nq202X4JyuOOdnP_ENHRvsI7fWDE2qPo/view?usp=share_link
-load("source_data/2024_Draft_ADP_data.rdata")
+#load("source_data/2024_Draft_ADP_data.rdata")
+
+# 2024 ADP final data set:
+# https://drive.google.com/file/d/1xH-P54wW3vPXtaQmgEDxb3YgHh-yJlp8/view?usp=drive_link
+load("source_data/2024_Final_ADP_data.rdata")
 
 # Change TRIP_ID to integer class, keeping original TRIP_ID for posterity as (wd_TRIP_ID, or 'work.data TRIP_ID')
 work.data[, wd_TRIP_ID := TRIP_ID][, TRIP_ID := NULL][, TRIP_ID := .GRP, keyby = .(wd_TRIP_ID)]
@@ -338,39 +342,36 @@ model_trip_duration <- function(val_data, use_mod="DAYS ~ RAW") {
 }
 
 if(exists("td_mod")) rm(td_mod)
-td_init <- model_trip_duration(work.data) # Uses model "DAYS ~ RAW" by default
+
+# ODDS was first implemented for 2015 ADP year, so subset the dataset to include onyl 2015 trips
+td_init <- model_trip_duration(work.data[ADP >= 2015]) # Uses model "DAYS ~ RAW" by default
 td_init$DIAG  # Pretty far off
 
 td_mod1 <- model_trip_duration(work.data, use_mod="DAYS ~ RAW + ADP*AGENCY_GEAR_CODE")
-td_mod1$DIAG  # All within 3%
-mean(td_mod1$DIAG$YEAR_GEAR$PERC)  # 0.033
-var(td_mod1$DIAG$YEAR_GEAR$PERC)   # 2.74
+td_mod1$DIAG  # All within 3%, except 2016 PTR (-4.64%)
+mean(td_mod1$DIAG$YEAR_GEAR$PERC)  # -0.1277
+var(td_mod1$DIAG$YEAR_GEAR$PERC)   #  2.037
 
 td_mod2 <- model_trip_duration(work.data, use_mod="DAYS ~ RAW + ADP*AGENCY_GEAR_CODE + TENDER")
-td_mod2$DIAG
-mean(td_mod2$DIAG$YEAR_GEAR$PERC) # 0.453   more biased, less variance
-var(td_mod2$DIAG$YEAR_GEAR$PERC)  # 1.7985
+td_mod2$DIAG  #All within 3%
+mean(td_mod2$DIAG$YEAR_GEAR$PERC) # 0.2885   more biased, less variance
+var(td_mod2$DIAG$YEAR_GEAR$PERC)  # 1.434
 
 hist(td_mod1$DIAG$YEAR_GEAR$PERC)  # One over 4%, kind of skewed
 hist(td_mod2$DIAG$YEAR_GEAR$PERC)  # all within 3%, still a bit skewed
 
 dcast(td_mod1$DIAG$YEAR_GEAR, GEAR ~ ADP, value.var = "PERC")  # Several above 2%, one more than 4.6% biased (2016 PTR)
-dcast(td_mod2$DIAG$YEAR_GEAR, GEAR ~ ADP, value.var = "PERC")  # Aside from 2022, PTR consistently positively biased
+dcast(td_mod2$DIAG$YEAR_GEAR, GEAR ~ ADP, value.var = "PERC")  # Aside from 2022/2023, PTR consistently positively biased
 
 # Gear type BIAS
-td_mod1$DIAG$YEAR_GEAR[, mean(PERC), by = GEAR]  # POT 0.512, NPT -0.48
-td_mod2$DIAG$YEAR_GEAR[, mean(PERC), by = GEAR]  # PTR 1.07, HAL 0.38
+td_mod1$DIAG$YEAR_GEAR[, mean(PERC), by = GEAR]  # NPT -0.457, PTR -0.364, 
+td_mod2$DIAG$YEAR_GEAR[, mean(PERC), by = GEAR]  # PTR 0.670
 
 
 # Let's apply mod1 for now (it's what we've used in recent years). Can only be applied to 2015 data onward, but not 2013 (no data in billdays?)
 td_mod1$TD_MOD$xlevels  # 2014 is there but was only applied to like one POT trip, so year 2014 doesn't exist for other gear types!
 
-# FIXME - Apparently NORPAC.ODDS_BILLDAYS_2015_MV has 2023 Cruise and Permits, but columns AT_SEA_DAY_COUNT_ODDS and ODDS_TRIP_PLAN_LOG_SEQ
-# are no longer being populated! This will need to be fixed for calculating trip duration!!!# For now, for the 2024 Draft ADP, we don't need 2023 fishing effort, so carve it off now (it otherwise results in an error beccause 
-# there is no 2023 model to apply to 2023 data).  
-# Added as issue #24 on the repo
-
-td_pred <- unique(work.data[ADP < 2023][
+td_pred <- unique(work.data[
   ADP >= 2015 & CVG_NEW == "PARTIAL" & STRATA_NEW %in% c("HAL", "POT", "TRW") & AGENCY_GEAR_CODE != "JIG", 
   .(AGENCY_GEAR_CODE, START = min(TRIP_TARGET_DATE, LANDING_DATE, na.rm = T), END = max(TRIP_TARGET_DATE, LANDING_DATE, na.rm = T)), 
   by = .(ADP, TRIP_ID)])
@@ -396,11 +397,9 @@ td_pred <- td_pred[, .(DAYS = round(mean(MOD)/0.5)*0.5), by = .(ADP, TRIP_ID)]
 work.data[, PERMIT := NULL][, PERMIT := as.integer(VESSEL_ID)]
 
 # Identify which FMP had most retained catch, splitting FMP by BSAI and GOA
-# FIXME excluded 2023 per issue #24 on the repo
-pc_trip_id_count <- uniqueN(work.data[CVG_NEW == "PARTIAL" & ADP >= 2015 & ADP < 2023, TRIP_ID])
+pc_trip_id_count <- uniqueN(work.data[CVG_NEW == "PARTIAL" & ADP >= 2015, TRIP_ID])
 
-# FIXME excluded 2023 per issue #24 on the repo
-fmp_bsai_goa <- work.data[CVG_NEW == "PARTIAL" & ADP >= 2015 & ADP < 2023, .(
+fmp_bsai_goa <- work.data[CVG_NEW == "PARTIAL" & ADP >= 2015, .(
   FMP_WT = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)
 ), by = .(TRIP_ID, BSAI_GOA = FMP)][, .SD[which.max(FMP_WT)], by = .(TRIP_ID)][, FMP_WT := NULL][]
 if( (pc_trip_id_count != uniqueN(fmp_bsai_goa$TRIP_ID) ) | (pc_trip_id_count != nrow(fmp_bsai_goa)) ) {
@@ -408,9 +407,7 @@ if( (pc_trip_id_count != uniqueN(fmp_bsai_goa$TRIP_ID) ) | (pc_trip_id_count != 
 }
 
 # Identify which FMP had most retained catch, splitting FMP by BS, AI and GOA
-# FIXME excluded 2023 per issue #24 on the repo
 fmp_bs_ai_goa <- copy(work.data)[
-][ADP < 2023
 ][CVG_NEW == "PARTIAL" & ADP >= 2015, 
 ][, BS_AI_GOA := fcase(
   REPORTING_AREA_CODE %in% c(541, 542, 543), "AI",
@@ -423,9 +420,8 @@ if( (pc_trip_id_count != uniqueN(fmp_bs_ai_goa$TRIP_ID) ) | (pc_trip_id_count !=
   stop("Something went wrong making 'fmp_bs_ai_goa'")
 }
 
-# FIXME also excluding 2023 here per issue #24 on the repo
 pc_effort_dt <- unique(
-  work.data[ADP < 2023][CVG_NEW == "PARTIAL" & ADP >= 2015, .(
+  work.data[CVG_NEW == "PARTIAL" & ADP >= 2015, .(
     PERMIT, TARGET = TRIP_TARGET_CODE, AREA = as.integer(REPORTING_AREA_CODE), AGENCY_GEAR_CODE, 
     GEAR = ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", AGENCY_GEAR_CODE), STRATA = STRATA_NEW,                 # Here, we defined STRATA_NEW as STRATA
     TRIP_TARGET_DATE, LANDING_DATE, ADFG_STAT_AREA_CODE = as.integer(ADFG_STAT_AREA_CODE), wd_TRIP_ID), 
@@ -435,7 +431,7 @@ pc_effort_dt <- unique(
 pc_effort_dt[, DAYS := td_pred[pc_effort_dt, DAYS, on = .(TRIP_ID)]]
 if(nrow(pc_effort_dt[STRATA %in% c("HAL", "POT", "TRW") & is.na(DAYS)])) stop("Some OB trips missing DAYS?")
 
-# Estimate DAYS for non-observed trips 
+ # Estimate DAYS for non-observed trips 
 # This function counts number of unique days between each trip target date and landing date
 # use this to count days for non-observed trips, which already have a modeled 'DAYS' estimate.
 day_count <- function(x) {
@@ -502,4 +498,10 @@ pc_effort_dt[ADFG_STAT_AREA_CODE == 515832, ADFG_STAT_AREA_CODE := 515831]
 
 if(F) save(pc_effort_dt, trips_melt, file = "analyses/allocation_evaluation/allocation_evaluation.Rdata")
 
-if(F) save(pc_effort_dt, trips_melt, file = "analyses/draft_rates/data_prep_outputs.Rdata")                             # Used for 2024 Draft
+# Used for 2024 Draft
+# 'Draft ADP Outputs folder': https://drive.google.com/file/d/13AZTKA7VyPP0ZW9rM8JRTyDBdclFW8Bu/view?usp=drive_link
+if(F) save(pc_effort_dt, trips_melt, file = "analyses/draft_rates/data_prep_outputs.Rdata")
+
+# Used for 2024 Final
+# 'Final ADP Outputs folder': https://drive.google.com/file/d/1Iet_Fh_8u06UcGwCrZGGWTARpvAAjzky/view?usp=drive_link
+if(F) save(pc_effort_dt, trips_melt, file = "analyses/allocation_evaluation/data_prep_final.Rdata")                             
