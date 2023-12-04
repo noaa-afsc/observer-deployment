@@ -413,146 +413,6 @@ og_prox <- calculate_interspersion_gs(fixed_fmp.box, sample_rate_vec = seq(from 
 # dcast(fixed_fmp.equal, STRATA ~ ADP, value.var = "MON_RATE")
 # proximity, indices, and costs.
 
-# This function is a replacement for calculate_interspersion_gs(), calculate_index2(), and prox_rates_from_budget2(),
-# that runs the allocation faster as it hones in on the budget, rather than doing all and then filtering for any budget.
-
-allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_interval = 0.001, range_var = 1) { 
-  # box_def <- copy(fixed_fmp.box); allo_lst <- copy(fixed_fmp.allo_lst);  budget <- budget_lst[[1]]
-
-  # box_def <- copy(bootstrap.box); allo_lst <- copy(bootstrap.allo_lst);  budget <- budget_lst[[1]]; index_interval <- 0.0001; range_var = 0
-  
-  # box_def <- copy(swor_bootstrap.box); allo_lst <- copy(swor_bootstrap.allo_lst); index_interval <- 0.0001
-  
-  # Have to do this by year, so feed the data one year at a time
-  group_cols <- c(box_def$params$year_col, box_def$params$stratum_cols)
-  stratum_cols <- box_def$params$stratum_cols
-  year_col <- box_def$params$year_col
-  
-  year_vec <- unique(box_def$strata_n_dt$ADP)
-  
-  # TODO FOR NOW, OMIT ZERO and EM_TRW as we will not allocate to either in 2024
-  box_def$strata_n_dt <- box_def$strata_n_dt[!(STRATA %like% "ZERO|EM_TRW")]
-  box_def$dt_out <- box_def$dt_out[!(STRATA %like% "ZERO|EM_TRW")]
-  box_def$box_smry <- box_def$box_smry[!(names(box_def$box_smry) %like% "ZERO|EM_TRW")]
-  
-  year_res <- vector(mode = "list", length = length(year_vec))
-  
-  for(i in year_vec) {
-
-    # Quickly calculate proximity for a wide range of sample rates but with low resolution (0.005 instead of 0.0001)
-    # makes this 50x faster.
-    
-    # TODO I Think I should use by = 0.001. the most time consuming part is calculating a huge a huge vector of INDEX, most
-    # of which not even close!
-    
-    box_def_sub.prox.range <- calculate_interspersion_gs(box_def, sample_rate_vec = c(0.0001, seq(0.05, 1, by = 0.001)), omit_strata = "ZERO" )$ispn_dt[ADP == i]
-    # Calculate index for each stratum
-    box_def_sub.prox.range[
-    ][, n := SAMPLE_RATE * STRATA_N
-    ][, FPC := (STRATA_N - n) / STRATA_N
-    ][, CV_SCALING := sqrt(FPC * (1/n))
-    ][, INDEX := ISPN * (1 - CV_SCALING)][is.na(INDEX), INDEX := 0]
-    setorderv(box_def_sub.prox.range, c(stratum_cols, "INDEX"))
-    # Approximate the costs of a range of indices 
-    index_vec <- seq(0, 1, by = 0.025)
-    index_vec_rates_costs <- lapply(
-      index_vec, 
-      function(x) {
-        res <- box_def_sub.prox.range[, .SD[findInterval(x, INDEX)], by = c(box_def$params$stratum_cols)]
-        stratum_column <- apply(res[, ..stratum_cols], 1, paste, collapse = "-")
-        res[, STRATUM_COL := stratum_column]
-        res[, INDEX := x]
-        index_cost <- calculate_cost_prox(res, cost_params, allo_lst, max_budget) # this is the most this index would cost
-        if( nrow(index_cost) > 0 ) res[, INDEX_COST := index_cost$INDEX_COST]
-        res
-      }
-    )
-    
-    # Omit any indices that go over the maximum budget
-    index_costs <- sapply(index_vec_rates_costs, function(x) unique(x$INDEX_COST))
-    for(j in seq_along(index_costs)) {
-      if( is.null(index_costs[[j]])) {
-        index_costs <- unlist(index_costs[1:(j - 1)])
-        break()
-      } else if (j > 1) {
-        if( index_costs[[j]] < index_costs[[j - 1]]) {
-          index_costs <- unlist(index_costs[1:(j - 1)])
-          break()
-        }
-      }
-    }
-    
-    # Find the range of indices to explore
-    index_near_budget <- findInterval(budget, index_costs)
-    index_range <- index_vec[c(index_near_budget - range_var, index_near_budget + 1)]  # I can afford an index somewhere in this range
-    # Get all stratum names
-    strata_dt <- unique(box_def$strata_n_dt[, ..stratum_cols])
-    prox_by_stratum_lst <- vector(mode = "list", length = nrow(strata_dt))
-    # Calculate proximity for each stratum using a focused range of sample rates
-    for(k in 1:nrow(strata_dt)) {
-      # k <- 1
-      
-      stratum_year <- paste0(i, ".", paste(strata_dt[k], collapse = "." ))
-      # Make a new box definition specific to the stratum of focus
-      box_stratum <- list(
-        box_smry = box_def$box_smry[stratum_year],
-        strata_n_dt = box_def$strata_n_dt,
-        params = box_def$params
-      )
-      # Find the stratum's range of sample rates
-      sample_range <- sapply(
-        index_vec_rates_costs[c(index_near_budget - range_var, index_near_budget + 1)],             # FIXME I have to do +2 instead of +1. findInterval always underestimates?
-        function(x) x[strata_dt[k], on = c(box_def$params$stratum_cols), SAMPLE_RATE]
-      )
-      # box_res <- copy(box_stratum); omit_strata <- NULL; sample_rate_vec <- seq(0.5, 575, by = 0.0001)
-      # Now, we go back calculating rates ever 0.0001 here.
-      prox_by_stratum <- calculate_interspersion_gs(box_stratum, sample_rate_vec = seq(sample_range[1], sample_range[2], by = 0.0001))$ispn_dt
-      prox_by_stratum[
-      ][, n := SAMPLE_RATE * STRATA_N
-      ][, FPC := (STRATA_N - n) / STRATA_N
-      ][, CV_SCALING := sqrt(FPC * (1/n))
-      ][, INDEX := ISPN * (1 - CV_SCALING)]
-      prox_by_stratum_lst[[k]]  <- prox_by_stratum
-      
-    }
-    prox_by_list_dt <- rbindlist(prox_by_stratum_lst)
-    
-    # find the common range of indices
-    # Find range if INDEX that is common to all strata x ADP
-    prox_by_list_dt[, as.list(setNames(range(INDEX), c("MIN", "MAX"))), by = c(stratum_cols)]
-    
-    index_range_afforded <- prox_by_list_dt[
-    ][, .(MIN = min(INDEX), MAX = max(INDEX)), by = group_cols
-    ][, .(MIN = max(MIN),  MAX = min(MAX)), by = year_col]
-    
-    prox_by_list_dt <- prox_by_list_dt[, .SD[between(INDEX, index_range_afforded$MIN, index_range_afforded$MAX )], by = c(stratum_cols)]
-    
-    # I can set index_interval to 0.0001 to really get the closes to affording the budget. Does take 10x longer...
-    prox_index_search <- seq(round(index_range_afforded$MIN,3), round(index_range_afforded$MAX,3), by = index_interval)
-    index_costs2 <- lapply(prox_index_search, function(x) {
-      x1 <- data.table(INDEX = x)
-      x2 <- prox_by_list_dt[, .SD[x1, on = .(INDEX), roll = "nearest"], by = c(stratum_cols)]
-      stratum_column <- apply(x2[, ..stratum_cols], 1, paste, collapse = "-")
-      x2$STRATUM_COL <- stratum_column
-      x2
-    })
-    # Calculate the cost of each index
-    index_costs_vec <- sapply(index_costs2, function(x) {
-      calculate_cost_prox(x, cost_params, allo_lst, max_budget)$INDEX_COST
-    })
-    
-    # Find the index that is closest to the budget
-    closest_to_budget <- findInterval(budget, unlist(index_costs_vec))
-    out <- index_costs2[[closest_to_budget]]
-    out[, INDEX_COST := unlist(index_costs_vec)[closest_to_budget]]
-    year_res[[which(year_vec == i)]] <- out
-  }
-  
-  # Return the allocated rates, collasping the list of rates by year
-  rbindlist(year_res)
-
-}
-
 # Find the rates afforded each year assuming our current 2024 ADP budget
 system.time(og_rates <- allo_prox(fixed_fmp.box, fixed_fmp.allo_lst, cost_params, budget_lst[[1]], max_budget, index_interval = 0.0001))
 # using sample_rate by = 0.001  and default index_interval = 0.001 takes 53 sec. Changing it to 0.0001 takes 142 sec.
@@ -568,6 +428,8 @@ ggplot(og_rates, aes(x = ADP, y = n, fill = STRATUM_COL)) + geom_col(position = 
 #======================================================================================================================#
 ## Prepare Bootstrapping ----
 #======================================================================================================================#
+
+# If you want to skip the bootstrapping, which takes a few hours, can quick-load the results under 'Bootstrap Outputs'
 
 # Define number of bootstrap iterations
 bootstrap_iter <- 100
@@ -993,6 +855,21 @@ for(j in seq_along(adp_years_to_predict)) {
 
 # save(swor_1_lst, file = "analyses/effort_prediction/swor_1_lst.rdata")
 
+#=======================================================================================================================#
+## Bootstrap Outputs ----
+#=======================================================================================================================#
+
+# Save all bootstrap results into one rdata file
+save(
+  og_prox, og_rates, swr_1_lst, swor_3_lst, swor_2_lst, swor_1_lst,
+  file = "analyses/effort_prediction/effort_prediction_bootstrap_raw.rdata")
+
+# Saved to 2024 Google folder, Geoff's Ancillary folder: 
+# https://drive.google.com/file/d/1leyESZRVGa-DkQukeRISjSYTLyT2EwiF/view?usp=drive_link
+
+## Quick-load bootstrap results
+# load( "analyses/effort_prediction/effort_prediction_bootstrap_raw.rdata")
+
 
 # og_prox, og_rates, swr_1_lst, swor_3_lst, swor_2_lst, swor_1_lst
 
@@ -1144,7 +1021,7 @@ plot_prox_diff <- ggplot(boot_prox_dt[ADP >= 2018], aes(x = as.character(ADP), y
   geom_boxplot(aes(color = METHOD), fill = NA) + 
   geom_text(data = og_prox_dt[ADP >= 2018], aes(label = STRATA_N, y = 0.4), size = 2, vjust = 0) +
   scale_color_manual(values = c(swr_1 = "cyan3", swor_3 = "blue", swor_2 = "purple", swor_1 = "magenta")) + 
-  labs(x = "Year", y = "Diff in Proximity (Boot - Actual)", color = "Method") + 
+  labs(x = "Year", y = "Difference in Proximity (Predicted - Actual)", color = "Method") + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 # Raw difference in proximity for well within 5% for GOA strata, but generally within 10% for BSAI strata, but 
 # OB_TRW-BSAI is highly variable and can vary +/- 0.3 points! Very small stratum
@@ -1155,7 +1032,7 @@ plot_prox_perc_diff <- ggplot(boot_prox_dt[ADP >= 2018], aes(x = as.character(AD
   geom_boxplot(aes(color = METHOD), fill = NA) + 
   geom_text(data = og_prox_dt[ADP >= 2018], aes(label = STRATA_N, y = 0.4), size = 2, vjust = 0) +
   scale_color_manual(values = c(swr_1 = "cyan3", swor_3 = "blue", swor_2 = "purple", swor_1 = "magenta")) + 
-  labs(x = "Year", y = "% Diff in Proximity (Boot - Actual)/Actual", color = "Method") + 
+  labs(x = "Year", y = "% Difference in Proximity (Predicted - Actual)/Actual", color = "Method") + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5))
 # Percent difference in proximity can be vastly different for some methods in certain years (especially for 1-year methods
 # following a very low effort year).
@@ -1169,7 +1046,7 @@ plot_prox_diff_mean <- ggplot(boot_prox_dt[ADP >= 2018, .(MEAN_DIFF = mean(DIFF)
   geom_line(aes(x = as.character(ADP), y = MEAN_DIFF, color = METHOD, group = interaction(METHOD, STRATA, BSAI_GOA)), linewidth = 1) + 
   scale_color_manual(values = c(swr_1 = "cyan3", swor_3 = "blue", swor_2 = "purple", swor_1 = "magenta")) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
-  labs(x = "Year", y = "Prox (Boot - Actual)", color = "Method") +
+  labs(x = "Year", y = "Difference in Proximity (Predicted - Actual)", color = "Method") +
   geom_text(data =og_prox_dt[ADP >= 2018], aes(label = STRATA_N, x = as.character(ADP)), y = 0.3, size = 2)
 # All methods generally get prox within 0.1, if not 0.05. Exception is OB_TRW. Notice that stratum size changes greatly 
 # between years. Bouncing from 31 to 14 to 37 to 15 will has a large impact on predicting proximity. However, we are unlikely
@@ -1306,7 +1183,75 @@ save(
   plot_stratum_prox_bias_error, plot_stratum_rates_bias_error, prox_tbl, rates_tbl, 
   file = "analyses/effort_prediction/effort_bootstrap.rdata")
 # Saved to Geoff's ancillary documents folder: https://drive.google.com/file/d/1DOtwnwyVKuotQ_VrKQybvzwP7SlLwCgN/view?usp=drive_link
-                                     
+     
+
+#======================================================================================================================#
+# Modify plots and save as pngs for 2024 Final ADP - Appendix D ----
+#======================================================================================================================#
+
+# Table of trip counts by stratum and year
+table_d_1 <- dcast(
+  copy(og_prox$strata_n_dt[ADP >= 2018])[, Stratum := paste0(STRATA, "-", BSAI_GOA)],
+  Stratum ~ ADP, value.var = "STRATA_N")
+table_d_1_flex <- table_d_1 %>% flextable() %>% autofit() 
+
+figure_d_1 <- ggplot(boot_res, aes(x = as.character(ADP), y = ISPN)) + 
+  facet_nested(STRATA + BSAI_GOA ~ factor(Method, levels = c("swr_1", "swor_3", "swor_2", "swor_1")), scales = "free", labeller = as_labeller(toupper)) +
+  geom_line(data = og_prox$ispn_dt[ADP >= 2018 & SAMPLE_RATE == 0.15], aes(group = interaction(STRATA, BSAI_GOA))) +
+  geom_violin(aes(color = toupper(Method)), draw_quantiles = 0.5, fill = NA, position = "identity") + 
+  geom_point(data = og_prox$ispn_dt[ADP >= 2018 & SAMPLE_RATE == 0.15]) + 
+  scale_color_manual(values = c(SWR_1 = "cyan3", SWOR_3 = "blue", SWOR_2 = "purple", SWOR_1 = "magenta"), breaks = c("SWR_1", "SWOR_3", "SWOR_2", "SWOR_1")) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
+  labs(x = "Year", y = "Proximity", color = "Method")
+
+figure_d_2 <- ggplot(boot_prox_dt[ADP >= 2018, .(MEAN_DIFF = mean(DIFF)), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)]) + 
+  facet_nested(. ~ STRATA + BSAI_GOA) + 
+  geom_hline(yintercept = 0) + 
+  geom_line(aes(x = as.character(ADP), y = MEAN_DIFF, color = toupper(METHOD), group = interaction(METHOD, STRATA, BSAI_GOA)), linewidth = 1) + 
+  scale_color_manual(values = c(SWR_1 = "cyan3", SWOR_3 = "blue", SWOR_2 = "purple", SWOR_1 = "magenta"), breaks = c("SWR_1", "SWOR_3", "SWOR_2", "SWOR_1")) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
+  labs(x = "Year", y = "Difference in Proximity (Predicted - Actual)", color = "Method") 
+
+figure_d_3 <- ggplot(stratum_prox_bias_error, aes(x = toupper(METHOD), y = paste0(STRATA, "-", BSAI_GOA), fill = relative_value)) + 
+  facet_grid(. ~ variable, labeller = as_labeller(c(`BIAS` = "Bias", `MSE` = "MSE"))) + 
+  geom_tile() + scale_fill_gradient2() + geom_text(aes(label = formatC(value, digits = 4, format = "f") )) + 
+  scale_x_discrete(limits = c("SWR_1", "SWOR_3", "SWOR_2", "SWOR_1")) +
+  labs(x = "Method", y = "Stratum", fill = "Relative value", subtitle = "Proximity")
+
+table_d_2_flex <- copy(prox_tbl) %>% set_header_labels(values = c("Method", "Bias", "MSE"))
+
+figure_d_4 <- ggplot(boot_res[!is.na(SAMPLE_RATE)], aes(x = as.character(ADP), y = SAMPLE_RATE)) + 
+  facet_nested(STRATA + BSAI_GOA ~ factor(Method, levels = c("swr_1", "swor_3", "swor_2", "swor_1")), scales = "free", labeller = as_labeller(toupper)) +
+  geom_line(data = og_rates[ADP >= 2018], aes(group = interaction(STRATA, BSAI_GOA))) +
+  geom_violin(aes(color = toupper(Method)), draw_quantiles = 0.5, fill = NA, position = "identity", na.rm = T) + 
+  geom_point(data = og_rates[ADP >= 2018]) + 
+  scale_color_manual(values = c(SWR_1 = "cyan3", SWOR_3 = "blue", SWOR_2 = "purple", SWOR_1 = "magenta"), breaks = c("SWR_1", "SWOR_3", "SWOR_2", "SWOR_1")) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
+  labs(x = "Year", y = "Sample Rate", color = "Method")
+
+figure_d_5 <- ggplot(boot_rates_dt[ADP >= 2018, .(MEAN_DIFF = mean(DIFF)), keyby = .(METHOD, ADP, STRATA, BSAI_GOA)]) + 
+  facet_nested(. ~ STRATA + BSAI_GOA) + 
+  geom_hline(yintercept = 0) + 
+  geom_line(aes(x = as.character(ADP), y = MEAN_DIFF, color = toupper(METHOD), group = interaction(METHOD, STRATA, BSAI_GOA)), linewidth = 1) + 
+  scale_color_manual(values = c(SWR_1 = "cyan3", SWOR_3 = "blue", SWOR_2 = "purple", SWOR_1 = "magenta"), breaks = c("SWR_1", "SWOR_3", "SWOR_2", "SWOR_1")) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
+  labs(x = "Year", y = "Difference in Sample Rate (Predicted - Actual)", color = "Method")
+
+figure_d_6 <- ggplot(stratum_rates_bias_error, aes(x = toupper(METHOD), y = paste0(STRATA, "-", BSAI_GOA), fill = relative_value)) + 
+  facet_grid(. ~ variable, labeller = as_labeller(c(`BIAS` = "Bias", `MSE` = "MSE"))) + geom_tile() + scale_fill_gradient2() + geom_text(aes(label = formatC(value, digits = 4, format = "f") )) + 
+  scale_x_discrete(limits = c("SWR_1", "SWOR_3", "SWOR_2", "SWOR_1")) +
+  labs(x = "Method", y = "Stratum", fill = "Relative value", subtitle = "Sample Rates")
+  
+
+table_d_3_flex <- copy(rates_tbl) %>% set_header_labels(values = c("Method", "Bias", "MSE"))
+
+save(
+  table_d_1_flex, table_d_2_flex, table_d_3_flex,
+  figure_d_1, figure_d_2, figure_d_3, figure_d_4, figure_d_5, figure_d_6,
+  file = "analyses/effort_prediction/appendix_D.rdata")
+# Saved to Final ADP Outputs folder: https://drive.google.com/file/d/1RWNTDbds03Tvfi_k6j3S_QecITmqOdZa/view?usp=drive_link
+
+                                
 #======================================================================================================================#
 # Proportions of fishing effort (trips) ----
 #======================================================================================================================#
