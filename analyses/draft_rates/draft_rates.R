@@ -305,6 +305,9 @@ pc_effort.FIXED_FMP[, STRATUM_COL := paste0(STRATA, "-", BSAI_GOA)]
 # Save rates and effort objects
 if(F) save(rates, pc_effort.CURRENT, pc_effort.FMP, pc_effort.FIXED_FMP, file = "results/draft_rates_effort.rdata")
 
+# Uploaded to google drive in Vision 2024 ADP/Data folder:
+# https://drive.google.com/file/d/1feAzcFhFvMfADQP2Lp2vu4mhh0hQiceQ/view?usp=drive_link
+
 # Quick load
 if(F) load("results/draft_rates_effort.rdata")
 

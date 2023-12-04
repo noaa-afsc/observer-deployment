@@ -1,0 +1,46 @@
+---
+title: "2024 Final ADP Tables and Figures"
+author: "Geoff_Mayhew"
+date: "2023-11-21"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(data.table)
+library(flextable)
+library(ggplot2)
+
+# Load data:
+load("results/final_adp_tables_and_figures_2024.rdata")
+```
+
+
+Table 2. 
+```{r Table 2}
+table_2_flex
+```
+
+\newpage
+
+
+Table B-2. 
+```{r Table B-2}
+table_b2_flex
+```
+
+\newpage
+
+Table B-3. 
+```{r Table B-3}
+table_b3_flex
+```
+
+\newpage
+
+```{r save figures}
+# save plots as pngs to output_figures
+ggsave(filename = "output_figures/figure_b2.png", figure_b2, width = 7, height = 7, units = "in")
+```
+
