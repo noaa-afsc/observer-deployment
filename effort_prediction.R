@@ -1,6 +1,11 @@
 # get packages if they aren't already loaded
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
 if(!require("ggplot2"))   install.packages("ggplot2", repos='http://cran.us.r-project.org')
+if(!require("gridExtra"))   install.packages("gridExtra", repos='http://cran.us.r-project.org')
+if(!require("scales"))   install.packages("scales", repos='http://cran.us.r-project.org')
+
+# avoid scientific notation
+options(scipen = 9999)
 
 # user inputs
 ADPyear  <- 2024
@@ -10,315 +15,249 @@ load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
 # https://drive.google.com/file/d/1xH-P54wW3vPXtaQmgEDxb3YgHh-yJlp8/view?usp=drive_link
 
 # get list of trawl EM EFP vessels
-efp_list <- fread("source_data/efp_list_2023-09-05.csv")
+efp_list <- fread("source_data/efp_list_2023-09-05.csv")[, PERMIT := as.character(PERMIT)]
 # https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
 
-# calculate cumulative effort by stratum and species using valhalla from the past four years
-cumulative.trips.target <- copy(work.data)[ADP >= ADPyear - 4 & CVG_NEW == "PARTIAL" & AGENCY_GEAR_CODE != "JIG"]
-
-# simplify species and fmp labels
-cumulative.trips.target[
-][, TRIP_TARGET_CODE := fcase(
-  !(TRIP_TARGET_CODE %in% c("P", "B", "C", "I", "S")), "Other",
-  TRIP_TARGET_CODE %in% c("P", "B"), "Pollock",
-  TRIP_TARGET_CODE == "C", "Pacific Cod",
-  TRIP_TARGET_CODE == "I", "Halibut",
-  TRIP_TARGET_CODE == "S", "Sablefish")
-][, FMP := ifelse(FMP %in% c("BS", "AI"), "BSAI", FMP)]
-
 # select necessary columns
-cumulative.trips.target <- cumulative.trips.target[, .(TRIP_ID, FMP, ADP, STRATA_NEW, TRIP_TARGET_DATE, TRIP_TARGET_CODE)]
-
-# rename strata_new as strata
-setnames(cumulative.trips.target, "STRATA_NEW", "STRATA")
+effort_strata <- work.data[CVG_NEW == "PARTIAL", .(ADP, STRATA = STRATA_NEW, TRIP_TARGET_DATE, TRIP_ID)]
 
 # ensure one trip target date per trip, making it the minimum trip target date
-cumulative.trips.target[, TRIP_TARGET_DATE := min(TRIP_TARGET_DATE), by=TRIP_ID]
+effort_strata[, TRIP_TARGET_DATE := min(TRIP_TARGET_DATE), by = TRIP_ID]
 
 # select only distinct rows
-cumulative.trips.target <- unique(cumulative.trips.target)
-
-# split trips that occurred in more than one fmp, adp, strata, and/or target
-cumulative.trips.target[ , TRIPS := 1/.N, by = TRIP_ID]
+effort_strata <- unique(effort_strata)
 
 # order the data
-setorder(cumulative.trips.target, ADP, STRATA, TRIP_TARGET_CODE, TRIP_TARGET_DATE)
+setorder(effort_strata, ADP, STRATA, TRIP_TARGET_DATE)
 
-# calculate cumulative trips by date for each domain
-cumulative.trips.target[, C_TRIPS := cumsum(TRIPS), by = .(ADP, FMP, STRATA, TRIP_TARGET_CODE)]
+# split trips if they occurred in more than one stratum
+effort_strata[ , TRIPS := 1/.N, by = TRIP_ID]
 
-# reformat date columns
-cumulative.trips.target[, JULIAN_DATE := yday(TRIP_TARGET_DATE)]
+# find julian dates
+effort_strata[, JULIAN_DATE := yday(TRIP_TARGET_DATE)]
 
 # set julian date to 1 for trips that left in year adp - 1
-cumulative.trips.target[, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) < ADP, 1, JULIAN_DATE)]
+effort_strata[, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) < ADP, 1, JULIAN_DATE)]
 
-# set julian date to 366 for trips that left in year adp + 1 (this should be no trips)
-cumulative.trips.target[, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) > ADP, 366, JULIAN_DATE)]
+# set julian date to 366 for trips that left in year adp + 1
+effort_strata[, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) > ADP, 366, JULIAN_DATE)]
 
 # isolate the latest date for which we have data in the most recent year of valhalla
-max.date <- max(cumulative.trips.target[ADP == ADPyear - 1, JULIAN_DATE])
+max_date <- max(effort_strata[ADP == ADPyear - 1, JULIAN_DATE])
 
-# plot cumulative trips by year and stratum
-# vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
-plot_theme_cumulative_trips <- list(
-  geom_line(aes(color = as.character(ADP)), linewidth = 1.2), 
-  geom_vline(xintercept = max.date, color = "red" ),
-  geom_vline(xintercept = 366),
-  facet_wrap(FMP + TRIP_TARGET_CODE ~ STRATA, scales = "free"),
-  labs(x = "Day of the year", y = "Cumulative trips", color = "Year"),
-  theme_bw())
+# count trips through max_date and total trips by year and stratum
+effort_strata <- effort_strata[, .(MAX_DATE_TRIPS = sum(TRIPS[JULIAN_DATE <= max_date]), TOTAL_TRIPS = sum(TRIPS)), by = .(ADP, STRATA)]
 
-## GOA
-p1 <- ggplot(cumulative.trips.target[FMP == "GOA"], aes(JULIAN_DATE, C_TRIPS)) +
-  plot_theme_cumulative_trips
+# make total trips NA for ADPyear - 1, since the year is not over
+effort_strata[ADP == ADPyear - 1, TOTAL_TRIPS := NA]
 
-## BSAI
-p2 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) +
-  plot_theme_cumulative_trips
+# model total trips against year, stratum, and trips through October
+effort_mod1 <- lm(TOTAL_TRIPS ~ ADP, data = effort_strata[ADP < ADPyear - 1])
+effort_mod2 <- lm(TOTAL_TRIPS ~ ADP * STRATA, data = effort_strata[ADP < ADPyear - 1])
+effort_mod3 <- lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1])
 
-# plot cumulative trips by year and stratum for the portion of (ADPyear - 1) in which we don't have data
+# evaluate candidate models
+AIC(effort_mod1, effort_mod2, effort_mod3)
 
-## GOA
-p3 <- ggplot(cumulative.trips.target[FMP == "GOA"], aes(JULIAN_DATE, C_TRIPS)) +
-  plot_theme_cumulative_trips + 
-  coord_cartesian(xlim = c(max.date - 20, 366)) 
+# choose a winning model
+effort_mod <- effort_mod3
+rm(effort_mod1, effort_mod2, effort_mod3)
 
-## BSAI
-p4 <- ggplot(cumulative.trips.target[FMP == "BSAI"], aes(JULIAN_DATE, C_TRIPS)) +
-  plot_theme_cumulative_trips +
-  coord_cartesian(xlim = c(max.date - 20, 366))
+# predict ADPyear - 6 effort
+effort_strata[ADP == ADPyear - 6, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 6]), effort_strata[ADP == ADPyear - 6])]
 
-# based on the plots, there are three conditions that stratum/species fisheries find themselves come October:
-# 1) fisheries that increase by a (mostly) consistent ratio between October and December
-# 2) fisheries for which we would use a *subset* of years to calculate the ratio
-# 3) fisheries that don't exist or are finished by October
+# predict ADPyear - 5 effort
+effort_strata[ADP == ADPyear - 5, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 5]), effort_strata[ADP == ADPyear - 5])]
 
-# calculate the through October trips and the through December trips so that a ratio can later be calculated 
-dec.oct.trips <- unique(cumulative.trips.target[
-][JULIAN_DATE <= max.date, .(THRU_OCT_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)
-][!is.na(THRU_OCT_TRIPS), .(ADP, FMP, TRIP_TARGET_CODE, STRATA, THRU_OCT_TRIPS)])[
-  unique(cumulative.trips.target[
-  ][, .(THRU_DEC_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)
-  ][!is.na(THRU_DEC_TRIPS), .(ADP, FMP, TRIP_TARGET_CODE, STRATA, THRU_DEC_TRIPS)]), 
-  on = .(ADP, FMP, STRATA, TRIP_TARGET_CODE)]
+# predict ADPyear - 4 effort
+effort_strata[ADP == ADPyear - 4, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 4]), effort_strata[ADP == ADPyear - 4])]
 
-# create a column that contains fmp, target, and stratum
-dec.oct.trips <- dec.oct.trips[
-][, FMP_TARGET_STRATA := paste(FMP, TRIP_TARGET_CODE, STRATA, sep = " ")
-][, .(ADP, FMP, TRIP_TARGET_CODE, STRATA, FMP_TARGET_STRATA, THRU_OCT_TRIPS, THRU_DEC_TRIPS)]
+# predict ADPyear - 3 effort
+effort_strata[ADP == ADPyear - 3, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 3]), effort_strata[ADP == ADPyear - 3])]
 
-# find the dec/oct ratio for each group of fmp, target, stratum combinations
-dec.oct.ratio <- rbind(
-  # group 1 : calculate the december/october trip ratio according to the groups above
-  # because ADPyear-1 only has data through october
-  dec.oct.trips[
-  ][ADP < ADPyear - 1 & FMP_TARGET_STRATA %in% c(
-    "GOA Halibut EM_HAL",
-    "GOA Halibut EM_POT",
-    "GOA Halibut HAL",
-    "GOA Halibut POT",
-    "GOA Halibut ZERO",
-    "GOA Pollock EM_TRW_EFP",
-    "GOA Pollock TRW",
-    "GOA Sablefish EM_HAL",
-    "GOA Sablefish EM_POT",
-    "GOA Sablefish HAL",
-    "GOA Sablefish POT",
-    "GOA Sablefish ZERO",
-    "BSAI Halibut EM_HAL",
-    "BSAI Halibut HAL",
-    "BSAI Sablefish POT"), 
-    .(RATIO = mean(THRU_DEC_TRIPS / THRU_OCT_TRIPS)), by = .(FMP_TARGET_STRATA)],
-  # group 2: ratios from a subset of years
-  # use 2021 and 2022 data only for the following fisheries:
-  dec.oct.trips[
-  ][ADP %in% c(ADPyear - 3, ADPyear - 2) & FMP_TARGET_STRATA %in% c(
-    "GOA Pacific Cod EM_POT",
-    "GOA Pacific Cod EM_HAL",
-    "GOA Pacific Cod HAL",
-    "GOA Pacific Cod POT",
-    "GOA Pacific Cod ZERO",
-    "BSAI Sablefish EM_POT",
-    "BSAI Sablefish HAL"),
-    .(RATIO = mean(THRU_DEC_TRIPS / THRU_OCT_TRIPS)), by = .(FMP_TARGET_STRATA)],
-  # use 2022 data only for the following fisheries:
-  dec.oct.trips[
-  ][ADP %in% c(ADPyear - 2) & FMP_TARGET_STRATA %in% c(
-    "GOA Pacific Cod TRW"),
-    .(RATIO = mean(THRU_DEC_TRIPS / THRU_OCT_TRIPS)), by = .(FMP_TARGET_STRATA)],
-  # group 3: overwrite the mean ratios with 1 for domains that are done by october
-  dec.oct.trips[
-  ][FMP_TARGET_STRATA %in% c(
-    "GOA Other EM_HAL",
-    "GOA Other EM_POT",
-    "GOA Other HAL",
-    "GOA Other TRW",
-    "GOA Other ZERO",
-    "BSAI Halibut EM_POT",
-    "BSAI Halibut POT",
-    "BSAI Halibut ZERO",
-    "BSAI Other POT",
-    "BSAI Pacific Cod EM_HAL",
-    "BSAI Pacific Cod EM_POT",
-    "BSAI Pacific Cod HAL",
-    "BSAI Pacific Cod POT",
-    "BSAI Pacific Cod TRW",
-    "BSAI Pacific Cod ZERO",
-    "BSAI Pollock EM_TRW_EFP",
-    "BSAI Sablefish EM_HAL",
-    "BSAI Sablefish ZERO"),
-    .(RATIO = 1), by = .(FMP_TARGET_STRATA)]
-)
+# predict ADPyear - 2 effort
+effort_strata[ADP == ADPyear - 2, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 2]), effort_strata[ADP == ADPyear - 2])]
 
-# check that the number of fmp, target, stratum combinations match
-if(length(unique(dec.oct.trips$FMP_TARGET_STRATA)) != length(unique(dec.oct.ratio$FMP_TARGET_STRATA))) {
-  stop("Domains don't match between trips and ratios.") }
+# predict ADPyear - 1 effort
+effort_strata[ADP == ADPyear - 1, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1]), effort_strata[ADP == ADPyear - 1])]
 
-# add fmp_target_strata to cumulative.trips.target and rearrange columns
-cumulative.trips.target <- cumulative.trips.target[, .(
-  ADP, TRIP_ID, FMP, TRIP_TARGET_CODE, STRATA, FMP_TARGET_STRATA = paste(FMP, TRIP_TARGET_CODE, STRATA, sep = " "), 
-  TRIP_TARGET_DATE, JULIAN_DATE, TRIPS, C_TRIPS)]
+# calculate residuals
+effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
 
-# add predicted ADPyear effort to cumulative.trips.target as just the projection of ADPyear-1 effort
-cumulative.trips.target <- rbind(
-  rbind(
-    # all cumulative trips available in the data
-    cumulative.trips.target,
-    # maximum cumulative trips for years prior to the most recent year, extended to the end of the year for graphing purposes
-    cumulative.trips.target[
-    ][ADP < ADPyear - 1, .(JULIAN_DATE = max(JULIAN_DATE), C_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)
-    ][, JULIAN_DATE := 366], 
-    fill = TRUE),
-  rbind(
-    # maximum cumulative trips for the most recent year (starting point for ADPyear projections)
-    cumulative.trips.target[
-    ][ADP == ADPyear - 1
-    ][, .(JULIAN_DATE = max(JULIAN_DATE), C_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)],
-    # maximum cumulative trips for the most recent year, projected to year's end using december/october effort ratios (end point for ADPyear projections)
-    dec.oct.ratio[
-      cumulative.trips.target[ADP == ADPyear-1], 
-      on = "FMP_TARGET_STRATA"
-    ][, .(JULIAN_DATE = 366, C_TRIPS = max(C_TRIPS * RATIO)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)]
-  )[, ADP := ADPyear], 
-  fill = TRUE
-)
+# plot retrospective predictions against actuals for ADPyear - 1
+p1 <- ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
+      geom_point() +
+      geom_abline(intercept = 0, slope = 1) +
+      theme_bw() +
+      theme(legend.position = "bottom") +
+      labs(x = "True stratum-specific trips in ADPyear - 1", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
 
-# plot cumulative trips by year and stratum
-# vertical lines signify date cutoff for ADPyear-1 data (red) and end of year (black)
+# plot retrospective residuals for ADPyear - 1
+p2 <- ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = RESIDUALS)) +
+      geom_histogram(bins = 20) +
+      geom_vline(xintercept = 0, color = "red") +
+      geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "red") +
+      theme_bw() +
+      labs(x = "Residuals")
 
-# EM_HAL
-p5 <- ggplot(cumulative.trips.target[STRATA == "EM_HAL", ], aes(JULIAN_DATE, C_TRIPS)) + 
-  plot_theme_cumulative_trips
-
-# EM_POT
-p6 <- ggplot(cumulative.trips.target[STRATA == "EM_POT", ], aes(JULIAN_DATE, C_TRIPS)) +
-  plot_theme_cumulative_trips
-
-# HAL
-p7 <- ggplot(cumulative.trips.target[STRATA == "HAL", ], aes(JULIAN_DATE, C_TRIPS)) +
-  plot_theme_cumulative_trips
-
-# POT
-p8 <- ggplot(cumulative.trips.target[STRATA == "POT", ], aes(JULIAN_DATE, C_TRIPS)) +
-  plot_theme_cumulative_trips
-
-# TRW
-p9 <- ggplot(cumulative.trips.target[STRATA == "TRW", ], aes(JULIAN_DATE, C_TRIPS)) +
-  plot_theme_cumulative_trips
-
-# ZERO
-p10 <- ggplot(cumulative.trips.target[STRATA == "ZERO", ], aes(JULIAN_DATE, C_TRIPS)) +
-  plot_theme_cumulative_trips
-
-# count total trips by domain and year
-total.trips.target <- cumulative.trips.target[, .(TOTAL_TRIPS = max(C_TRIPS)), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)]
-total.trips.year   <- total.trips.target[, .(TOTAL_TRIPS = sum(TOTAL_TRIPS)), by = .(ADP)]
-
-# since ADPyear effort is actually a projection of what we think ADPyear - 1 effort will do, make the two equal
-total.trips.year[ADP == ADPyear - 1, TOTAL_TRIPS := total.trips.year[ADP == ADPyear, TOTAL_TRIPS]]
-
-# add any Guess Variation Factor (GVF) to ADPyear effort
-gvf <- c(-0.05, 0.05)
-total.trips.year[ADP == ADPyear, ':=' (MIN = (1 + min(gvf)) * TOTAL_TRIPS, MAX = (1 + max(gvf)) * TOTAL_TRIPS)]
-
-p11 <- ggplot(total.trips.year, aes(x = ADP, y = TOTAL_TRIPS)) +
-  geom_errorbar(aes(ymin = MIN, ymax = MAX), color = "red", width = 0.2) +
-  annotate("text", x = ADPyear - 0.15, y = total.trips.year[ADP == ADPyear, mean(c(TOTAL_TRIPS, MAX))], label = "GVF") +
-  geom_point() +
-  geom_line() +
-  geom_point(data = total.trips.year[ADP >= ADPyear - 1], color = "red") +
-  scale_x_continuous(limits = c(ADPyear - 4, ADPyear + 0.25)) +
-  expand_limits(y = 0) +
-  labs(x = "Year", y = "Partial Coverage Trips") +
-  theme_classic()
-
-# png("output_figures/TripsPerYearGVF.png", width = 7, height = 5, units = 'in', res=300)
-# p11
+# png("Appendix_C/figures/EffortPredictionResiduals1.png", width = 7, height = 10, units = 'in', res=300)
+# grid.arrange(p1, p2)
 # dev.off()
 
-# calculate effort predictions for ADPyear, which are equal to the projected effort for ADPyear-1
-to_draw <- cumulative.trips.target[
-][ADP == ADPyear, .(C_TRIPS = round(max(C_TRIPS))), by = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)
-][order(FMP, TRIP_TARGET_CODE, STRATA)]
+# roll predictions forward one year
+effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], on = .(ADP, STRATA), all = TRUE)
 
-# create full year of effort to draw trips from
-# use January - October of ADPyear - 1 and November - December of ADPyear - 2
-draw_from <- rbind(efrt[ADP == ADPyear - 1], efrt[ADP == ADPyear - 2 & yday(START) > max.date])
+# recalculate residuals
+effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
 
-# relabel year to ADPyear
-draw_from[, ADP := ADPyear]
+# plot retrospecitve predictions against actuals for ADPyear
+p3 <- ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
+      geom_point() +
+      geom_abline(intercept = 0, slope = 1) +
+      theme_bw() +
+      theme(legend.position = "bottom") +
+      labs(x = "True stratum-specific trips in ADPyear", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
 
-# relabel zero coverage trips temporarily in order to facilitate the merge with to_draw and the prediction of effort
-draw_from[POOL == "ZE", STRATA := "ZERO"]
+# plot retrospective residuals for ADPyear 
+p4 <- ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
+      geom_histogram(bins = 20) +
+      geom_vline(xintercept = 0, color = "red") +
+      geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "red") +
+      theme_bw() +
+      labs(x = "Residuals")
 
-# match TRIP_TARGET_CODE to to_draw
-draw_from[, TRIP_TARGET_CODE := fcase(
-  !(TARGET %in% c("P", "B", "C", "I", "S")), "Other",
-  TARGET %in% c("P", "B"), "Pollock",
-  TARGET == "C", "Pacific Cod",
-  TARGET == "I", "Halibut",
-  TARGET == "S", "Sablefish",
-  default = "Other")]
+# png("Appendix_C/figures/EffortPredictionResiduals2.png", width = 7, height = 10, units = 'in', res=300)
+# grid.arrange(p3, p4)
+# dev.off()
 
-# add probability of trawl EM boats not taking an observer (efp_prob; based on data from vessels that have been in the program prior to ADPyear)
-# 2022-05-31 is the last day of the 2022 spring fisheries, and 2023-09-01 is the first day of the 2023 fall fisheries
-# by including trips after the 2022 spring fisheries have closed and before the 2023 fall fisheries have opened,
-# we calculate efp_prob based on the fall 2022 and spring 2023 seasons (the two most recent full seasons, 
-# as the fall 2023 fishery was not finished by the time Valhalla was compiled)  
-efp_prob <- unique(work.data[
+# predict total effort across strata with 95% prediction interval for ADPyear - 1  
+# https://stackoverflow.com/questions/39337862/linear-model-with-lm-how-to-get-prediction-variance-of-sum-of-predicted-value
+lm_predict <- function (lmObject, newdata, diag = TRUE) {
+  ## input checking
+  if (!inherits(lmObject, "lm")) stop("'lmObject' is not a valid 'lm' object!")
+  ## extract "terms" object from the fitted model, but delete response variable
+  tm <- delete.response(terms(lmObject))      
+  ## linear predictor matrix
+  Xp <- model.matrix(tm, newdata)
+  ## predicted values by direct matrix-vector multiplication
+  pred <- c(Xp %*% coef(lmObject))
+  ## efficiently form the complete variance-covariance matrix
+  QR <- lmObject$qr   ## qr object of fitted model
+  piv <- QR$pivot     ## pivoting index
+  r <- QR$rank        ## model rank / numeric rank
+  if (is.unsorted(piv)) {
+    ## pivoting has been done
+    B <- forwardsolve(t(QR$qr), t(Xp[, piv]), r)
+  } else {
+    ## no pivoting is done
+    B <- forwardsolve(t(QR$qr), t(Xp), r)
+  }
+  ## residual variance
+  sig2 <- c(crossprod(residuals(lmObject))) / df.residual(lmObject)
+  if (diag) {
+    ## return point-wise prediction variance
+    VCOV <- colSums(B ^ 2) * sig2
+  } else {
+    ## return full variance-covariance matrix of predicted values
+    VCOV <- crossprod(B) * sig2
+  }
+  list(fit = pred, var.fit = VCOV, df = lmObject$df.residual, residual.var = sig2)
+}
+
+# run model on independent variable values from ADPyear - 1
+pred <- lm_predict(effort_mod, effort_strata[ADP == ADPyear - 1], diag = FALSE)
+
+# verify that these match the ADPyear - 1 predictions that have already been rolled over to ADPyear
+identical(pred$fit, effort_strata[ADP == ADPyear, TOTAL_TRIPS_PRED])
+
+# save fitted values from the new function
+effort_strata[, TOTAL_TRIPS_PRED := ifelse(ADP >= ADPyear - 1, rep(pred$fit, 2), NA)][, RESIDUALS := NULL]
+
+# make total trips equal to predictions for years >= ADPyear - 1
+effort_strata[!is.na(TOTAL_TRIPS_PRED), TOTAL_TRIPS := TOTAL_TRIPS_PRED][, ":=" (PREDICTION = !is.na(TOTAL_TRIPS_PRED), TOTAL_TRIPS_PRED = NULL)]
+
+# summarize by year
+effort_year <- effort_strata[, .(TOTAL_TRIPS = sum(TOTAL_TRIPS), PREDICTION = unique(PREDICTION)), by = .(ADP)]
+
+# adjust the variance-covariance matrix with residual variance
+VCOV_adj <- with(pred, var.fit + diag(residual.var, nrow(var.fit)))
+
+# sum adjusted variance
+effort_year[ADP >= ADPyear - 1, var := rep(sum(VCOV_adj), 2)]
+
+# set alpha level for the prediction interval
+alpha <- 0.95
+
+# estimate t-values for the prediction interval
+Qt <- qt((1 - alpha) / 2, effort_mod$df.residual, lower.tail = FALSE)
+
+# estimate the prediction intervals for year-level estimates
+effort_year[, ':=' (se = sqrt(var), lwr = TOTAL_TRIPS - (Qt * sqrt(var)), upr = TOTAL_TRIPS + (Qt * sqrt(var)), var = NULL)]
+
+# estimate the prediction intervals for stratum-level estimates
+pred <- data.frame(predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1]), effort_strata[ADP == ADPyear - 1], interval = "prediction"))
+effort_strata[ADP >= ADPyear - 1, ":=" (se = (rep(pred$upr, 2) - TOTAL_TRIPS) / Qt, lwr = rep(pred$lwr, 2), upr = rep(pred$upr, 2))]
+
+# plot trips through December against trips through October by stratum through ADPyear - 1
+p5 <- ggplot(effort_strata[ADP <= ADPyear - 1], aes(x = MAX_DATE_TRIPS, y = TOTAL_TRIPS)) +
+      facet_wrap(STRATA ~ ., scales = "free") +
+      geom_point(aes(color = PREDICTION)) +
+      scale_color_manual(values = c("black", "red")) +
+      labs(x = "Trips Through Date of Analysis", y = "Trips Through December") +
+      theme_bw() +
+      theme(legend.position = "none")
+
+# png("Appendix_C/figures/MaxDateTrips.png", width = 7, height = 5, units = 'in', res=300)
+# p5
+# dev.off()
+
+# plot trips through December against year by stratum through ADPyear
+p6 <- ggplot(effort_strata, aes(x = ADP, y = TOTAL_TRIPS)) +
+      facet_wrap(STRATA ~ ., scales = "free") +
+      geom_point(aes(color = PREDICTION)) +
+      scale_color_manual(values = c("black", "red")) +
+      geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.2, color = "red") + 
+      geom_line() + 
+      geom_line(data = effort_strata[ADP >= ADPyear - 1], color = "red") +
+      scale_x_continuous(breaks = unique(effort_strata$ADP)) +
+      expand_limits(y = 0) +
+      labs(x = "Year", y = "Trips through December") +
+      theme_bw() +
+      theme(legend.position = "none")
+
+# plot trips through December against year through ADPyear
+p7 <- ggplot(effort_year, aes(x = ADP, y = TOTAL_TRIPS)) +
+      geom_point(aes(color = PREDICTION)) +
+      scale_color_manual(values = c("black", "red")) +
+      geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.2, color = "red") + 
+      geom_line() + 
+      geom_line(data = effort_year[ADP >= ADPyear - 1], color = "red") +
+      scale_x_continuous(breaks = min(effort_year$ADP):ADPyear) +
+      scale_y_continuous(labels = comma) +
+      expand_limits(y = 0) +
+      labs(x = "Year", y = "Partial Coverage Trips") +
+      theme_classic() +
+      theme(legend.position = "none")
+
+# png("Appendix_C/figures/TripsPerYear.png", width = 7, height = 5, units = 'in', res=300)
+# p7
+# dev.off()
+
+# estimate probability of trawl EM boats not taking an observer (efp_prob; based on data from vessels that have been in 
+# the program prior to ADPyear). 2022-05-31 is the last day of the 2022 spring fisheries, and 2023-09-01 is the first day 
+# of the 2023 fall fisheries. by including trips after the 2022 spring fisheries have closed and before the 2023 fall 
+# fisheries have opened, we calculate efp_prob based on the fall 2022 and spring 2023 seasons (the two most recent full 
+# seasons, as the fall 2023 fishery was not finished by the time Valhalla was compiled).  
+efp_prob <- efp_list[unique(work.data[
   TRIP_TARGET_DATE > as.Date("2022-05-31") & TRIP_TARGET_DATE < as.Date("2023-09-01") & 
-    VESSEL_ID %in% efp_list$PERMIT[efp_list$YEAR_ADDED < ADPyear] &
     TRIP_TARGET_CODE %in% c("P", "B") & AGENCY_GEAR_CODE %in% c("NPT", "PTR"),
-  .(TRIP_ID, COVERAGE_TYPE, STRATA, AGENCY_GEAR_CODE)
-])[, .SD[all(AGENCY_GEAR_CODE == "PTR")], by = .(TRIP_ID)
+  .(ADP, VESSEL_ID, TRIP_ID, COVERAGE_TYPE, STRATA, AGENCY_GEAR_CODE)
+]), on = c(PERMIT = "VESSEL_ID")
+][YEAR_ADDED <= ADP
+][, .SD[all(AGENCY_GEAR_CODE == "PTR")], by = .(TRIP_ID)
 ][, .N, by = .(COVERAGE_TYPE, STRATA)
 ][, .(STRATA, N, EFP_PROB = N / sum(N)), by = .(COVERAGE_TYPE)
-][STRATA == "EM_TRW_EFP"]
-draw_from[
-  PERMIT %in% efp_list$PERMIT & TRIP_TARGET_CODE == "Pollock" & AGENCY_GEAR_CODE == "PTR",
-  EFP_PROB := efp_prob[COVERAGE_TYPE == "PARTIAL", EFP_PROB]]
-efrt[
-  PERMIT %in% efp_list$PERMIT & TARGET %in% c("P", "B") & AGENCY_GEAR_CODE =="PTR", 
-  EFP_PROB := efp_prob[COVERAGE_TYPE == "PARTIAL", EFP_PROB]]              
-
-# compare the number of trips to draw (to_draw) to the number of trips available to be drawn (draw_from) 
-comp_draw <- merge(
-  to_draw[, .(ADP, FMP, TRIP_TARGET_CODE, STRATA, TO_DRAW = C_TRIPS)],
-  draw_from[, .(DRAW_FROM = uniqueN(TRIP_ID)), by = .(FMP, TRIP_TARGET_CODE, STRATA)],
-  on = .(FMP, TRIP_TARGET_CODE, STRATA), all = TRUE)
-
-# check that we're not trying to draw trips for which we don't have recent data
-to_draw_domains   <- unique(to_draw[C_TRIPS > 0, .(DOMAINS = paste(FMP, TRIP_TARGET_CODE, STRATA, sep = " "))])
-draw_from_domains <- unique(draw_from[, .(DOMAINS = paste(FMP, TRIP_TARGET_CODE, STRATA, sep = " "))])
-if(nrow(to_draw_domains[!(DOMAINS %in% unique(draw_from_domains$DOMAINS))]) != 0) {
-  warning("We expect effort in domains for which we don't have recent data")}
-
-# merge the predicted number of trips for each domain onto draw_from
-efrt_adpyear <- draw_from[to_draw, on = .(ADP, FMP, TRIP_TARGET_CODE, STRATA)]
-
-# rename cumulative trips column to be clear that this is the predicted number of trips to occur
-setnames(efrt_adpyear, "C_TRIPS", "TRIPS_PRED")
+][STRATA == "EM_TRW_EFP"]         
 
 # save effort predictions (to_draw) and the population of trips to sample from (draw_from)
-save(list = c("efrt", "efrt_adpyear", "gvf"), file = "source_data/effort_prediction.rdata")
+save(list = c("effort_year", "effort_strata", "efp_prob"), file = "source_data/effort_prediction.rdata")

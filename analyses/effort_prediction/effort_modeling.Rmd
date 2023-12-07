@@ -1,0 +1,126 @@
+---
+title: "Modeling Fishing Effort"
+output: html_document
+date: "`r Sys.Date()`"
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r start, echo = FALSE, warning = FALSE, message = FALSE}
+# get packages if they aren't already loaded
+if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
+if(!require("ggplot2"))   install.packages("ggplot2", repos='http://cran.us.r-project.org')
+
+# avoid scientific notation
+options(scipen = 9999)
+
+# user inputs
+ADPyear  <- 2024
+
+# get data object produced by get_data.R
+load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
+# https://drive.google.com/file/d/1xH-P54wW3vPXtaQmgEDxb3YgHh-yJlp8/view?usp=drive_link
+
+# get list of trawl EM EFP vessels
+efp_list <- fread("source_data/efp_list_2023-09-05.csv")
+# https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
+
+# isolate the years of data needed
+trips <- copy(work.data)[ADP < ADPyear - 1 & CVG_NEW == "PARTIAL" & AGENCY_GEAR_CODE != "JIG"]
+
+# select necessary columns
+trips <- trips[, .(YEAR = ADP, STRATA_NEW, AGENCY_GEAR_CODE, FMP, TRIP_ID)]
+
+# consolidate BS and AI FMPs to BSAI
+trips <- trips[FMP %in% c("BS", "AI"), FMP := "BSAI"]
+
+# base pool on strata_new
+trips <- trips[, POOL := fcase(STRATA_NEW %in% c("EM_HAL", "EM_POT", "EM_TRW_EFP"), "EM",
+                               STRATA_NEW %in% c("POT", "HAL", "TRW"), "OB",
+                               STRATA_NEW == "ZERO", "ZE")]
+
+# base strata_24 on strata_new
+trips <- trips[, STRATA_24 := sub("HAL", "FIXED", sub("POT", "FIXED", STRATA_NEW))]
+
+# base strata_24 on strata_new
+trips <- trips[, STRATA_24 := fcase(FMP == "BSAI" & STRATA_24 != "ZERO", paste0(STRATA_24, "_BSAI"),
+                                    FMP == "GOA"  & STRATA_24 != "ZERO", paste0(STRATA_24, "_GOA"),
+                                    STRATA_24 == "ZERO", "ZERO")]
+```
+
+
+# **Goal:** Replace the somewhat manual process of predicting effort for the ADP with a model based on past years of effort.  
+```{r dat, echo = FALSE}
+dat <- trips[YEAR >= 2016, .(TRIPS = uniqueN(TRIP_ID)), by = .(YEAR, STRATA_24)]
+```
+
+# **Models:**  
+```{r models}
+lm1 <- lm(TRIPS ~ YEAR, data = dat)
+lm2 <- lm(TRIPS ~ YEAR + STRATA_24, data = dat)
+lm3 <- lm(TRIPS ~ YEAR * STRATA_24, data = dat)
+```
+
+## Visualize predictions
+```{r plot, echo = FALSE, warning = FALSE, message = FALSE}
+dat[, ':=' (lm1 = predict(lm1), lm2 = predict(lm2), lm3 = predict(lm3))]
+
+plot_template <- list(geom_point(),  
+                      scale_x_continuous(breaks = 2013:2022),
+                      labs(x = "Year", y = "Number of partial coverage trips"),
+                      theme_bw())
+
+ggplot(dat, aes(x = YEAR, y = TRIPS)) +
+  geom_line(aes(y = lm1)) +
+  geom_line(aes(y = lm2), color = "blue") +
+  geom_line(aes(y = lm3), color = "red") +
+  facet_wrap(STRATA_24 ~ ., scale = "free_y") +
+  plot_template
+```
+
+## View diagnostic plots {.tabset .tabset-pills}
+
+### Model 1
+```{r diagnostics_1, echo = FALSE, warning = FALSE}
+par(mfrow=c(2,2))
+plot(lm1)
+```
+
+### Model 2
+```{r diagnostics_2, echo = FALSE, warning = FALSE}
+par(mfrow=c(2,2))
+plot(lm2)
+```
+
+### Model 3
+```{r diagnostics_3, echo = FALSE, warning = FALSE}
+par(mfrow=c(2,2))
+plot(lm3)
+```
+
+## Model summaries {.tabset .tabset-pills}
+
+### Model 1
+```{r summary_1, echo = FALSE, warning = FALSE}
+summary(lm1)
+```
+
+### Model 2
+```{r summary_2, echo = FALSE, warning = FALSE}
+summary(lm2)
+```
+
+### Model 3
+```{r summary_3, echo = FALSE, warning = FALSE}
+summary(lm3)
+```
+
+## ANOVA
+```{r anova}
+anova(lm1, lm2, lm3)
+```
+
+## AIC
+```{r aic}
+AIC(lm1, lm2, lm3)
+```
