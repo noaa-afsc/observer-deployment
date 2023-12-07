@@ -100,7 +100,7 @@ p2 <- ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = RESI
       theme_bw() +
       labs(x = "Residuals")
 
-# png("output_figures/EffortPredictionResiduals1.png", width = 7, height = 10, units = 'in', res=300)
+# png("Appendix_C/figures/EffortPredictionResiduals1.png", width = 7, height = 10, units = 'in', res=300)
 # grid.arrange(p1, p2)
 # dev.off()
 
@@ -126,7 +126,7 @@ p4 <- ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
       theme_bw() +
       labs(x = "Residuals")
 
-# png("output_figures/EffortPredictionResiduals2.png", width = 7, height = 10, units = 'in', res=300)
+# png("Appendix_C/figures/EffortPredictionResiduals2.png", width = 7, height = 10, units = 'in', res=300)
 # grid.arrange(p3, p4)
 # dev.off()
 
@@ -207,7 +207,7 @@ p5 <- ggplot(effort_strata[ADP <= ADPyear - 1], aes(x = MAX_DATE_TRIPS, y = TOTA
       theme_bw() +
       theme(legend.position = "none")
 
-# png("output_figures/MaxDateTrips.png", width = 7, height = 5, units = 'in', res=300)
+# png("Appendix_C/figures/MaxDateTrips.png", width = 7, height = 5, units = 'in', res=300)
 # p5
 # dev.off()
 
@@ -239,7 +239,7 @@ p7 <- ggplot(effort_year, aes(x = ADP, y = TOTAL_TRIPS)) +
       theme_classic() +
       theme(legend.position = "none")
 
-# png("output_figures/TripsPerYear.png", width = 7, height = 5, units = 'in', res=300)
+# png("Appendix_C/figures/TripsPerYear.png", width = 7, height = 5, units = 'in', res=300)
 # p7
 # dev.off()
 
