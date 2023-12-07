@@ -1,0 +1,155 @@
+---
+title: "Bootstrapping Predicted Fishing Effort"
+author: "Geoff_Mayhew"
+date: "2023-11-01"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# Load packages
+library(data.table)
+library(ggplot2)
+library(gridExtra)
+library(flextable)
+
+knitr::opts_chunk$set(echo = F, warning = F)
+load("effort_bootstrap.rdata") # Download from Geoff's ancillary documents google folder: https://drive.google.com/file/d/1DOtwnwyVKuotQ_VrKQybvzwP7SlLwCgN/view?usp=drive_link
+```
+
+When planning what rates to set for the next ADP year, we need a estimate of fishing effort as the number of sample units (i.e., fishing trips or offloads) in each stratum, a monitoring budget, and an estimate of costs. In addition, the *proximity* allocation method needs to quantify the spatiotemporal proximity of the fishing effort within each stratum. This means that we have to use fishing trips from the recent past to represent the future, use our effort predictions to sample from this prior fishing, and generate bootstrapped fishing populations upon which the allocation algorithm can operate. We will use the average of the allocated rates across the bootstrapped populations as the prescribed rates for the upcoming year. These methods are similar to those use in prior years when the the *15% minimum plus optimized* allocation method was employed, and used sampling with replacement when building bootstrapped fishing effort populations. One concern with using sampling with replacement is that the resulting fishing effort may not have the same spatiotemporal characteristics as the prior fishing as entire boxes (categories of space and time) may not be represented or others may be over-represented. This may be a greater issue for strata with fewer trips, as it is more likely that a greater proportion of boxes will not be represented in the bootstrapped populations, leading to more 'clumped' populations than intended that the allocation algorithm will therefore under-allocate.
+
+To validate these concerns, we built bootstrapped populations using sampling with and without replacement as well as included a broader time range of prior fishing to sample from, using two or three years compared to just one. Under each bootstrapping method, we calculate the *proximity indices* of each stratum assuming a 15% selection rate and compared these to the proximity values that would have resulted from a 15% selection rate with 'actual' fishing effort. Similarly, the allocated rates from each bootstrapped population were also compared to those from 'actual' fishing effort. Bootstrapping was performed to predict proximity and rates for years 2018-2023 (using earlier years as prior fishing effort back to 2015) so that the performance of the different bootstrapping methods could be compared across years. The most robust bootstrapping method will ideally have the lowest bias and error compared to actual fishing in both the proximity indices and allocated rates. Note that in this exercise, we are evaluating the methods in terms of their predictive ability (using past to predict the future), and not validating these methods in how well they capture the spatiotemporal arrangement of the prior fishing (although this is important and generally results in better predictions).
+
+For each bootstrap iteration of predicted fishing effort (100 per method per year), we will assume a perfect prediction of the next year's fishing effort. That is, for a given year's prediction, we will draw the actual number of fishing trips that happened for that year. This way, we can attribute any differences versus actual as being due to differences in how each bootstrap method differs in the spatiotemporal arrangement of their populations and how those differences among strata affect the allocated rates.
+
+#### Four bootstrapping methods:
+
+- [*swr_1*] : Sampling *with* replacement using prior 1 year of fishing effort (existing method)
+- [*swor_3*] : Sampling *without* replacement using prior 3 years of fishing effort 
+- [*swor_2*] : Sampling *without* replacement using prior 2 years of fishing effort 
+- [*swor_1*] : Sampling *without* replacement using prior 1 year of fishing effort (if # trips to draw is higher than # of trips in prior year, draw all trips once (or twice if necessary!) and then draw the remaining number of trips without replacement)
+
+### Proximity {.tabset .tabset-pills}
+
+In the 'proximity' allocation method, the proximity index is typically calculated for each stratum for a wide vector of assumed sample rates. It is the expected number of trips in the stratum that are sampled or neighboring a sampled trip (within 600km and a 3-week span). For the sake of comparison, we assessed proximity at a 15% selection rate for all strata. Ideally, a method will have an average predicted proximity that is similar to that of the actual value with minimal bias and error. An overestimate of proximity will result in under allocation and vice-versa. 
+
+#### Original
+
+```{r prox og, fig.width = 10, fig.height = 6} 
+grid.arrange(plot_prox_lst$original)
+```
+
+#### Free Y-axis
+
+```{r prox free, fig.width = 10, fig.height = 6} 
+grid.arrange(plot_prox_lst$free)
+```
+
+###
+
+**Figure 1.** Proximity of each stratum (using 2024 stratum definitions applied to past fishing effort back to 2015) assuming a 15% selection rate from four bootstrapping methods. The same results are presented with a unified and free y-axis. Black lines/dots represent 'actual' value, and annotated numbers above those is the number of trips in the stratum that year.
+
+
+It's little surprise that *swor_1* has the least variability among iterations because if effort doesn't change much in a stratum from year to year, the prediction is essentially a carbon copy of the effort from the previous year. In most cases, the bootstrapped populations differ in only a few trips and therefore the proximity values are virtually identical.  *swr_1* quite similar to *swor_1* and has less variability in proximity among iterations than either *swor_2* or *swor_3*.
+We can also plot the same data, but use the difference of the mean of each method minus the actual, or mean(Predict) - Actual
+
+```{r plot_prox_mean_diff, fig.width = 10, fig.height = 4}
+plot_prox_diff_mean
+```
+
+**Figure 2.** Average differences of 15% proximity relative to 'actual' for each bootstrap method.
+
+
+All methods struggle with OB_TRW-BSAI because the number of trips bounce around year to year (e.g., 31, 14, 37, 15). However, all methods generally are able to predict proximity within +/- 0.1, if not 0.05.
+
+Overall it seems like all the methods give reasonable estimates. After calculating the mean across iterations for each method, stratum, and year, We can calculate the bias and error (relative to 'actual') for each method, with summaries by stratum and overall:
+
+```{r stratum_prox_bias_error, fig.width = 10, fig.height = 4}
+plot_stratum_prox_bias_error
+```
+
+**Figure 3.** Bias and mean squared error of 15% proximity estimates of the four bootstrap methods for each stratum.
+
+We see here that at over the 2018-2023 period, the *swor_3* and *swor_2* methods both tend to underestimate proximity in general. This does make sense, because in a given fishing year, fishing tends to be focused in certain spans of time and space, and these 'cluster's of fishing probably don't persist perfectly year to there. Therefore, if we piece together fishing effort from multiple years, we are probably creating a more diffuse prediction of fishing effort compared to what is observed. The *swor_1* method looks very similar to *swr_1* but has overall less bias, especially for the EM_FIXED-GOA and EM_FIXED-BSAI strata. The errors are generally similar, again with *swor_3* performing the worst.
+
+
+**Table 1.** Bias and mean squared error (MSE) of predictions of 15% proximity from four bootstrapping methods for years 2018-2023 and across all strata.
+
+```{r prox_tbl} 
+prox_tbl
+```
+
+
+*swor_1* has the lowest bias, on average overestimating proximity by only 0.0021 points. *swor_2* has the lowest MSE, but is 10x more biased than *swor_1*. The vast majority of the error in *swor_1* and *swr_1* can be attributed to their predictions for OB_TRW-BSAI, which was pointed out above as having very low and relatively highly variable fishing effort year to year.
+
+
+### Rates {.tabset .tabset-pills}
+
+Omitting Zero and EM_TRW strata, as we will not be allocating to those strata in the 2024 ADP.
+
+#### Original
+
+```{r rates og, fig.width = 10, fig.height = 6} 
+grid.arrange(plot_rates_lst$original)
+```
+
+#### Free Y-axis
+
+```{r rates free, fig.width = 10, fig.height = 6} 
+grid.arrange(plot_rates_lst$free)
+```
+
+###
+
+**Figure 4.** Allocated rates of each stratum (using 2024 stratum definitions applied to past fishing effort back to 2015) assuming a 15% selection rate from four bootstrapping methods. The same results are presented with a unified and free y-axis.
+
+
+Again, we can look at just the means of across iterations and compare vs 'actual':
+
+
+```{r plot_rates_mean_diff, fig.width = 10, fig.height = 4}
+plot_rates_diff_mean
+```
+
+**Figure 5.** Average differences of allocated rates relative to 'actual' for each bootstrap method.
+
+
+All methods are generally able to prescribe rates within +/- 2.5 percentage points of actual. Notice that all methods tended to over prescribe selection rates in year 2021. We will come back to this later, as this is due to changes to trip durations that occur year to year, and 2021 was a particular departing from the past. It seems like as more years of data used for 'prior' fishing, the greater the overestimation of sample rates.
+
+Again, we can calculate bias and error at the method X stratum level and method overall:
+
+
+```{r stratum_rates_bias_error, fig.width = 10, fig.height = 4}
+plot_stratum_rates_bias_error
+```
+
+**Figure 6.** Bias and mean squared error of allocated sample rate estimates of the four bootstrap methods for each stratum.
+
+
+Note that the patterns seen in proximity above are essentially opposite those seen in the prescribed rates, as an overestimation of proximity results in an underallocation of sampling. Also again, it appears that *swor_1* is the least biased and does not appear to have any extreme MSE measures.
+
+
+
+**Table 2.** Bias, and mean squared error (MSE) of predictions of allocated rates from four bootstrapping methods for years 2018-2023.
+
+```{r rates_tbl} 
+rates_tbl
+```
+
+*swr_1* has the lowest bias measure, but we can see above that this is due to EM_FIXED-BSAI cancelling out biases from the other strata. *swor_1* actually ends up with the lowest MSE and maintains a very low positive bias. 
+
+
+### Trip Duration
+
+It is apparent that in some years, sample rates for all methods were overestimated relative to 'actual', and this is apparently due to changes in trip duration. The transition from 2020 to 2021 in particular should be noted, as the average trip duration for virtually all strata increased. Therefore, the 'actual' 2021 rates were lower than all bootstrap methods because fewer trips could be afforded. The bootstrapped methods, all using prior fishing effort with shorter trip durations, assumed that a higher sample rate could be afforded. Predicting such changes to average trip duration is something the ADP team has not (and probably should not/cannot) predict. The ability to accurately prescribe the ideal allocated rates therefore relies on a reasonable estimate of fishing effort within each stratum, bootstrapped populations that reasonably predict the spatiotemporal arrangement of trips, and the assumption that the trip durations of prior fishing will match those of the upcoming year. What we see is that if we only use the most recent 1-year of fishing, we generally get more accurate predictions because it not only results in a closer match of *proximity*, but trip durations are also more similar to the next year. 
+
+
+```{r trip duration, fig.width = 8, fig.height = 4} 
+plot_trip_duration
+```
+
+**Figure 7.** Average trip durations of trips in strata to be sampled in the 2024 ADP, for years 2015-2023.
+
+
+
+

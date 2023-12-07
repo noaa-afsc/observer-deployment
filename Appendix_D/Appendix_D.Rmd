@@ -1,0 +1,54 @@
+---
+title: "Appendix D outputs"
+author: "Geoff_Mayhew"
+date: "2023-11-16"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+# Load packages
+library(data.table)
+library(ggplot2)
+library(gridExtra)
+library(flextable)
+library(magrittr)
+
+# Load data:
+load("../analyses/effort_prediction/appendix_D.rdata")
+```
+
+
+Table D-1.
+```{r table_d_1}
+table_d_1_flex
+```
+
+\newpage
+Table D-2.
+```{r table_d_2}
+table_d_2_flex %>%
+  compose(j = 1, value = as_paragraph(toupper(.)), use_dot = T) %>%
+  italic(j = 1)
+```
+
+
+Table D-3.
+```{r table_d_3}
+table_d_3_flex %>%
+  compose(j = 1, value = as_paragraph(toupper(.)), use_dot = T) %>%
+  italic(j = 1)
+```
+
+\newpage
+
+```{r save figures}
+# save plots as pngs to Appendix_D/figures
+ggsave(filename = "figures/figure_d_1.png", figure_d_1, width = 6, height = 6, units = "in")
+ggsave(filename = "figures/figure_d_2.png", figure_d_2, width = 10, height = 4, units = "in")
+ggsave(filename = "figures/figure_d_3.png", figure_d_3, width = 10, height = 4, units = "in")
+ggsave(filename = "figures/figure_d_4.png", figure_d_4, width = 6, height = 6, units = "in")
+ggsave(filename = "figures/figure_d_5.png", figure_d_5, width = 10, height = 4, units = "in")
+ggsave(filename = "figures/figure_d_6.png", figure_d_6, width = 10, height = 4, units = "in")
+```
