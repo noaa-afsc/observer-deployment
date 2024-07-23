@@ -1,6 +1,6 @@
 # User inputs -------------------------------------------------------------
-ADPyear     <- 2024     # Enter numeric year you are doing the ADP for
-ADP_version <- "Final"  # Enter "Draft" or "Final"
+ADPyear     <- 2025     # Enter numeric year you are doing the ADP for
+ADP_version <- "Draft"  # Enter "Draft" or "Final"
 EM_final    <- "N"      # Is the final EM list approved? Y/N (caps)
 options(scipen = 9999)  # Avoid scientific notation
 
@@ -29,17 +29,17 @@ PSC <-
                             else 0 end) as psc_total_catch,
                    sum(psc_total_mortality_weight) as psc_total_mortality_weight
                    FROM akfish_report.v_cas_psc
-                   WHERE year >=", ADPyear - 12,"
+                   WHERE year >=", ADPyear - 4,"
                    AND el_report_id is not null
                    GROUP BY year, el_report_id, species_group_code"))
 
 # * PCTC ----
-pctc <- if(ADP_version == "Draft") {
-  read.csv("source_data/pctc_list_2023-08-18.csv")
-} else {
-  read.csv("source_data/pctc_list_2023-09-19.csv")
-  # https://drive.google.com/file/d/1qf2mf9TNCYXk6fx7sXjveDdWGQr97dGE/view?usp=drive_link
-}
+pctc <- dbGetQuery(channel_akro, 
+                   "SELECT DISTINCT llp.current_vessel_id vessel_id, llp.current_vessel_name vessel_name
+                    FROM akfish.v_llp_groundfish_license llp
+                    JOIN akfish.pctc_llp_initial_quota_share qs ON substr(llp.license,4,4) = qs.license_number
+                    WHERE llp.current_vessel_id is not null
+                    ORDER BY vessel_name")
 
 # * Voluntary full coverage ----
 #   Requests to join must be made prior to October 15  
