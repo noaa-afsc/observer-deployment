@@ -44,47 +44,33 @@ pctc <- dbGetQuery(channel_akro,
 # * Voluntary full coverage ----
 #   Requests to join must be made prior to October 15  
 BSAIVoluntary <-
-  dbGetQuery(channel_afsc,
+  dbGetQuery(channel_akro,
              if(ADP_version == "Draft" | Sys.Date() < paste0(ADPyear-1, "-10-15")){
-               paste(
-                 " -- From Andy Kingham
-                 SELECT extract(year from ovsp.end_date) as year, 
-                 ovsp.*,
-                 lv.name,
-                 lv.permit as vessel_id,
-                 aos.DATE_OPTED,
-                 DECODE(aos.opt_in_out, 'R', 'Requested, Approved', 'D', 'Denied', 'A', 'Appealed, Approved') opt_in_out_status
-                 FROM norpac.odds_vessel_sample_plan ovsp
-                 JOIN norpac.atl_lov_vessel lv
-                 ON lv.vessel_seq = ovsp.vessel_seq
-                 JOIN norpac.odds_eligible_opt_strata eos
-                 ON eos.VESSEL_SEQ = ovsp.VESSEL_SEQ
-                 AND eos.sample_plan_seq = ovsp.sample_plan_seq
-                 JOIN norpac.odds_annual_opt_strata aos
-                 ON aos.ELIGIBLE_OPT_SEQ = eos.ELIGIBLE_OPT_SEQ 
-                 WHERE ovsp.SAMPLE_PLAN_SEQ = 8
-                 AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 2, "
-                 AND aos.year_eligible = ", ADPyear - 1, "")} else
-                   paste(
-                     " -- From Andy Kingham
-                     SELECT extract(year from ovsp.end_date) as year,
-                     ovsp.*,
-                     lv.name,
-                     lv.permit as vessel_id,
-                     aos.DATE_OPTED,
-                     DECODE(aos.opt_in_out, 'R', 'Requested, Approved', 'D', 'Denied', 'A', 'Appealed, Approved') opt_in_out_status
-                     FROM norpac.odds_vessel_sample_plan ovsp
-                     JOIN norpac.atl_lov_vessel lv
-                     ON lv.vessel_seq = ovsp.vessel_seq
-                     JOIN norpac.odds_eligible_opt_strata eos
-                     ON eos.VESSEL_SEQ = ovsp.VESSEL_SEQ
-                     AND eos.sample_plan_seq = ovsp.sample_plan_seq
-                     JOIN norpac.odds_annual_opt_strata aos
-                     ON aos.ELIGIBLE_OPT_SEQ = eos.ELIGIBLE_OPT_SEQ 
-                     WHERE ovsp.SAMPLE_PLAN_SEQ = 8
-                     AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 1, "
-                     AND aos.year_eligible = ", ADPyear, "")
-  )
+               paste0(
+                 "select distinct 
+                  ev.vessel_id, ev.begin_date, ev.end_date, v.name as vessel_name, e.name as eligibility, trunc(ev.last_modified_date) as last_modified_date
+                  from akfish.eligible_vessel ev
+                  join akfish.eligibility e on e.id = ev.eligibility_id
+                  join akfish_report.vessel v on v.vessel_id = ev.vessel_id
+                  where e.name = 'CV FULL COVERAGE'
+                  and v.end_date is null
+                  and v.expire_date is null
+                  and extract(year from ev.begin_date) < ", ADPyear,"
+                  and (ev.end_date is null or extract(year from ev.end_date) >= ", ADPyear - 1,")
+                  order by v.name")} else
+                   paste0(
+                     "select distinct 
+                      ev.vessel_id, ev.begin_date, ev.end_date, v.name as vessel_name, e.name as eligibility, trunc(ev.last_modified_date) as last_modified_date
+                      from akfish.eligible_vessel ev
+                      join akfish.eligibility e on e.id = ev.eligibility_id
+                      join akfish_report.vessel v on v.vessel_id = ev.vessel_id
+                      where e.name = 'CV FULL COVERAGE'
+                      and v.end_date is null
+                      and v.expire_date is null
+                      and extract(year from ev.begin_date) < ", ADPyear + 1,"
+                      and (ev.end_date is null or extract(year from ev.end_date) >= ", ADPyear,")
+                      order by v.name")
+             )
 
 # * Partial Coverage CPs ----
 #   Requests to join must be made prior to July 1  
