@@ -5,6 +5,8 @@ EM_final    <- "N"      # Is the final EM list approved? Y/N (caps)
 options(scipen = 9999)  # Avoid scientific notation
 
 # Get packages ------------------------------------------------------------
+if(!require("devtools"))  install.packages("devtools")
+if(!require("FMAtools")) install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
 if(!require("odbc")) install.packages("odbc", repos='http://cran.us.r-project.org')
 if(!require("ROracle")) install.packages("ROracle", repos='http://cran.us.r-project.org')
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
@@ -153,8 +155,9 @@ FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT as vessel_id, length a
 work.data <- dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla"))
 
 # Load data from current year
-load("source_data/2023-11-17cas_valhalla.RData")
-# https://drive.google.com/file/d/1_cSszEnp7WgAx3alI7nlg6fkXQZz-0eq/view?usp=drive_link
+AnnRpt_DepChp_dribble <- gdrive_set_dribble("Projects/AnnRpt-Deployment-Chapter")
+gdrive_download("source_data/2024-04-15cas_valhalla.Rdata", AnnRpt_DepChp_dribble)
+load("source_data/2024-04-15cas_valhalla.Rdata")
 
 # Append data from current year to data from prior year
 work.data <- rbind(work.data, valhalla)
