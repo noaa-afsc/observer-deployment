@@ -27,7 +27,7 @@ library(odbc)               # For database connectivity
 ## Connect to Shared Google Drive ----
 #=====================================#
 
-
+#' TODO upload/download using the Gdrive when the source data and outputs are available.
 
 #===============#
 ## Load data ----
@@ -109,13 +109,16 @@ ob_trips_predict_days <- ob_trips_predict_days[, .(DAYS = mean(DAYS)), keyby = .
 pc_effort_st[, MOD_DAYS := ob_trips_predict_days[pc_effort_st, DAYS, on = .(TRIP_ID)]]
 pc_effort_st[, DAYS := fcase(!is.na(DAYS), DAYS, !is.na(MOD_DAYS), MOD_DAYS)][, MOD_DAYS := NULL]
 # For non-observer strata, simply use the end - start + 1 method
-pc_effort_st[is.na(DAYS), DAYS := as.numeric(
-  1 + max(TRIP_TARGET_DATE, LANDING_DATE) - min(TRIP_TARGET_DATE, LANDING_DATE), units = "days"
-), by = .(TRIP_ID)]
+pc_effort_st[
+  is.na(DAYS), DAYS := as.numeric(
+    1 + max(TRIP_TARGET_DATE, LANDING_DATE) - min(TRIP_TARGET_DATE, LANDING_DATE), units = "days"
+  ), by = .(TRIP_ID
+)]
 if(nrow(pc_effort_st[is.na(DAYS)])) stop("Some records are still missing DAYS")
 
 # Re-assign the ADP Year
 pc_effort_st[, ADP := 2025]
+setkey(pc_effort_st, STRATA)
 
 #=======================#
 ## Monitoring  Costs ----
@@ -154,6 +157,9 @@ cost_params <- list(
   )
 )
 
+#' [Set the budget(s) to evaluate]
+#' budget_lst <- list(4.8e6 + 1.019e6)        *UPDATE THIS* [Budget of $5,819,000 used in the 2024 ADP]
+budget_lst <- list(4.0e6)   #' *Bleak estimate given fee revenues minus some trawl EM costs and no additional funds*
 
 #========================#
 ## Trawl EM Carve-off ----
@@ -161,129 +167,26 @@ cost_params <- list(
 
 #' TODO *Estimate the total costs of trawl EM for 2025, then subtract from the estimated budget*
 
+#====================================#
+## Determine Trip Selection Rates ----
+#====================================#
 
-#================#
-## Parameters ----
-#================#
-
-#'budget_lst <- list(4.8e6 + 1.019e6)  #' TODO *UPDATE THIS* [Budget of $5,819,000 used in the 2024 ADP]
-budget_lst <- list(4.0e6)   #' *Bleak estimate given fee revenues minus some trawl EM costs and no additional funds*
-
-#' Number of bootstrap iterations. Typically do 1K each. 
-#' TODO *Until we have an effort prediction, just use 1 bootstrap iteration, using actual N as our 'prediction'*
-bootstrap_iter <- 1
-#bootstrap_iter <- 1000
-#sim_iter <- 1000   #' Simulations of trip selection will be used later for creating distribution of cost estimates
-
-
-#=======================================#
-## Generate Bootstrapped Populations ----
-#=======================================#
-
-#==============================#
-### Sample with replacement ----
-#==============================#
+#=========================#
+### Bootstrap sampling ----
+#=========================#
 
 #' TODO  Use the outputs of effort_prediction.R, specifically 'effort_strata[ADP == 2024]', to predict the total number of
 #' trips to sample for each stratum
 
-# sample_N <- copy(effort_strata[ADP == 2024])[
-# ][, STRATA := gsub("_BSAI", "-BSAI", STRATA)
-# ][, STRATA := gsub("_GOA", "-GOA", STRATA)
-# ][, STRATA := gsub("_EFP", "", STRATA)
-# ][!(STRATA %like% "EM|ZERO"), STRATA := paste0("OB_", STRATA)
-# ][, N := round(TOTAL_TRIPS)]
-# sample_N <- sample_N[, .(STRATA, N)]
 #' TODO *For now just use number in dataset as a placeholder*
 sample_N <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(STRATA)]
+boot_lst <- bootstrap_allo(pc_effort_st, sample_N, bootstrap_iter = 1)
 
-setkey(pc_effort_st, STRATA)
-pc_effort_lst <- split(pc_effort_st, by = "STRATA")
-
-# Make sure names and ordering are the same
-if(!identical(names(pc_effort_lst), sample_N$STRATA)) stop("Stratum names/order are not the same!")
-
-# Initialize bootstrap list
-swor_boot_lst <- vector(mode = "list", length = bootstrap_iter)
-
-# Run the bootstrap loop. Takes ~4.5 hours to complete 1000 bootstrap iterations.
-#' TODO *Make the bootstrapping allocation a function.*
-set.seed(12345)
-for(k in seq_len(bootstrap_iter)) {
-  # k <- 1
-  cat(k, ", ")
-  
-  # Bootstrap using adp_strata_N to sample each stratum's population size size
-  swor_bootstrap.effort <- rbindlist(Map(
-    function(prior, strata_N) {
-      # prior <- pc_effort_lst[[5]]; strata_N <- sample_N$N[5]
-      
-      # Create vector of TRIP_IDs
-      trip_ids <- unique(prior$TRIP_ID)
-      # How many times does prior effort go into future effort?
-      prior_vs_future <- floor(strata_N / length(trip_ids))
-      # What number of trips should be sampled without replacement?
-      swr_n <- strata_N - (length(trip_ids) * prior_vs_future)
-      # Create dt of trip_ids
-      sampled_trip_ids <- data.table(
-        TRIP_ID = c(
-          # Repeat trip_id prior_vs_future times
-          rep(trip_ids, times = prior_vs_future), 
-          # Sample without replacement using swr_n
-          sample(trip_ids, size = swr_n, replace = F)
-        )
-      )
-      sampled_trip_ids[, I := .I]
-      # Bring in each trip's data
-      bootstrap_sample <- prior[sampled_trip_ids, on = .(TRIP_ID), allow.cartesian = T]
-    }, 
-    prior = pc_effort_lst,
-    strata_N = sample_N$N
-  ))
-  
-  # Re-assign trip_id so that we can differentiate trips sampled multiple times
-  swor_bootstrap.effort[, TRIP_ID := .GRP, keyby = .(ADP, STRATA, BSAI_GOA, TRIP_ID, I)]
-  if(uniqueN(swor_bootstrap.effort$TRIP_ID) != sum(sample_N$N)) stop("Count of TRIP_IDs doesn't match!")
-  
-  # [2024 only] Apply the Trawl EM EFP opt-in probability, move those that 'opt-out' into OB_TRW-GOA
-  # em_trw_id <- unique(swor_bootstrap.effort[STRATA == "EM_TRW-GOA", TRIP_ID ])
-  # # Randomly sample vessels as opting in (TRUE) or out (FALSE) of the EFP. We will use the 'expected' number of trips
-  # # opting out rather than allowing it to be stochastic so that STRATA_N does not vary between iterations.
-  # trw_em_opt_out_N <- round(sample_N[STRATA == "EM_TRW-GOA", N] * efp_prob[COVERAGE_TYPE == "PARTIAL", 1 - EFP_PROB])
-  # trw_em_opt_out_id <- sample(em_trw_id, size = trw_em_opt_out_N)
-  # swor_bootstrap.effort[TRIP_ID %in% trw_em_opt_out_id, ':=' (POOL = "OB", STRATA = "OB_TRW-GOA")]
-  
-  # Define boxes of bootstrapped effort
-  swor_bootstrap.box <- define_boxes(
-    swor_bootstrap.effort, c(2e5, 2e5), time = c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"),
-    year_col = "ADP", stratum_cols = c("STRATA"), geom = F, ps_cols = c("GEAR"))
-  # Calculate each stratum's mean trip duration of bootstrapped effort
-  swor_bootstrap.allo_lst <- list(effort = unique(swor_bootstrap.effort[, .(ADP, STRATA, BSAI_GOA, TRIP_ID, DAYS)])[
-  ][, .(STRATA_N = uniqueN(TRIP_ID), TRP_DUR = mean(DAYS)), keyby = .(ADP, STRATA)])
-  
-  # Calculate rates afforded with the specified budget
-  #' [NOTE] The `allo_prox()` function currently excludes the "EM_TRW" strata by default.
-  swor_bootstrap.rates <- allo_prox(
-    swor_bootstrap.box, swor_bootstrap.allo_lst, cost_params, budget_lst[[1]], max_budget = 7e6, index_interval = 0.0001
-  )
-  # Capture results of iteration
-  swor_boot_lst[[k]] <- list(
-    rates = swor_bootstrap.rates,
-    strata_N = sample_N
-  )
-  
-}
-
-# Save the outputs of the bootstrapping and allocation
-if(F) save(swor_boot_lst, file = "results/swor_boot_lst.rdata")
+#' TODO Save the outputs of the bootstrapping and allocation
+if(F) save(boot_lst, file = "results/swor_boot_lst.rdata")
 
 # Extract the results from each iteration
-boot_dt <- rbindlist(lapply(swor_boot_lst, "[[", "rates"), idcol = "BOOT_ITER")
-
-
-#=============================#
-# Determine Rates for 2024 ----
-#=============================#
+boot_dt <- rbindlist(lapply(boot_lst, "[[", "rates"), idcol = "BOOT_ITER")
 
 ggplot(boot_dt, aes(x = STRATA, y = SAMPLE_RATE)) + geom_violin(draw_quantiles = 0.5) + 
   facet_wrap(.~ STRATA, scales = "free") + stat_summary(geom = "point", fun = mean)
@@ -292,8 +195,9 @@ ggplot(boot_dt, aes(x = STRATA, y = SAMPLE_RATE)) + geom_violin(draw_quantiles =
   stat_summary(geom = "point", fun = mean) + labs(x = "Stratum", y = "Sample Rate") + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + geom_hline(yintercept = 0)
 
-# Calculate the rates to use as the mean across iterations. Also calculate average proximity (ISPN) and cv_scaling metrics
-rates_adp <- boot_dt[, lapply(.SD, mean), .SDcols = c("SAMPLE_RATE", "n", "ISPN", "CV_SCALING", "INDEX"), keyby = .(ADP, STRATA, STRATA_N)]
+# Calculate the rates to use as the mean across iterations. Also calculate average proximity (PROX) and cv_scaling metrics
+rates_adp <- boot_dt[, lapply(.SD, mean), .SDcols = c("SAMPLE_RATE", "n", "PROX", "CV_SCALING", "INDEX"), keyby = .(ADP, STRATA, STRATA_N)]
 rates_adp
-# Ooof... With a $4M budget, only 6.5% in GOA , 18-20% in BSAI for observers.
 
+#' Ooof... With a $4M budget, only 6.5% in GOA , 18-20% in BSAI for observers. Although, the cost function for observer
+#' costs is hopefully currently overestimating costs at this scale, but we'll see...
