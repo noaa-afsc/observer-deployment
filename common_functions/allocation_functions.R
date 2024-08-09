@@ -606,7 +606,92 @@ allo_equal <- function(x, budget){
 
 ## Proximity -----------------------------------------------------------------------------------------------------------
 
-#' This was the version used inthe 2024 Final ADP in the final_rates.R script. Used `calculate_interspersion_gs`
+#' Bootstrap fishing effort for each stratum, sampling trips without replacement.
+#' `sample_N` is a data.table of columns `STRATA` and the predicted number of trips as `sample_N`.
+bootstrap_allo <- function(pc_effort_st, sample_N, bootstrap_iter = 1, seed = 12345) {
+  #' [Defaults to use when effort_prediction.R is not yet run]
+  # effort_pred_n <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)]; bootstrap_iter <- 1
+  
+  pc_effort_lst <- split(pc_effort_st, by = "STRATA")
+  
+  # Make sure names and ordering are the same
+  if(!identical(names(pc_effort_lst), sample_N$STRATA)) stop("Strata names/order are not the same!")
+  
+  # Initialize bootstrap list
+  swor_boot_lst <- vector(mode = "list", length = bootstrap_iter)
+  
+  set.seed(seed)
+  for(k in seq_len(bootstrap_iter)) {
+    # k <- 1
+    cat(k, ", ")
+    
+    # Bootstrap using adp_strata_N to sample each stratum's population size size
+    swor_bootstrap.effort <- rbindlist(Map(
+      function(prior, strata_N) {
+        # prior <- pc_effort_lst[[5]]; strata_N <- sample_N$N[5]
+        
+        # Create vector of TRIP_IDs
+        trip_ids <- unique(prior$TRIP_ID)
+        # How many times does prior effort go into future effort?
+        prior_vs_future <- floor(strata_N / length(trip_ids))
+        # What number of trips should be sampled without replacement?
+        swr_n <- strata_N - (length(trip_ids) * prior_vs_future)
+        # Create dt of trip_ids
+        sampled_trip_ids <- data.table(
+          TRIP_ID = c(
+            # Repeat trip_id prior_vs_future times
+            rep(trip_ids, times = prior_vs_future), 
+            # Sample without replacement using swr_n
+            sample(trip_ids, size = swr_n, replace = F)
+          )
+        )
+        sampled_trip_ids[, I := .I]
+        # Bring in each trip's data
+        bootstrap_sample <- prior[sampled_trip_ids, on = .(TRIP_ID), allow.cartesian = T]
+      }, 
+      prior = pc_effort_lst,
+      strata_N = sample_N$N
+    ))
+    
+    # Re-assign trip_id so that we can differentiate trips sampled multiple times
+    swor_bootstrap.effort[, TRIP_ID := .GRP, keyby = .(ADP, STRATA, BSAI_GOA, TRIP_ID, I)]
+    if(uniqueN(swor_bootstrap.effort$TRIP_ID) != sum(sample_N$N)) stop("Count of TRIP_IDs doesn't match!")
+    
+    # [2024 only] Apply the Trawl EM EFP opt-in probability, move those that 'opt-out' into OB_TRW-GOA
+    # em_trw_id <- unique(swor_bootstrap.effort[STRATA == "EM_TRW-GOA", TRIP_ID ])
+    # # Randomly sample vessels as opting in (TRUE) or out (FALSE) of the EFP. We will use the 'expected' number of trips
+    # # opting out rather than allowing it to be stochastic so that STRATA_N does not vary between iterations.
+    # trw_em_opt_out_N <- round(sample_N[STRATA == "EM_TRW-GOA", N] * efp_prob[COVERAGE_TYPE == "PARTIAL", 1 - EFP_PROB])
+    # trw_em_opt_out_id <- sample(em_trw_id, size = trw_em_opt_out_N)
+    # swor_bootstrap.effort[TRIP_ID %in% trw_em_opt_out_id, ':=' (POOL = "OB", STRATA = "OB_TRW-GOA")]
+    
+    # Define boxes of bootstrapped effort
+    swor_bootstrap.box <- define_boxes(
+      swor_bootstrap.effort, c(2e5, 2e5), time = c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"),
+      year_col = "ADP", stratum_cols = c("STRATA"), geom = F, ps_cols = c("GEAR"))
+    
+    # Calculate each stratum's mean trip duration of bootstrapped effort
+    swor_bootstrap.allo_lst <- list(effort = unique(swor_bootstrap.effort[, .(ADP, STRATA, BSAI_GOA, TRIP_ID, DAYS)])[
+    ][, .(STRATA_N = uniqueN(TRIP_ID), TRP_DUR = mean(DAYS)), keyby = .(ADP, STRATA)])
+    
+    # Calculate rates afforded with the specified budget
+    #' [NOTE] The `allo_prox()` function currently excludes the "EM_TRW" strata by default.
+    swor_bootstrap.rates <- allo_prox(
+      swor_bootstrap.box, swor_bootstrap.allo_lst, cost_params, budget_lst[[1]], max_budget = 7e6, index_interval = 0.0001
+    )
+    # Capture results of iteration
+    swor_boot_lst[[k]] <- list(
+      rates = swor_bootstrap.rates,
+      strata_N = sample_N
+    )
+    
+  }
+  
+  swor_boot_lst
+}
+
+
+#' This was the version used inthe 2024 Final ADP in the final_rates.R script. Used `calculate_prox`
 #' and `calculate_cost`
 allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_interval = 0.001, range_var = 1) { 
   
@@ -632,13 +717,13 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
   
   for(i in year_vec) {
     
-    box_def_sub.prox.range <- calculate_interspersion_gs(box_def, sample_rate_vec = c(0.0001, seq(0.05, 1, by = 0.001)), omit_strata = "ZERO" )$ispn_dt[ADP == i]
+    box_def_sub.prox.range <- calculate_prox(box_def, sample_rate_vec = c(0.0001, seq(0.05, 1, by = 0.001)), omit_strata = "ZERO" )$prox_dt[ADP == i]
     # Calculate index for each stratum
     box_def_sub.prox.range[
     ][, n := SAMPLE_RATE * STRATA_N
     ][, FPC := (STRATA_N - n) / STRATA_N
     ][, CV_SCALING := sqrt(FPC * (1/n))
-    ][, INDEX := ISPN * (1 - CV_SCALING)][is.na(INDEX), INDEX := 0]
+    ][, INDEX := PROX * (1 - CV_SCALING)][is.na(INDEX), INDEX := 0]
     setorderv(box_def_sub.prox.range, c(stratum_cols, "INDEX"))
     # Approximate the costs of a range of indices 
     index_vec <- seq(0, 1, by = 0.025)
@@ -693,12 +778,12 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
       )
       # box_res <- copy(box_stratum); omit_strata <- NULL; sample_rate_vec <- seq(0.5, 575, by = 0.0001)
       # Now, we go back calculating rates ever 0.0001 here.
-      prox_by_stratum <- calculate_interspersion_gs(box_stratum, sample_rate_vec = seq(sample_range[1], sample_range[2], by = 0.0001))$ispn_dt
+      prox_by_stratum <- calculate_prox(box_stratum, sample_rate_vec = seq(sample_range[1], sample_range[2], by = 0.0001))$prox_dt
       prox_by_stratum[
       ][, n := SAMPLE_RATE * STRATA_N
       ][, FPC := (STRATA_N - n) / STRATA_N
       ][, CV_SCALING := sqrt(FPC * (1/n))
-      ][, INDEX := ISPN * (1 - CV_SCALING)]
+      ][, INDEX := PROX * (1 - CV_SCALING)]
       prox_by_stratum_lst[[k]]  <- prox_by_stratum
       
     }
@@ -780,7 +865,7 @@ calculate_cost <- function(index_rates, cost_params, allo_lst, max_budget) {
 }
 
 #' Calculate interspersion  * RENAME TO PROXIMITY*
-calculate_interspersion_gs <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
+calculate_prox <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
   # omit_strata <- NULL
   # omit_strata <- "ZERO"
   # box_res <- box_mixed_gs; omit_strata = "ZERO"
@@ -800,7 +885,7 @@ calculate_interspersion_gs <- function(box_res, sample_rate_vec, omit_strata = c
   # (0-1), and then multiply it by that post-stratum's total weight of component trips centered on the post-stratum.
   
   # For each sample rate...
-  ispn_lst <- lapply(
+  prox_lst <- lapply(
     sample_rate_vec,
     function(x) {
       # x <- 0.15
@@ -844,34 +929,34 @@ calculate_interspersion_gs <- function(box_res, sample_rate_vec, omit_strata = c
   )
   
   # Package the results, converting to data.table
-  ispn_lst <- lapply(ispn_lst, function(z)  data.frame(GROUP_COLS = names(z), sum_pw = z))
-  names(ispn_lst) <- sample_rate_vec
-  ispn_dt <- rbindlist(ispn_lst, idcol = "SAMPLE_RATE")[
+  prox_lst <- lapply(prox_lst, function(z)  data.frame(GROUP_COLS = names(z), sum_pw = z))
+  names(prox_lst) <- sample_rate_vec
+  prox_dt <- rbindlist(prox_lst, idcol = "SAMPLE_RATE")[
   ][, SAMPLE_RATE := as.numeric(SAMPLE_RATE)
   ][, (group_cols) := tstrsplit(GROUP_COLS, split = "[.]")
   ][, GROUP_COLS := NULL]
-  ispn_dt[, (year_col) := lapply(.SD, as.integer), .SDcol = year_col]
+  prox_dt[, (year_col) := lapply(.SD, as.integer), .SDcol = year_col]
   
-  ispn_dt <- box_res$strata_n_dt[
-  ][ispn_dt, on = group_cols
-  ][, ISPN := sum_pw / STRATA_N][]
+  prox_dt <- box_res$strata_n_dt[
+  ][prox_dt, on = group_cols
+  ][, PROX := sum_pw / STRATA_N][]
   
-  setcolorder(ispn_dt, c("SAMPLE_RATE", group_cols, "ISPN"))
+  setcolorder(prox_dt, c("SAMPLE_RATE", group_cols, "PROX"))
   
-  ispn_res <- list(
-    ispn_dt = ispn_dt,
+  prox_res <- list(
+    prox_dt = prox_dt,
     strata_n_dt = box_res$strata_n_dt,
     params = box_res$params
   )
   
-  ispn_res
+  prox_res
   
 }
 #' TODO Are these other proximity/index functions needed?
 
 # Calculate the interspersion = expected proportion of trips sampled or neighboring a sampled trip, 
 # within strata given a vector of sampling rates
-calculate_proximity <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
+calculate_proximity_old <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
   # omit_strata <- NULL
   # omit_strata <- "ZERO"
   # x <- 0.15; y <- box_res$box_smry[[1]]
@@ -925,7 +1010,7 @@ calculate_proximity <- function(box_res, sample_rate_vec, omit_strata = c(NULL))
   ][prox_dt, on = group_cols
   ][, PROX := sum_pw / STRATA_N][]
   
-  setcolorder(prox_dt, c("SAMPLE_RATE", group_cols, "ISPN"))
+  setcolorder(prox_dt, c("SAMPLE_RATE", group_cols, "PROX"))
   
   prox_res <- list(
     prox_dt = prox_dt,
@@ -938,9 +1023,8 @@ calculate_proximity <- function(box_res, sample_rate_vec, omit_strata = c(NULL))
 }
 
 
-
 # Combines proximity and CV_scaling into an index. Allocates such that all strata have the same index, and determines cost.
-#' *No longer used - this is done within allo_prox, using ISPN = (1 - CV_SCALING)]. Remove?*
+#' *No longer used - this is done within allo_prox, using PROX = (1 - CV_SCALING)]. Remove?*
 calculate_index <- function(prox_res, trip_cost_dt) {
   # ispn_res <- copy(box_mixed_bsai_goa_gs_insp); trip_cost_dt <- copy(trip_cost_dt_fg_combined_bsai_goa_cwb)
   
