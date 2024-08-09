@@ -155,9 +155,9 @@ FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT as vessel_id, length a
 work.data <- dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla"))
 
 # Load data from current year
-AnnRpt_DepChp_dribble <- gdrive_set_dribble("Projects/AnnRpt-Deployment-Chapter")
-gdrive_download("source_data/2024-04-15cas_valhalla.Rdata", AnnRpt_DepChp_dribble)
-load("source_data/2024-04-15cas_valhalla.Rdata")
+ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
+gdrive_download("source_data/2024-07-26cas_valhalla.Rdata", ADP_dribble)
+load("source_data/2024-07-26cas_valhalla.Rdata")
 
 # Append data from current year to data from prior year
 work.data <- rbind(work.data, valhalla)
@@ -183,7 +183,7 @@ up_dates <- setDT(dbGetQuery(channel_akro, paste0("select distinct
                                                   JOIN akfish_report.catch_report cr on cr.catch_report_pk= tf.catch_report_pk
                                                   JOIN akfish_report.calendar_date td on td.calendar_date_pk = tf.trip_target_date_pk
                                                   JOIN akfish_report.gear g on g.gear_pk = tf.gear_pk
-                                                  WHERE k.year >=", ADPyear - 11,"
+                                                  WHERE k.year >=", ADPyear - 12,"
                                                   AND cr.el_report_id is not null")))
 
 up_dates[, ':='(DB_TRIP_TARGET_DATE = as.Date(DB_TRIP_TARGET_DATE), DB_LANDING_DATE = as.Date(DB_LANDING_DATE))]
