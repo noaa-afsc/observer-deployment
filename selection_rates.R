@@ -40,8 +40,6 @@ AR_data_objects <- load("source_data/2_AR_data.Rdata")
 # Remove everything except for work.data
 rm(list = setdiff(ls(), c("work.data")))
 
-#' FIXME *for allocation, I need DAYS*
-
 #' TODO *Do this in get_data*
 # Get count of GOA-only EM EFP Vessels for the cost_params. 
 trawl_em_goa_v_count <- length(na.omit(unlist(unname(
@@ -61,9 +59,8 @@ load("source_data/ak_shp.rdata")      # shp_land, shp_nmfs, and shp_centroids ad
 #====================#
 
 source("common_functions/open_channel.R")
-#' Load spatiotemporal functions 
 source("common_functions/allocation_functions.R")
-#' TODO model_trip_duration should be used by get_data.R, but until it is ready, using it here.
+#' TODO *model_trip_duration should be used by get_data.R, but until it is ready, using it here.*
 source("common_functions/model_trip_duration.R")
 
 #===============#
@@ -81,7 +78,7 @@ pc_prev_year_trips <- pc_effort_st[
 pc_effort_st <- pc_effort_st[TRIP_ID %in% pc_prev_year_trips]
 range(pc_effort_st$TRIP_TARGET_DATE)
 
-# TODO Assigning strata to 2024 definitions. This won't be needed once get_data is re-run for 2025. 
+#' TODO *Assigning strata to 2024 definitions. Do this in get_data.R for 2025.* 
 pc_effort_st[, STRATA := fcase(
   STRATA %in% c("EM_HAL", "EM_POT"), "EM_FIXED",
   STRATA %in% c("OB_HAL", "OB_POT"), "OB_FIXED",
@@ -90,7 +87,7 @@ pc_effort_st[, STRATA := fcase(
   STRATA == "ZERO", "ZERO"
 )][, STRATA := ifelse(STRATA != "ZERO", paste0(STRATA, "-", BSAI_GOA), STRATA)]
 
-#' TODO *Do this in get_data.R!*
+#' TODO *Assign DAYS column. Do this in get_data.R!*
 #' Get actual days observed, otherwise apply model.
 channel <- open_channel()
 #' Match observed ODDS and Valhalla records. This creates `mod_dat` object
@@ -124,7 +121,7 @@ pc_effort_st[, ADP := 2025]
 ## Monitoring  Costs ----
 #=======================#
 
-#' TODO These will need to be updated!
+#' TODO *These will need to be updated!*
 
 # Derived from: https://docs.google.com/spreadsheets/d/1kcdLjq2Ck4XJBYP0EhrQpuknRgtQFt01LN3xUaCg7cI/edit?usp=sharing
 # Monitoring cost models are applyed by ob_cost(), emfg_cost(), and emtrw_cost() functions
@@ -157,16 +154,26 @@ cost_params <- list(
   )
 )
 
+
+#========================#
+## Trawl EM Carve-off ----
+#========================#
+
+#' TODO *Estimate the total costs of trawl EM for 2025, then subtract from the estimated budget*
+
+
 #================#
 ## Parameters ----
 #================#
 
-budget_lst <- list(4.8e6 + 1.019e6)  #' TODO UPDATE THIS [Budget of $5,819,000 used in the 2024 ADP]
+#'budget_lst <- list(4.8e6 + 1.019e6)  #' TODO *UPDATE THIS* [Budget of $5,819,000 used in the 2024 ADP]
+budget_lst <- list(4.0e6)   #' *Bleak estimate given fee revenues minus some trawl EM costs and no additional funds*
 
-# Number of bootstrap iterations. Typically do 1K each. Until we have an effort prediction, just use 1 bootstrap iter.
+#' Number of bootstrap iterations. Typically do 1K each. 
+#' TODO *Until we have an effort prediction, just use 1 bootstrap iteration, using actual N as our 'prediction'*
 bootstrap_iter <- 1
 #bootstrap_iter <- 1000
-#sim_iter <- 1000
+#sim_iter <- 1000   #' Simulations of trip selection will be used later for creating distribution of cost estimates
 
 
 #=======================================#
@@ -187,7 +194,7 @@ bootstrap_iter <- 1
 # ][!(STRATA %like% "EM|ZERO"), STRATA := paste0("OB_", STRATA)
 # ][, N := round(TOTAL_TRIPS)]
 # sample_N <- sample_N[, .(STRATA, N)]
-#' [For now just use number in dataset as a placeholder]
+#' TODO *For now just use number in dataset as a placeholder*
 sample_N <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(STRATA)]
 
 setkey(pc_effort_st, STRATA)
@@ -200,6 +207,7 @@ if(!identical(names(pc_effort_lst), sample_N$STRATA)) stop("Stratum names/order 
 swor_boot_lst <- vector(mode = "list", length = bootstrap_iter)
 
 # Run the bootstrap loop. Takes ~4.5 hours to complete 1000 bootstrap iterations.
+#' TODO *Make the bootstrapping allocation a function.*
 set.seed(12345)
 for(k in seq_len(bootstrap_iter)) {
   # k <- 1
@@ -277,11 +285,15 @@ boot_dt <- rbindlist(lapply(swor_boot_lst, "[[", "rates"), idcol = "BOOT_ITER")
 # Determine Rates for 2024 ----
 #=============================#
 
-ggplot(boot_dt, aes(x = STRATA, y = SAMPLE_RATE)) + geom_violin(draw_quantiles = 0.5) + facet_wrap(.~ STRATA, scales = "free") + stat_summary(geom = "point", fun = mean)
+ggplot(boot_dt, aes(x = STRATA, y = SAMPLE_RATE)) + geom_violin(draw_quantiles = 0.5) + 
+  facet_wrap(.~ STRATA, scales = "free") + stat_summary(geom = "point", fun = mean)
 
-ggplot(boot_dt, aes(x = STRATA, y = SAMPLE_RATE)) + geom_violin(draw_quantiles = 0.5) + stat_summary(geom = "point", fun = mean) + labs(x = "Stratum", y = "Sample Rate") + 
+ggplot(boot_dt, aes(x = STRATA, y = SAMPLE_RATE)) + geom_violin(draw_quantiles = 0.5) + 
+  stat_summary(geom = "point", fun = mean) + labs(x = "Stratum", y = "Sample Rate") + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + geom_hline(yintercept = 0)
 
 # Calculate the rates to use as the mean across iterations. Also calculate average proximity (ISPN) and cv_scaling metrics
 rates_adp <- boot_dt[, lapply(.SD, mean), .SDcols = c("SAMPLE_RATE", "n", "ISPN", "CV_SCALING", "INDEX"), keyby = .(ADP, STRATA, STRATA_N)]
 rates_adp
+# Ooof... With a $4M budget, only 6.5% in GOA , 18-20% in BSAI for observers.
+
