@@ -607,7 +607,7 @@ allo_equal <- function(x, budget){
 ## Proximity -----------------------------------------------------------------------------------------------------------
 
 #' This was the version used inthe 2024 Final ADP in the final_rates.R script. Used `calculate_interspersion_gs`
-#' and `calculate_cost_prox`
+#' and `calculate_cost`
 allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_interval = 0.001, range_var = 1) { 
   
   # TODO I think this function could be faster. index_interval should be replaced by a level of resolution that we want 
@@ -649,7 +649,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
         stratum_column <- apply(res[, ..stratum_cols], 1, paste, collapse = "-")
         res[, STRATUM_COL := stratum_column]
         res[, INDEX := x]
-        index_cost <- calculate_cost_prox(res, cost_params, allo_lst, max_budget) # this is the most this index would cost
+        index_cost <- calculate_cost(res, cost_params, allo_lst, max_budget) # this is the most this index would cost
         if( nrow(index_cost) > 0 ) res[, INDEX_COST := index_cost$INDEX_COST]
         res
       }
@@ -725,7 +725,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
     })
     # Calculate the cost of each index
     index_costs_vec <- sapply(index_costs2, function(x) {
-      calculate_cost_prox(x, cost_params, allo_lst, max_budget)$INDEX_COST
+      calculate_cost(x, cost_params, allo_lst, max_budget)$INDEX_COST
     })
     
     # Find the index that is closest to the budget
@@ -741,7 +741,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
 }
 
 # Proximity
-calculate_cost_prox <- function(index_rates, cost_params, allo_lst, max_budget) {
+calculate_cost <- function(index_rates, cost_params, allo_lst, max_budget) {
   
   index_rates_copy <- copy(index_rates)
   index_rates_copy[, I := .GRP, by = .(ADP, INDEX)] # Give an identifier to each
@@ -779,77 +779,7 @@ calculate_cost_prox <- function(index_rates, cost_params, allo_lst, max_budget) 
   
 }
 
-#' TODO Are these other proximity/index functions needed?
-
-# Calculate the interspersion = expected proportion of trips sampled or neighboring a sampled trip, 
-# within strata given a vector of sampling rates
-calculate_proximity <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
-  # omit_strata <- NULL
-  # omit_strata <- "ZERO"
-  # x <- 0.15; y <- box_res$box_smry[[1]]
-  
-  group_cols <- c(box_res$params$year_col, box_res$params$stratum_cols)
-  year_col <- box_res$params$year_col
-  
-  # Use 'omit_strata' to omit any unmonitored strata
-  if(!is.null(omit_strata)) {
-    keep_strata <- !apply(sapply(omit_strata, function(x) names(box_res$box_smry) %like% x), 1, any)
-  } else {
-    keep_strata <- rep(T, times = length(box_res$box_smry))
-  }
-  
-  # For for a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
-  # (0-1), and then multiply it by that post-stratum's total weight of component trips centered on the post-stratum.
-  
-  # For each sample rate...
-  prox_lst <- lapply(
-    sample_rate_vec,
-    function(x) {
-      
-      # For each stratum...
-      sapply(
-        box_res$box_smry[keep_strata],
-        function(y) {
-          
-          # For each stratum's BOX_ID, use BOX_nbr to calculate the probability that the box is sampled,
-          # and then multiply that by BOX_w to get the expected number of sampled trips in the box. Sum across
-          # all boxes to get expected number of sampled trips in stratum.
-          # x is the sample rate, y[,4] is 'BOX_nbr' and y[, 3] is 'BOX_w'. Referencing by column is faster.
-          
-          sum((1 - ((1 - x)^y[,4])) * y[,3])
-          # sum((1 - ((1 - x)^y[,"BOX_nbr"])) * y[,"BOX_w"])
-          
-        }
-      )
-    }
-  )
-  
-  # Package the results, converting to data.table
-  prox_lst <- lapply(prox_lst, function(z)  data.frame(GROUP_COLS = names(z), sum_pw = z))
-  names(ispn_lst) <- sample_rate_vec
-  prox_dt <- rbindlist(prox_lst, idcol = "SAMPLE_RATE")[
-  ][, SAMPLE_RATE := as.numeric(SAMPLE_RATE)
-  ][, (group_cols) := tstrsplit(GROUP_COLS, split = "[.]")
-  ][, GROUP_COLS := NULL]
-  prox_dt[, (year_col) := lapply(.SD, as.integer), .SDcol = year_col]
-  
-  prox_dt <- box_res$strata_n_dt[
-  ][prox_dt, on = group_cols
-  ][, PROX := sum_pw / STRATA_N][]
-  
-  setcolorder(prox_dt, c("SAMPLE_RATE", group_cols, "ISPN"))
-  
-  prox_res <- list(
-    prox_dt = prox_dt,
-    strata_n_dt = box_res$strata_n_dt,
-    params = box_res$params
-  )
-  
-  prox_res
-  
-}
-
-# A gear-specific version (for when ps_cols = "GEAR" using define_boxes_gear)
+#' Calculate interspersion  * RENAME TO PROXIMITY*
 calculate_interspersion_gs <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
   # omit_strata <- NULL
   # omit_strata <- "ZERO"
@@ -937,8 +867,80 @@ calculate_interspersion_gs <- function(box_res, sample_rate_vec, omit_strata = c
   ispn_res
   
 }
+#' TODO Are these other proximity/index functions needed?
+
+# Calculate the interspersion = expected proportion of trips sampled or neighboring a sampled trip, 
+# within strata given a vector of sampling rates
+calculate_proximity <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
+  # omit_strata <- NULL
+  # omit_strata <- "ZERO"
+  # x <- 0.15; y <- box_res$box_smry[[1]]
+  
+  group_cols <- c(box_res$params$year_col, box_res$params$stratum_cols)
+  year_col <- box_res$params$year_col
+  
+  # Use 'omit_strata' to omit any unmonitored strata
+  if(!is.null(omit_strata)) {
+    keep_strata <- !apply(sapply(omit_strata, function(x) names(box_res$box_smry) %like% x), 1, any)
+  } else {
+    keep_strata <- rep(T, times = length(box_res$box_smry))
+  }
+  
+  # For for a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
+  # (0-1), and then multiply it by that post-stratum's total weight of component trips centered on the post-stratum.
+  
+  # For each sample rate...
+  prox_lst <- lapply(
+    sample_rate_vec,
+    function(x) {
+      
+      # For each stratum...
+      sapply(
+        box_res$box_smry[keep_strata],
+        function(y) {
+          
+          # For each stratum's BOX_ID, use BOX_nbr to calculate the probability that the box is sampled,
+          # and then multiply that by BOX_w to get the expected number of sampled trips in the box. Sum across
+          # all boxes to get expected number of sampled trips in stratum.
+          # x is the sample rate, y[,4] is 'BOX_nbr' and y[, 3] is 'BOX_w'. Referencing by column is faster.
+          
+          sum((1 - ((1 - x)^y[,4])) * y[,3])
+          # sum((1 - ((1 - x)^y[,"BOX_nbr"])) * y[,"BOX_w"])
+          
+        }
+      )
+    }
+  )
+  
+  # Package the results, converting to data.table
+  prox_lst <- lapply(prox_lst, function(z)  data.frame(GROUP_COLS = names(z), sum_pw = z))
+  names(ispn_lst) <- sample_rate_vec
+  prox_dt <- rbindlist(prox_lst, idcol = "SAMPLE_RATE")[
+  ][, SAMPLE_RATE := as.numeric(SAMPLE_RATE)
+  ][, (group_cols) := tstrsplit(GROUP_COLS, split = "[.]")
+  ][, GROUP_COLS := NULL]
+  prox_dt[, (year_col) := lapply(.SD, as.integer), .SDcol = year_col]
+  
+  prox_dt <- box_res$strata_n_dt[
+  ][prox_dt, on = group_cols
+  ][, PROX := sum_pw / STRATA_N][]
+  
+  setcolorder(prox_dt, c("SAMPLE_RATE", group_cols, "ISPN"))
+  
+  prox_res <- list(
+    prox_dt = prox_dt,
+    strata_n_dt = box_res$strata_n_dt,
+    params = box_res$params
+  )
+  
+  prox_res
+  
+}
+
+
 
 # Combines proximity and CV_scaling into an index. Allocates such that all strata have the same index, and determines cost.
+#' *No longer used - this is done within allo_prox, using ISPN = (1 - CV_SCALING)]. Remove?*
 calculate_index <- function(prox_res, trip_cost_dt) {
   # ispn_res <- copy(box_mixed_bsai_goa_gs_insp); trip_cost_dt <- copy(trip_cost_dt_fg_combined_bsai_goa_cwb)
   
