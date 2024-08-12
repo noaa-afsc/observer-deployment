@@ -120,6 +120,17 @@ if(nrow(pc_effort_st[is.na(DAYS)])) stop("Some records are still missing DAYS")
 pc_effort_st[, ADP := 2025]
 setkey(pc_effort_st, STRATA)
 
+#====================#
+## Box Parameters ----
+#====================#
+
+box_params <- list(
+  space = c(2e5, 2e5),
+  time = c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"),
+  year_col = "ADP", stratum_cols = "STRATA", ps_cols = "GEAR",
+  stat_area_sf = stat_area_sf
+)
+
 #=======================#
 ## Monitoring  Costs ----
 #=======================#
@@ -180,7 +191,7 @@ budget_lst <- list(4.0e6)   #' *Bleak estimate given fee revenues minus some tra
 
 #' TODO *For now just use number in dataset as a placeholder*
 sample_N <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(STRATA)]
-boot_lst <- bootstrap_allo(pc_effort_st, sample_N, bootstrap_iter = 1)
+boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params, budget_lst, bootstrap_iter = 1)
 
 #' TODO Save the outputs of the bootstrapping and allocation
 if(F) save(boot_lst, file = "results/swor_boot_lst.rdata")

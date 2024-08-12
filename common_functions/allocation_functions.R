@@ -608,7 +608,7 @@ allo_equal <- function(x, budget){
 
 #' Bootstrap fishing effort for each stratum, sampling trips without replacement.
 #' `sample_N` is a data.table of columns `STRATA` and the predicted number of trips as `sample_N`.
-bootstrap_allo <- function(pc_effort_st, sample_N, bootstrap_iter = 1, seed = 12345) {
+bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budget_lst, bootstrap_iter = 1, seed = 12345) {
   #' [Defaults to use when effort_prediction.R is not yet run]
   # effort_pred_n <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)]; bootstrap_iter <- 1
   
@@ -666,9 +666,12 @@ bootstrap_allo <- function(pc_effort_st, sample_N, bootstrap_iter = 1, seed = 12
     # swor_bootstrap.effort[TRIP_ID %in% trw_em_opt_out_id, ':=' (POOL = "OB", STRATA = "OB_TRW-GOA")]
     
     # Define boxes of bootstrapped effort
+    
+    #' TODO *Have this function take the box definition parameters!*
+    
     swor_bootstrap.box <- define_boxes(
-      swor_bootstrap.effort, c(2e5, 2e5), time = c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"),
-      year_col = "ADP", stratum_cols = c("STRATA"), geom = F, ps_cols = c("GEAR"))
+      swor_bootstrap.effort, space = box_params$space, time = box_params$time,
+      year_col = box_params$year_col, stratum_cols = box_params$stratum_cols, ps_cols = box_params$ps_cols )
     
     # Calculate each stratum's mean trip duration of bootstrapped effort
     swor_bootstrap.allo_lst <- list(effort = unique(swor_bootstrap.effort[, .(ADP, STRATA, BSAI_GOA, TRIP_ID, DAYS)])[
@@ -689,6 +692,8 @@ bootstrap_allo <- function(pc_effort_st, sample_N, bootstrap_iter = 1, seed = 12
   
   swor_boot_lst
 }
+
+
 
 
 #' This was the version used inthe 2024 Final ADP in the final_rates.R script. Used `calculate_prox`
