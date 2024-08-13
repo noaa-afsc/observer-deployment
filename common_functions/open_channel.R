@@ -4,7 +4,7 @@ open_channel <- function(db = "AFSC"){
   
   location <- toupper(rstudioapi::showPrompt("LocationL", 'What is your current physical location? (Juneau or Seattle)'))
   if(!location %in% c("SEATTLE", "JUNEAU")){
-    cat(paste0('Location \'', location, '\' not recognized. Must be Seattle or Juneau.'))
+    stop(cat(paste0('Location \'', location, '\' not recognized. Must be Seattle or Juneau.')))
   }
   uid <- rstudioapi::askForPassword("Database user")
   pwd <- rstudioapi::askForPassword("Database password")
