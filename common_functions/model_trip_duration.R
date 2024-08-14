@@ -91,12 +91,12 @@ model_trip_duration <- function(val_data, use_mod = "DAYS ~ RAW", channel) {
     
     # Make sure each odds_seq has only one match - if not, exclude joins with zero overlap, and then identify the join with the best fit
     test1[, ODDS_N := .N, by=.(ODDS_SEQ)]                                         # For each odds_seq count up number of joins. If > 1, remove the join with the worse fit
-    test1[, CHK := ifelse(O == 0, FALSE, ifelse(ODDS_N==1, TRUE, ifelse(O == max(O) & max(O) != min(O), TRUE, ifelse(M == min(M) & max(M) != min(M), TRUE, FALSE)))), by = ODDS_SEQ]   # evaluate fit of each join
-    if(nrow(test1[ODDS_N > 1 & CHK == TRUE, .(N = .N), by=ODDS_SEQ][N > 1]) > 0) {message("Still have duplicate ODDS_SEQ in first level.")}  # Check to make sure there aren't any ties!
+    test1[, CHK := ifelse(O == 0, FALSE, ifelse(ODDS_N == 1, TRUE, ifelse(O == max(O) & max(O) != min(O), TRUE, ifelse(M == min(M) & max(M) != min(M), TRUE, FALSE)))), by = ODDS_SEQ]   # evaluate fit of each join
+    if(nrow(test1[ODDS_N > 1 & CHK == TRUE, .(N = .N), by = ODDS_SEQ][N > 1]) > 0) {message("Still have duplicate ODDS_SEQ in first level.")}  # Check to make sure there aren't any ties!
     
-    # It may be possible that a multiple odds trips will join to a single valhalla trip, especially for trawl trips with extra offload days
+    # It may be possible that multiple odds trips will join to a single valhalla trip, especially for trawl trips with extra offload days
     # In some cases, the odds trip was split between the fishing trip and offload
-    # Howvever, this may not always be the case - if multiple trips would have matched in the same rolling period, only the closest one would be returned
+    # However, this may not always be the case - if multiple trips would have matched in the same rolling period, only the closest one would be returned
     # For now, keep only the best join based on overlap and mismatches and the excluded trips will be joined later via the end date or the final slop
     # If there is a tie with O and M - if ODDS_END > TRIP_END, exclude it as the worse match
     test1[, VAL_N := .N, by = .(TRIP_ID)]
@@ -117,7 +117,7 @@ model_trip_duration <- function(val_data, use_mod = "DAYS ~ RAW", channel) {
     
     # Allow the odds_end date to be up to 3 days after the trip end
     test2 <- val_r1[odds_r1, roll = 3, nomatch = NULL]   #
-    test2[, ':=' (O = dc(.SD, "o"), M = dc(.SD, "m")), .SDcols=cols, by= rownames(test2)]  # count up overlapping and mismatching days for each join
+    test2[, ':=' (O = dc(.SD, "o"), M = dc(.SD, "m")), .SDcols = cols, by = rownames(test2)]  # count up overlapping and mismatching days for each join
     # Make sure each odds_seq has only one match - if not, exclude joins with zero overlap, and then identify the join with the best fit
     test2[, ODDS_N := .N, by = .(ODDS_SEQ)]                                         # For each odds_seq count up number of joins. If > 1, remove the join with the worse fit
     test2[, CHK := ifelse(O == 0, FALSE, ifelse(ODDS_N == 1, TRUE, ifelse(O == max(O) & max(O) != min(O), TRUE, ifelse(M == min(M) & max(M) != min(M), TRUE, FALSE)))), by = ODDS_SEQ]   # evaluate fit of each join
@@ -174,7 +174,7 @@ model_trip_duration <- function(val_data, use_mod = "DAYS ~ RAW", channel) {
     # Tacking on from left side (allow disembark date to be within 3 days prior to existing embark date)
     test4 <- exis[tack, roll = -3, nomatch=NULL]
     test4[, VAL_N := .N, by = TRIP_ID]  # some of these might have multiple joins that can be simplified
-    if(nrow(test4[VAL_N > 1]) >0) {message("Multiple TRIP_ID in the fifth level - must deal with this because this was not an issue before, so no code exists to handle this!")}
+    if(nrow(test4[VAL_N > 1]) > 0) {message("Multiple TRIP_ID in the fifth level - must deal with this because this was not an issue before, so no code exists to handle this!")}
     test4[, ':=' (ODDS_START = min(ODDS_START, A_ODDS_START), ODDS_END = max(ODDS_END, A_ODDS_END), DAYS = sum(DAYS, A_DAYS)), keyby = .(ODDS_SEQ, TRIP_ID)]  # Replace existing data
     
     setkey(keepers, ODDS_SEQ, TRIP_ID)  # reorder keepers by odds_seq and trip_id so that replaced values will merge in the correct order
@@ -244,8 +244,8 @@ model_trip_duration <- function(val_data, use_mod = "DAYS ~ RAW", channel) {
     
     n_val[, YEAR := year(TRIP_START)]                                               # for valhalla, define year by trip_start
     n_val <- n_val[YEAR >= (range1) & YEAR <= (range2)]                             # Trim valhalla,  using the most recent 3 full years of data
-    n_val[, GEAR_N := length(unique(GEAR)), by=.(TRIP_ID)]                            # count number of gear types used in each trip
-    n_val[GEAR_N>1, GEAR := ifelse(GEAR == "NPT", "PTR", ifelse(GEAR == "POT", "HAL", GEAR)), by = .(TRIP_ID, GEAR)]    # If multiple gear types were used, prioritze PTR over NPT and HAL over POT
+    n_val[, GEAR_N := length(unique(GEAR)), by = .(TRIP_ID)]                            # count number of gear types used in each trip
+    n_val[GEAR_N > 1, GEAR := ifelse(GEAR == "NPT", "PTR", ifelse(GEAR == "POT", "HAL", GEAR)), by = .(TRIP_ID, GEAR)]    # If multiple gear types were used, prioritze PTR over NPT and HAL over POT
     n_val <- n_val[, .(TRIP_START = min(TRIP_START), TRIP_END = max(TRIP_END)), by = .(ADP, PERMIT, GEAR, TRIP_ID, STRATA, TENDER)]  # simplify the start/end dates - removing TARGET here
     n_val[, REF := as.numeric(as.Date(TRIP_START))]; setkey(n_val, PERMIT, REF)     # Create new column that is numeric start date of each trip, set keys
     
@@ -285,8 +285,8 @@ model_trip_duration <- function(val_data, use_mod = "DAYS ~ RAW", channel) {
   mod_dat[, ':=' (AGENCY_GEAR_CODE = factor(GEAR, levels = c("HAL", "POT", "PTR", "NPT", "TRW")), TENDER = as.factor(TENDER), ADP = as.factor(ADP))]
   mod_dat[, GEAR := factor(GEAR, levels = c("HAL", "POT", "PTR", "NPT", "TRW"))]
   mod <- lm(as.formula(use_mod), data = mod_dat)   
-  mod_dat[, MOD := round(predict(mod)/0.5)*0.5]  # round model outputs to the nearest 0.5
-  mod_dat[MOD <= 0, MOD := 0.5]                  # If a predicted duration is <= 0, make minimum of 0.5 days
+  mod_dat[, MOD := round(predict(mod)/0.5) * 0.5]  # round model outputs to the nearest 0.5
+  mod_dat[MOD <= 0, MOD := 0.5]                    # If a predicted duration is <= 0, make minimum of 0.5 days
   mod_dat_for_plt <- data.table::melt(mod_dat, id.vars = c("ADP", "PERMIT", "GEAR", "TRIP_ID", "STRATA", "TENDER", "AGENCY_GEAR_CODE", "DAYS"), measure.vars = c("RAW", "MOD"))
   mod_dat_for_plt[, GEAR := factor(GEAR, levels = c("HAL", "POT", "PTR", "NPT", "TRW"))]
   mod_dat_for_plt[, CLR := factor(ifelse(variable == "RAW", "Raw", ifelse(TENDER == "N", "NonTen", "Tender")), levels = c("Raw", "NonTen", "Tender"))]
@@ -301,7 +301,7 @@ model_trip_duration <- function(val_data, use_mod = "DAYS ~ RAW", channel) {
     labs(subtitle = paste(use_mod), y = "Value", x = "Actual Days") + 
     scale_color_manual(values = c("gray", "blue", "red"))
   
-  diagnostic1 <- mod_dat[, .(DAYS = sum(DAYS), MOD = sum(MOD)), keyby = .(ADP)][, .(ADP, DAYS, MOD, PERC = 100 * (MOD-DAYS)/DAYS)]  # pretty dang close... in 2018, PTRis under by 10%
+  diagnostic1 <- mod_dat[, .(DAYS = sum(DAYS), MOD = sum(MOD)), keyby = .(ADP)][, .(ADP, DAYS, MOD, PERC = 100 * (MOD-DAYS)/DAYS)]  # pretty dang close... in 2018, PTR is under by 10%
   diagnostic2 <- mod_dat[, .(DAYS = sum(DAYS), MOD = sum(MOD)), keyby = .(ADP, GEAR)][, .(ADP, GEAR, DAYS, MOD, PERC = 100 * (MOD-DAYS)/DAYS)] 
   
   #=========#
