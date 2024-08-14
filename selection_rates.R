@@ -138,7 +138,7 @@ box_params <- list(
 #' TODO *These will need to be updated!*
 
 # Derived from: https://docs.google.com/spreadsheets/d/1kcdLjq2Ck4XJBYP0EhrQpuknRgtQFt01LN3xUaCg7cI/edit?usp=sharing
-# Monitoring cost models are applyed by ob_cost(), emfg_cost(), and emtrw_cost() functions
+# Monitoring cost models are applied by ob_cost(), emfg_cost(), and emtrw_cost() functions
 # Set all parameters involving monitoring costs
 
 cost_params <- list(
