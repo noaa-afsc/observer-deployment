@@ -80,6 +80,7 @@ BSAIVoluntary <-
 #   so therefore it's not subject to observer coverage. For accounting purposes, 
 #   we treat it like one of these small CPs, so it's on this list.
 #   For more info on this, see Alicia Miller.  
+#   Pacific Mariner (4581) and Kruzof (6039) were approved for 2025 per e-mail from Melanie Rickett 2024-Aug-20
 PartialCPs <- data.frame(VESSEL_ID = c(662, 4581, 6039))
 
 # * Fixed-gear EM research ---- 
