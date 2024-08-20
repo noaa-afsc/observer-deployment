@@ -156,8 +156,8 @@ work.data <- dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla"))
 
 # Load data from current year
 ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
-gdrive_download("source_data/2024-07-26cas_valhalla.Rdata", ADP_dribble)
-load("source_data/2024-07-26cas_valhalla.Rdata")
+gdrive_download("source_data/2024-08-19cas_valhalla.Rdata", ADP_dribble)
+load("source_data/2024-08-19cas_valhalla.Rdata")
 
 # Append data from current year to data from prior year
 work.data <- rbind(work.data, valhalla)
@@ -252,7 +252,7 @@ arrange(COVERAGE_TYPE, STRATA)
 work.data <- mutate(work.data, CVG_NEW = NA)
 
 # Mandatory full coverage
-work.data <- mutate(work.data, CVG_NEW = ifelse(COVERAGE_TYPE == "FULL" & STRATA %in% c("FULL", "EM_TRW_EFP", "VOLUNTARY"), "FULL", CVG_NEW))
+work.data <- mutate(work.data, CVG_NEW = ifelse(COVERAGE_TYPE == "FULL" & STRATA %in% c("FULL", "EM_TRW_EFP", "VOLUNTARY", "EM_TRW_BSAI"), "FULL", CVG_NEW))
 
 # PCTC
 work.data <- mutate(work.data, CVG_NEW = ifelse(VESSEL_ID %in% pctc$VESSEL_ID &
@@ -288,7 +288,7 @@ distinct(work.data, COVERAGE_TYPE, CVG_NEW, STRATA) %>%
 arrange(COVERAGE_TYPE, CVG_NEW, STRATA)
 
 # Partial coverage strata
-work.data <- mutate(work.data, CVG_NEW = ifelse(is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA %in% c("EM", "EM Voluntary", "EM_HAL", "EM_POT", "EM_TenP", "EM_TRW_EFP", "HAL", "POT", "t", "T", "TenH", "TenP", "TenTR", "TRIP", "TRW", "VESSEL", "ZERO", "ZERO_EM_RESEARCH"), "PARTIAL", CVG_NEW))
+work.data <- mutate(work.data, CVG_NEW = ifelse(is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA %in% c("EM", "EM Voluntary", "EM_FIXED_BSAI", "EM_FIXED_GOA", "EM_HAL", "EM_POT", "EM_TRW_EFP", "EM_TRW_GOA", "EM_TenP", "HAL", "OB_FIXED_BSAI", "OB_FIXED_GOA", "OB_TRW_BSAI", "OB_TRW_GOA", "POT", "T", "TRIP", "TRW", "TenH", "TenP", "TenTR", "VESSEL", "ZERO", "ZERO_EM_RESEARCH", "t"), "PARTIAL", CVG_NEW))
 
 # Split trips that fished both full and partial coverage
 work.data[, N := uniqueN(CVG_NEW), by = .(TRIP_ID)
@@ -302,6 +302,9 @@ arrange(ADP, COVERAGE_TYPE, CVG_NEW, STRATA)
 
 # * STRATA_NEW ----
 
+# Correct FMP
+work.data[FMP %in% c("BS", "AI"), FMP := "BSAI"]
+
 # Base STRATA_NEW on AGENCY_GEAR_CODE
 work.data <- mutate(work.data, STRATA_NEW = recode(AGENCY_GEAR_CODE, "PTR" = "TRW", "NPT" = "TRW", "JIG" = "ZERO"))
 
@@ -312,7 +315,7 @@ work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "FULL", "FULL", ST
 work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "PARTIAL" & STRATA == "ZERO", "ZERO", STRATA_NEW))
 
 # Fixed-gear EM
-work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), paste("EM", STRATA_NEW, sep = "_"), STRATA_NEW))
+work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), paste("EM_FIXED", FMP, sep = "_"), STRATA_NEW))
 
 # Fixed-gear EM research
 work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_research$VESSEL_ID, "ZERO", STRATA_NEW))
@@ -323,9 +326,10 @@ work.data <- work.data %>%
              mutate(STRATA_NEW = ifelse(VESSEL_ID %in% trawl_em$PERMIT & 
                                         all(AGENCY_GEAR_CODE == "PTR") & 
                                         all(TRIP_TARGET_CODE %in% c("B", "P")),
-                                        "EM_TRW_EFP",
+                                        paste("EM_TRW", FMP, sep = "_"),
                                         STRATA_NEW)) %>% 
              ungroup() %>% 
+             mutate(CVG_NEW = ifelse(STRATA_NEW == "EM_TRW_GOA", "PARTIAL", CVG_NEW)) %>% 
              setDT()
 
 # View all strata conversions
@@ -356,8 +360,9 @@ work.data <- mutate(work.data, STRATA_NEW = ifelse(TRIP_ID %in% over_forties$TRI
 work.data <- work.data %>% 
              group_by(TRIP_ID) %>% 
              mutate(STRATA_NEW = ifelse(TRIP_ID %in% over_forties$TRIP_ID & 
-                                        VESSEL_ID %in% em_base$VESSEL_ID, 
-                                        paste("EM", unique(AGENCY_GEAR_CODE[AGENCY_GEAR_CODE != "JIG"]), sep = "_", collapse = " "), 
+                                        VESSEL_ID %in% em_base$VESSEL_ID &
+                                        any(AGENCY_GEAR_CODE %in% c("HAL", "POT")), 
+                                        paste("EM_FIXED", FMP, sep = "_"), 
                                         STRATA_NEW)) %>% 
              setDT()
 
@@ -409,24 +414,6 @@ dups <- work.data %>%
 if(nrow(dups) != 0){
   print(dups)
   warning("More than one STRATA or STRATA_NEW within some TRIP_IDs")
-}
-
-# Split trips that fished both EM EFP and other strata
-work.data <- copy(work.data)[TRIP_ID %in% work.data[STRATA_NEW == "EM_TRW_EFP", TRIP_ID], N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
-                             ][N > 1, TRIP_ID := ifelse(STRATA_NEW != "EM_TRW_EFP", paste(TRIP_ID, 1), paste(TRIP_ID, 2))
-                               ][, N := NULL]
-
-# Split trips that fished both full and partial coverage
-work.data[, N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
-          ][N > 1, TRIP_ID := ifelse(STRATA_NEW == "FULL", paste(TRIP_ID, 1), TRIP_ID)
-            ][, N := NULL]
-
-# Apply chosen stratification for the final ADP
-if(ADP_version == "Final"){
-work.data[STRATA_NEW %in% c("EM_HAL", "EM_POT"), STRATA_NEW := "EM_FIXED"
-][STRATA_NEW %in% c("HAL", "POT"), STRATA_NEW := "FIXED"
-][FMP %in% c("BS", "AI"), FMP := "BSAI"
-][!STRATA_NEW %in% c("FULL", "ZERO"), STRATA_NEW := paste(STRATA_NEW, FMP, sep = "_")]
 }
 
 # For remaining combo strata trips, default to stratum with the most landed weight
