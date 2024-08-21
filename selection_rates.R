@@ -122,6 +122,13 @@ if(nrow(pc_effort_st[is.na(DAYS)])) stop("Some records are still missing DAYS")
 pc_effort_st[, ADP := adp_year]
 setkey(pc_effort_st, STRATA)
 
+#' Save and Upload pc_effort_st to the shared google drive 
+save(pc_effort_st, file = paste0("source_data/pc_effort_st", "_", adp_year, ".Rdata"))
+gdrive_upload(
+  local_path = paste0("source_data/pc_effort_st", "_", adp_year, ".Rdata"),
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output/")
+)
+
 #====================#
 ## Box Parameters ----
 #====================#
@@ -259,8 +266,8 @@ rates_mtd_adp <- mtd[rates_adp, on = .(ADP, STRATA)]
 rates_mtd_adp[, MON_RATE := SAMPLE_RATE]
 
 rates_adp
-ob_cost(rates_mtd_adp, cost_params)
-emfg_cost(rates_mtd_adp, cost_params)
+ob_cost(rates_mtd_adp, cost_params_new)
+emfg_cost(rates_mtd_adp, cost_params_new)
 
 #=======================================================================================================================#
 
