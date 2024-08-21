@@ -4,14 +4,13 @@
 #' [Author: Geoff Mayhew]
 #' [StartDate: 2024-Aug-13]
 
+#' *PREREQUISITE* [First run selection_rates.R to create pc_effort_st object and upload it to the Gdrive]
 
 #======================================================================================================================#
 # Preparation ----
 #======================================================================================================================#
 
 adp_year <- 2025  #' This should come from get_data.R
-
-#' *PREREQUISITE* [First run selection_rates.R to create pc_effort_st object and upload it to the Gdrive]
 
 #===================#
 ## Load Packages ----
@@ -35,9 +34,13 @@ source("common_functions/open_channel.R")
 #====================#
 ### pc_effort_st ----
 
-#' TODO upload `pc_effort_st` to the shared Google drive
-# gdrive_download()
-# load()
+#' Download from the shared Gdrive
+gdrive_download(
+  local_path = paste0("source_data/pc_effort_st", "_", adp_year, ".Rdata"),
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output/")
+)
+#' Load the `pc_effort_data` object prepared by `selection_rates.R`
+(load(paste0("source_data/pc_effort_st", "_", adp_year, ".Rdata")))
 
 #====================#
 ### FMA Days Paid ----
@@ -168,36 +171,40 @@ travel_cpd <- travel_costs[Calendar %in% 2022:2023, mean(Travel_CPD_infl)]
 #' days are used before the contract changes and starts the counter for guaranteed days back to zero, and count the 
 #' number of guaranteed days will be used on the new conract. Get it?
 
+adp_contract_day_rates[, .(PERIOD = 1:2, Base_Day_Cost, Optional_Day_Cost)]
+
+#' Identify the date where the contracts change, specifically, the day that the second contract starts.
+contract_change_date <- as.Date("2025-10-01")
+
+#===========================#
 ### Proportion of days before contract changes` ----
 
-#' Run `selection_rates.R` to create the `pc_effort_st` object. We will use the most recent year to calculate the 
-#' proportion of trips that occur before and after the year-day the contract year changes.
+#' Keeping this just in case for now - will likely not need it, instead using `conract_change_date`
 
-#' Subset all OB trips and their date ranges
-ob_trips_adp <- pc_effort_st[
-  STRATA %like% "OB_", 
-  .(START = min(TRIP_TARGET_DATE, LANDING_DATE), END = max(TRIP_TARGET_DATE, LANDING_DATE)),
-  keyby = .(ADP, TRIP_ID)]
-
-#' For each trip, create a vector of each date between fishing start and end. Calculate the proportion of days that 
-#' occurred on or before the contract changes
-ob_dates <- as.Date(unlist(
-  apply(ob_trips_adp, 1, function(x) seq(as.integer(as.Date(x["START"])), as.integer(as.Date(x["END"])), 1))
-))
-ob_contract_prop <- sum(yday(ob_dates) <= yday(contract_end)) / length(ob_dates) 
-ob_contract_prop
-
-
-#' TODO APPLY THIS
-#' 
-#' 
-
-
-#' Roughly, we can apply the total number of Observer sea Days to the proportion before/after the contract changes. But,
-#' if fishing effort differs among strata greatly, could this result in a bias?
-#' The ob_cost() function could instead take the contract_end yday(), count observed days using the rates, and attribute the costs?
-#' ob_cost currently takes the yearly summary of rates, n, and TRP_DUR
-adp_contract_sea_day
+if(F) {
+  #' *DO this in ob_cost? Have it take Contract Day and calculate the cost rather than feeding a CPD?*
+  #' Run `selection_rates.R` to create the `pc_effort_st` object. We will use the most recent year to calculate the 
+  #' proportion of trips that occur before and after the year-day the contract year changes.
+  
+  #' Subset all OB trips and their date ranges
+  ob_trips_adp <- pc_effort_st[
+    STRATA %like% "OB_", 
+    .(START = min(TRIP_TARGET_DATE, LANDING_DATE), END = max(TRIP_TARGET_DATE, LANDING_DATE)),
+    keyby = .(ADP, TRIP_ID)]
+  
+  #' For each trip, create a vector of each date between fishing start and end. Calculate the proportion of days that 
+  #' occurred on or before the contract changes
+  ob_dates <- as.Date(unlist(
+    apply(ob_trips_adp, 1, function(x) seq(as.integer(as.Date(x["START"])), as.integer(as.Date(x["END"])), 1))
+  ))
+  ob_contract_prop <- sum(yday(ob_dates) <= yday(contract_end)) / length(ob_dates) 
+  
+  #' Roughly, we can apply the total number of Observer sea Days to the proportion before/after the contract changes. But,
+  #' if fishing effort differs among strata greatly, could this result in a bias?
+  #' The ob_cost() function could instead take the contract_end yday(), count observed days using the rates, and attribute the costs?
+  #' ob_cost currently takes the yearly summary of rates, n, and TRP_DUR
+}
+#===========================#
 
 ### Number of guaranteed days on contract  ----
 
@@ -224,29 +231,96 @@ current_contract_days <- round(sum(current_contract_days.smry$OB_d))
 ## [Summary] ----
 #=============================#
 
+contract_change_date     #' [Date that the second contract begins]
 current_contract_days    #' [Estimated number of days on the contract when ADP year starts]
 travel_cpd               #' [Estimated cost of travel per sea day]
-
 
 #======================================================================================================================#
 # FIXED-GEAR EM COSTS ----
 #======================================================================================================================#
 
-#' TODO 
+#' These cost estimates are pulled from what was prepared for the 2024 ADP. At the moment, no new information was 
+#' available, so these estimates were inflation-adjusted for the 2025 ADP. See the original 2024 document:
+#' [https://docs.google.com/spreadsheets/d/1kcdLjq2Ck4XJBYP0EhrQpuknRgtQFt01LN3xUaCg7cI/edit?pli=1&gid=0#gid=0]
 
-#=====================#
-## Equipment Costs ----
-#=====================#
+#' Fixed-gear EM costs generally fall into three categories:
+
+#' - Costs that scale with the size of the fixed-gear EM pool, such as equipment maintenance and project management. 
+#' These are generally recurring costs. 
+#' - Equipment installation costs, commonly referred to as 'amortized' costs, that are large one-time payments. 
+#' - Data review and storage costs, that scale with the number of monitored sea days
+ 
+#' For the purpose of estimating costs, we will assume that equipment installation costs will be funded via the 
+#' Murkowski dollars, and the fee will only be used to pay for the equipment maintenance, project management, and data
+#' review/storage costs. By categorizing the cost summaries from the 2015-2021 Annual Reports, we can divide by the 
+#' number of vessels in the fixed-gear EM pool each year to get an estimate of the per-vessel recurring costs.
+#' See the `2024 Monitoring Costs` document above, then navigate to the `Fixed-gear EM tab`. The table in columns L-O
+#' total up the non-amortized costs and then subtract the estimated review costs.
 
 
 #========================#
 ## Video Review Costs ----
 #========================#
 
+#' Reporting in the Annual Reports is inconsistent and oftentimes incomplete at the time of reporting. Using information
+#' from 2018 to 2021, I can get a rough estimate of the review cost per day.
+
+#' Compile cost of review and the number of reviewed days. 
+emfg_review <- data.table(
+  YEAR = 2018:2021,
+  REVIEW_COST = c(191961, 96501, 189225, 242747),
+  REVIEWED_DAYS = c(1005, 1817, 1442, 1458)
+)
+#' Look at how bad this data is. You would think cost would be positively correlated with the number of days reviewed.
+#' I'm going to inflation-adjust each year so that at least the costs are comparable, but rather than taking a yearly
+#' average, I'm going to total the inflation-adjusted costs and divide by the total number or reviewed days.
+ggplot(emfg_review, aes(x = REVIEWED_DAYS, y = REVIEW_COST)) + geom_point()
+
+emfg_review[, Infl_Factor := inflation_dt[emfg_review, Infl_Factor, on = c(Calendar = "YEAR")]]
+emfg_review[, Infl_REVIEW_COST := REVIEW_COST * Infl_Factor]
+emfg_review_cpd <- emfg_review[, sum(Infl_REVIEW_COST) / sum(REVIEWED_DAYS)]
+
+#=========================#
+## Non-Amortized Costs ----
+#=========================#
+
+#' There are sunken costs in fixed-gear EM for program management and equipment that recurr each year and are assumed to
+#' scale with the number of vessels in the fixed-gear EM pool.  These cost were compiled between 2015 and 2021, 
+#' removing any data-related costs or 'amortized costs' from equipment installation inflation-adjusted, and divided by 
+#' the number of fixed-gear EM vessels each year. 
+
+#' TODO Have not gotten confirmation from [Jenn Ferdidnand] that the fee was used to equip new EM vessels in recent 
+#' years. Will we assume any new fixed-gear EM vessels in 2025 will be paid via Murkowski funds?
+
+# ' Note that year 2017 below is actually the sum of 2015, 2016, and 2017. The program was much smaller those years.
+emfg_nonamortized <- data.table(
+  YEAR = c(2017:2021),
+  POOL_SIZE = c(13 + 42 + 96, 141, 168, 169, 170),
+  NON_AMORTIZED = c(784031, 663886, 642946, 926844, 915425),
+  AMORTIZED = c(967395, 871244, 377613, 153313, 203422),
+  REVIEWED_DAYS = c(259 + 357 + 706, 1005, 1817, 1442, 1458)
+)
+emfg_nonamortized[, TOTAL := NON_AMORTIZED + AMORTIZED]
+# Apply an inflation-adjusted non-amortized cost
+emfg_nonamortized[, Infl_Factor := inflation_dt[emfg_nonamortized, Infl_Factor, on = c(Calendar = "YEAR")]]
+emfg_nonamortized[, Infl_NON_AMORTIZED := NON_AMORTIZED * Infl_Factor]
+# Estimate the cost of review, inflation-adjusted
+emfg_nonamortized[, Infl_REVIEW_COST := emfg_review_cpd * REVIEWED_DAYS]
+# Subtract the cost of review from the non-amortized costs
+emfg_nonamortized[, Infl_TOTAL_VESSEL_COST := Infl_NON_AMORTIZED - Infl_REVIEW_COST]
+# Calculate the cost per vessel each year
+emfg_nonamortized[, Infl_CPV := Infl_TOTAL_VESSEL_COST / POOL_SIZE]
+emfg_nonamortized
+#' There is definitely a lot of variation across years, so we will again get a total per-vessel costs across all years 
+#' and divide by the total pool size to arrive at the average no-amortized cost-per-vessel
+emfg_nonamortized_cpv <- emfg_nonamortized[, sum(Infl_TOTAL_VESSEL_COST) / sum(POOL_SIZE)]
 
 ## [Summary] ----
 
-
+#' emfg_v                 # The number of fixed-gear EM vessels will be specified by the outputs of `get_data.R`
+emfg_nonamortized_cpv     # The recurring cost per vessel in the fixed-gear EM pool
+emfg_review_cpd           # The cost per review day, which will be multiplied by the trip duration * monitoring rate 
+#' amortized_cpv          # The equipment installation/replacement costs. Assumed to be covered by Murkowski funds.
 
 #==================================================================================#
 # EM TRAWL COSTS ----
@@ -305,9 +379,8 @@ unique_assigned_days <- rbindlist(assign_dates, idcol = "CRUISE")[
 ][, .(DAYS = uniqueN(DATE)), keyby = .(YEAR)]
 unique_assigned_days
 
-#' 144 days during 2023 A and B season, 85 days for 2024 A season only since this analysis is occurring mid-Aug. We will
-#' round this up to 150 days for the season in 2025 
-goa_season_days <- 150
+#' 144 days during 2023 A and B season, 85 days for 2024 A season only since this analysis is occurring mid-Aug.
+goa_season_days <- 144
 
 #' Assuming all plant observers are active all days of the season, calculate the number of plant days
 goa_plant_ob_days <- goa_season_days * goa_plant_obs
@@ -358,11 +431,35 @@ trw_em_day_costs  #' Total cost of sea days, accounting for guaranteed and optio
 #' Oct-1 to Feb-28 = ($121 per night) aka PERIOD = 2
 kodiak_lodging_dt <- data.table(PERIOD = 1:2, COST_PER_NIGHT = c(223, 121))
 
+# Identify how many fishing days are in each lodging period
+cruise_date <- unique(
+  rbindlist(assign_dates, idcol = "CRUISE")[
+  ][cruise_year, on = .(CRUISE)
+  ][, DATE := as.Date(DATE)
+  ][, .(YEAR, CRUISE, DATE)]
+)
+year_date_period <- unique(cruise_date[YEAR == adp_year - 2, .(YEAR, DATE)])[
+][, PERIOD := ifelse(
+  (yday(DATE) >= yday(as.Date(paste0(adp_year, "-03-01")))) & (yday(DATE) < yday(as.Date(paste0(adp_year, "-10-01")))),
+  1, 2
+)][, .(DAYS = uniqueN(DATE)), keyby = .(YEAR, PERIOD)
+][, PROP := DAYS / sum(DAYS)
+  # merge in lodging rates by period
+][kodiak_lodging_dt, on = .(PERIOD)]
+
+#' Again, assuming we have 5 observers, and assuming you can put 2 observers in each room
+kodiak_lodging_cost <- year_date_period[, sum(goa_season_days * PROP * (COST_PER_NIGHT * (goa_plant_obs/2)))]
+
+
 ### Per Diem ----
 
 #' Assuming the Kodiak plant observers do not have a food plan organized between the plant and the PC contract holder,
 #' we are obligated to pay per-diem rates of $109 per day.
 goa_plant_per_diem <- 109
+
+#' Total per-diem, number of season days X number of plant observers X per diem rate
+kodiak_per_diem_cost <- goa_plant_per_diem * (goa_season_days * goa_plant_obs)
+
 
 #=================================#
 ## Data and Video Review Costs ---- 
@@ -381,7 +478,7 @@ em_trw_data_cpd <- em_trw_data_cost * inflation_dt[Calendar == 2021, Infl_Factor
 
 ### Count of days to review ----
 
-#' This cost assumes the number of review days in pc_effort_object, not in any effort predictions
+#' This cost assumes the number of review days in `pc_effort_object`, not in any effort predictions
 em_trw_review_ND <- unique(pc_effort_st[STRATA == "EM_TRW-GOA", .(ADP, TRIP_ID, DAYS)])[
 ][, .(N = uniqueN(TRIP_ID), D = sum(DAYS)), by = .(ADP)]
 em_trw_review_days <- em_trw_review_ND$D
@@ -405,44 +502,16 @@ equipment_upkeep_per_VY <- 5000
 #===============================#
 
 #' Count the total of GOA-only trawl EM vessels to apply to the maintenance costs.
+
 emtrw_goa_v <- setnames(
-  data.table(readxl::read_xlsx("source_data/EM_TRW 2025 Vessel List for NMFS_July192024.xlsx", col_names = F))[-(1:4), 7:8],
+  data.table(
+    readxl::read_xlsx("source_data/EM_TRW 2025 Vessel List for NMFS_July192024.xlsx", col_names = F)
+  )[-(1:4), 7:8],
   new = c("VESSEL_NAME", "STATUS")
 )[!is.na(VESSEL_NAME)]
 #' [2025 DRAFT] Chelsae Radell listed 3 vessels as 'maybe' for joining trawl EM in 2025. Will not include these in the 
 #' draft and will wait for vessel to formally declare before the Final ADP.
-emtrw_goa_v_count <- trawl_em_goa_v[STATUS != "Maybe?", .N]
-
-
-### ***MOVE THIS ***Lodging Costs P2 ---- 
-
-#' Mar-1 to Sep-30 = ($223 per night) aka PERIOD = 1
-#' Oct-1 to Feb-28 = ($121 per night) aka PERIOD = 2
-
-cruise_date <- unique(
-  rbindlist(assign_dates, idcol = "CRUISE")[
-  ][cruise_year, on = .(CRUISE)
-  ][, DATE := as.Date(DATE)
-  ][, .(YEAR, CRUISE, DATE)]
-)
-
-year_date_period <- unique(cruise_date[YEAR == adp_year - 2, .(YEAR, DATE)])[
-][, PERIOD := ifelse(
-  (yday(DATE) >= yday(as.Date(paste0(adp_year, "-03-01")))) & (yday(DATE) < yday(as.Date(paste0(adp_year, "-10-01")))),
-  1, 2
-)][, .(DAYS = uniqueN(DATE)), keyby = .(YEAR, PERIOD)
-][, PROP := DAYS / sum(DAYS)
-  # merge in lodging rates by period
-][kodiak_lodging_dt, on = .(PERIOD)]
-
-#' Again, assuming we have 150 fishing days in the year, each with 5 observers, and assuming you can put 2 observers in
-#' each room
-
-kodiak_lodging_cost <- year_date_period[, sum(goa_season_days * PROP * (COST_PER_NIGHT * (goa_plant_obs/2)))]
-
-#' Total per-diem, number of season days X number of plant observers X per diem rate
-kodiak_per_diem_cost <- goa_plant_per_diem * (goa_season_days * goa_plant_obs)
-
+emtrw_goa_v_count <- emtrw_goa_v[STATUS != "Maybe?", .N]
 
 ## [Summary (carve-off)] ---- 
 
@@ -453,21 +522,47 @@ kodiak_per_diem_cost <- goa_plant_per_diem * (goa_season_days * goa_plant_obs)
 #' - No meal plan so plant observers are paid government per diem rates in Kodiak 
 #' - 2 plant observers per room and nightly rates are equivalent to government lodging rates in Kodiak
 #' - No equipment installation or replacement costs, only accounting for equipment maintenance
-#' - Video review costs reflect costs in the GOA only, assuming BSAI costs are separate or riembursed
+#' - Video review costs reflect costs in the GOA only, assuming BSAI costs are separate or reimbursed
 
 cost_summary.em_trw <- data.table(
-  Category = c("Observer Plant Day Costs", "Lodging", "Per Diem", "Equipment Maintenance", "Video Review"),
+  Category = c("Observer Plant Day Costs", "Lodging", "Per Diem", "Equipment Maintenance", "Data"),
   Cost = c(
     trw_em_day_costs, kodiak_lodging_cost, kodiak_per_diem_cost, 
     equipment_upkeep_per_VY * emtrw_goa_v_count, em_trw_total_data_cost
   )
 )
+sum(cost_summary.em_trw$Cost)   # Total
+cost_summary.em_trw             # Broken up by cost category
 
-cost_summary.em_trw
+#======================================================================================================================#
+# ***TODO*** Upload outputs to Shared Google Drive ----
+#======================================================================================================================#
 
+#' Compile costs into `cost_params` object
 
-#==========================================#
-# Upload outputs to Shared Google Drive ----
-#==========================================#
+cost_params <- list(
+  OB = list(
+    contract_change_date = contract_change_date,
+    current_contract_days = current_contract_days,
+    travel_cpd = travel_cpd
+  ),
+  EMFG = list(
+    #  Initialize emfg_v here, then number of fixed-gear EM vessels, but specify this from the outputs of get_data.R
+    emfg_v = NULL,                                 
+    emfg_nonamortized_cpv = emfg_nonamortized_cpv,
+    emfg_review_cpd = emfg_review_cpd
+  ),
+  EMTRW = list(
+    emtrw_total_cost = sum(cost_summary.em_trw$Cost),
+    emtrw_summary = cost_summary.em_trw
+  )
+)
 
-#' TODO
+#' Save cost_params locally 
+save(cost_params, file = paste0("source_data/cost_params_", adp_year, ".Rdata"))
+
+#' Upload cost_params to shared google drive
+gdrive_upload(
+  local_path = paste0("source_data/cost_params_", adp_year, ".Rdata"),
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
+)
