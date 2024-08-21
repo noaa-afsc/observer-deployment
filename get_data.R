@@ -1,10 +1,12 @@
 # User inputs -------------------------------------------------------------
-ADPyear     <- 2024     # Enter numeric year you are doing the ADP for
-ADP_version <- "Final"  # Enter "Draft" or "Final"
+ADPyear     <- 2025     # Enter numeric year you are doing the ADP for
+ADP_version <- "Draft"  # Enter "Draft" or "Final"
 EM_final    <- "N"      # Is the final EM list approved? Y/N (caps)
 options(scipen = 9999)  # Avoid scientific notation
 
 # Get packages ------------------------------------------------------------
+if(!require("devtools"))  install.packages("devtools")
+if(!require("FMAtools")) install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
 if(!require("odbc")) install.packages("odbc", repos='http://cran.us.r-project.org')
 if(!require("ROracle")) install.packages("ROracle", repos='http://cran.us.r-project.org')
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
@@ -29,62 +31,48 @@ PSC <-
                             else 0 end) as psc_total_catch,
                    sum(psc_total_mortality_weight) as psc_total_mortality_weight
                    FROM akfish_report.v_cas_psc
-                   WHERE year >=", ADPyear - 12,"
+                   WHERE year >=", ADPyear - 4,"
                    AND el_report_id is not null
                    GROUP BY year, el_report_id, species_group_code"))
 
 # * PCTC ----
-pctc <- if(ADP_version == "Draft") {
-  read.csv("source_data/pctc_list_2023-08-18.csv")
-} else {
-  read.csv("source_data/pctc_list_2023-09-19.csv")
-  # https://drive.google.com/file/d/1qf2mf9TNCYXk6fx7sXjveDdWGQr97dGE/view?usp=drive_link
-}
+pctc <- dbGetQuery(channel_akro, 
+                   "SELECT DISTINCT llp.current_vessel_id vessel_id, llp.current_vessel_name vessel_name
+                    FROM akfish.v_llp_groundfish_license llp
+                    JOIN akfish.pctc_llp_initial_quota_share qs ON substr(llp.license,4,4) = qs.license_number
+                    WHERE llp.current_vessel_id is not null
+                    ORDER BY vessel_name")
 
 # * Voluntary full coverage ----
 #   Requests to join must be made prior to October 15  
 BSAIVoluntary <-
-  dbGetQuery(channel_afsc,
+  dbGetQuery(channel_akro,
              if(ADP_version == "Draft" | Sys.Date() < paste0(ADPyear-1, "-10-15")){
-               paste(
-                 " -- From Andy Kingham
-                 SELECT extract(year from ovsp.end_date) as year, 
-                 ovsp.*,
-                 lv.name,
-                 lv.permit as vessel_id,
-                 aos.DATE_OPTED,
-                 DECODE(aos.opt_in_out, 'R', 'Requested, Approved', 'D', 'Denied', 'A', 'Appealed, Approved') opt_in_out_status
-                 FROM norpac.odds_vessel_sample_plan ovsp
-                 JOIN norpac.atl_lov_vessel lv
-                 ON lv.vessel_seq = ovsp.vessel_seq
-                 JOIN norpac.odds_eligible_opt_strata eos
-                 ON eos.VESSEL_SEQ = ovsp.VESSEL_SEQ
-                 AND eos.sample_plan_seq = ovsp.sample_plan_seq
-                 JOIN norpac.odds_annual_opt_strata aos
-                 ON aos.ELIGIBLE_OPT_SEQ = eos.ELIGIBLE_OPT_SEQ 
-                 WHERE ovsp.SAMPLE_PLAN_SEQ = 8
-                 AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 2, "
-                 AND aos.year_eligible = ", ADPyear - 1, "")} else
-                   paste(
-                     " -- From Andy Kingham
-                     SELECT extract(year from ovsp.end_date) as year,
-                     ovsp.*,
-                     lv.name,
-                     lv.permit as vessel_id,
-                     aos.DATE_OPTED,
-                     DECODE(aos.opt_in_out, 'R', 'Requested, Approved', 'D', 'Denied', 'A', 'Appealed, Approved') opt_in_out_status
-                     FROM norpac.odds_vessel_sample_plan ovsp
-                     JOIN norpac.atl_lov_vessel lv
-                     ON lv.vessel_seq = ovsp.vessel_seq
-                     JOIN norpac.odds_eligible_opt_strata eos
-                     ON eos.VESSEL_SEQ = ovsp.VESSEL_SEQ
-                     AND eos.sample_plan_seq = ovsp.sample_plan_seq
-                     JOIN norpac.odds_annual_opt_strata aos
-                     ON aos.ELIGIBLE_OPT_SEQ = eos.ELIGIBLE_OPT_SEQ 
-                     WHERE ovsp.SAMPLE_PLAN_SEQ = 8
-                     AND EXTRACT(Year FROM ovsp.end_date) > ", ADPyear - 1, "
-                     AND aos.year_eligible = ", ADPyear, "")
-  )
+               paste0(
+                 "select distinct 
+                  ev.vessel_id, ev.begin_date, ev.end_date, v.name as vessel_name, e.name as eligibility, trunc(ev.last_modified_date) as last_modified_date
+                  from akfish.eligible_vessel ev
+                  join akfish.eligibility e on e.id = ev.eligibility_id
+                  join akfish_report.vessel v on v.vessel_id = ev.vessel_id
+                  where e.name = 'CV FULL COVERAGE'
+                  and v.end_date is null
+                  and v.expire_date is null
+                  and extract(year from ev.begin_date) < ", ADPyear,"
+                  and (ev.end_date is null or extract(year from ev.end_date) >= ", ADPyear - 1,")
+                  order by v.name")} else
+                   paste0(
+                     "select distinct 
+                      ev.vessel_id, ev.begin_date, ev.end_date, v.name as vessel_name, e.name as eligibility, trunc(ev.last_modified_date) as last_modified_date
+                      from akfish.eligible_vessel ev
+                      join akfish.eligibility e on e.id = ev.eligibility_id
+                      join akfish_report.vessel v on v.vessel_id = ev.vessel_id
+                      where e.name = 'CV FULL COVERAGE'
+                      and v.end_date is null
+                      and v.expire_date is null
+                      and extract(year from ev.begin_date) < ", ADPyear + 1,"
+                      and (ev.end_date is null or extract(year from ev.end_date) >= ", ADPyear,")
+                      order by v.name")
+             )
 
 # * Partial Coverage CPs ----
 #   Requests to join must be made prior to July 1  
@@ -92,6 +80,7 @@ BSAIVoluntary <-
 #   so therefore it's not subject to observer coverage. For accounting purposes, 
 #   we treat it like one of these small CPs, so it's on this list.
 #   For more info on this, see Alicia Miller.  
+#   Pacific Mariner (4581) and Kruzof (6039) were approved for 2025 per e-mail from Melanie Rickett 2024-Aug-20
 PartialCPs <- data.frame(VESSEL_ID = c(662, 4581, 6039))
 
 # * Fixed-gear EM research ---- 
@@ -167,8 +156,9 @@ FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT as vessel_id, length a
 work.data <- dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla"))
 
 # Load data from current year
-load("source_data/2023-11-17cas_valhalla.RData")
-# https://drive.google.com/file/d/1_cSszEnp7WgAx3alI7nlg6fkXQZz-0eq/view?usp=drive_link
+ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
+gdrive_download("source_data/2024-08-19cas_valhalla.Rdata", ADP_dribble)
+load("source_data/2024-08-19cas_valhalla.Rdata")
 
 # Append data from current year to data from prior year
 work.data <- rbind(work.data, valhalla)
@@ -194,7 +184,7 @@ up_dates <- setDT(dbGetQuery(channel_akro, paste0("select distinct
                                                   JOIN akfish_report.catch_report cr on cr.catch_report_pk= tf.catch_report_pk
                                                   JOIN akfish_report.calendar_date td on td.calendar_date_pk = tf.trip_target_date_pk
                                                   JOIN akfish_report.gear g on g.gear_pk = tf.gear_pk
-                                                  WHERE k.year >=", ADPyear - 11,"
+                                                  WHERE k.year >=", ADPyear - 12,"
                                                   AND cr.el_report_id is not null")))
 
 up_dates[, ':='(DB_TRIP_TARGET_DATE = as.Date(DB_TRIP_TARGET_DATE), DB_LANDING_DATE = as.Date(DB_LANDING_DATE))]
@@ -263,7 +253,7 @@ arrange(COVERAGE_TYPE, STRATA)
 work.data <- mutate(work.data, CVG_NEW = NA)
 
 # Mandatory full coverage
-work.data <- mutate(work.data, CVG_NEW = ifelse(COVERAGE_TYPE == "FULL" & STRATA %in% c("FULL", "EM_TRW_EFP", "VOLUNTARY"), "FULL", CVG_NEW))
+work.data <- mutate(work.data, CVG_NEW = ifelse(COVERAGE_TYPE == "FULL" & STRATA %in% c("FULL", "EM_TRW_EFP", "VOLUNTARY", "EM_TRW_BSAI"), "FULL", CVG_NEW))
 
 # PCTC
 work.data <- mutate(work.data, CVG_NEW = ifelse(VESSEL_ID %in% pctc$VESSEL_ID &
@@ -299,7 +289,7 @@ distinct(work.data, COVERAGE_TYPE, CVG_NEW, STRATA) %>%
 arrange(COVERAGE_TYPE, CVG_NEW, STRATA)
 
 # Partial coverage strata
-work.data <- mutate(work.data, CVG_NEW = ifelse(is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA %in% c("EM", "EM Voluntary", "EM_HAL", "EM_POT", "EM_TenP", "EM_TRW_EFP", "HAL", "POT", "t", "T", "TenH", "TenP", "TenTR", "TRIP", "TRW", "VESSEL", "ZERO", "ZERO_EM_RESEARCH"), "PARTIAL", CVG_NEW))
+work.data <- mutate(work.data, CVG_NEW = ifelse(is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA %in% c("EM", "EM Voluntary", "EM_FIXED_BSAI", "EM_FIXED_GOA", "EM_HAL", "EM_POT", "EM_TRW_EFP", "EM_TRW_GOA", "EM_TenP", "HAL", "OB_FIXED_BSAI", "OB_FIXED_GOA", "OB_TRW_BSAI", "OB_TRW_GOA", "POT", "T", "TRIP", "TRW", "TenH", "TenP", "TenTR", "VESSEL", "ZERO", "ZERO_EM_RESEARCH", "t"), "PARTIAL", CVG_NEW))
 
 # Split trips that fished both full and partial coverage
 work.data[, N := uniqueN(CVG_NEW), by = .(TRIP_ID)
@@ -313,6 +303,9 @@ arrange(ADP, COVERAGE_TYPE, CVG_NEW, STRATA)
 
 # * STRATA_NEW ----
 
+# Correct FMP
+work.data[FMP %in% c("BS", "AI"), FMP := "BSAI"]
+
 # Base STRATA_NEW on AGENCY_GEAR_CODE
 work.data <- mutate(work.data, STRATA_NEW = recode(AGENCY_GEAR_CODE, "PTR" = "TRW", "NPT" = "TRW", "JIG" = "ZERO"))
 
@@ -323,7 +316,7 @@ work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "FULL", "FULL", ST
 work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "PARTIAL" & STRATA == "ZERO", "ZERO", STRATA_NEW))
 
 # Fixed-gear EM
-work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), paste("EM", STRATA_NEW, sep = "_"), STRATA_NEW))
+work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), paste("EM_FIXED", FMP, sep = "_"), STRATA_NEW))
 
 # Fixed-gear EM research
 work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_research$VESSEL_ID, "ZERO", STRATA_NEW))
@@ -334,9 +327,10 @@ work.data <- work.data %>%
              mutate(STRATA_NEW = ifelse(VESSEL_ID %in% trawl_em$PERMIT & 
                                         all(AGENCY_GEAR_CODE == "PTR") & 
                                         all(TRIP_TARGET_CODE %in% c("B", "P")),
-                                        "EM_TRW_EFP",
+                                        paste("EM_TRW", FMP, sep = "_"),
                                         STRATA_NEW)) %>% 
              ungroup() %>% 
+             mutate(CVG_NEW = ifelse(STRATA_NEW == "EM_TRW_GOA", "PARTIAL", CVG_NEW)) %>% 
              setDT()
 
 # View all strata conversions
@@ -367,8 +361,9 @@ work.data <- mutate(work.data, STRATA_NEW = ifelse(TRIP_ID %in% over_forties$TRI
 work.data <- work.data %>% 
              group_by(TRIP_ID) %>% 
              mutate(STRATA_NEW = ifelse(TRIP_ID %in% over_forties$TRIP_ID & 
-                                        VESSEL_ID %in% em_base$VESSEL_ID, 
-                                        paste("EM", unique(AGENCY_GEAR_CODE[AGENCY_GEAR_CODE != "JIG"]), sep = "_", collapse = " "), 
+                                        VESSEL_ID %in% em_base$VESSEL_ID &
+                                        any(AGENCY_GEAR_CODE %in% c("HAL", "POT")), 
+                                        paste("EM_FIXED", FMP, sep = "_"), 
                                         STRATA_NEW)) %>% 
              setDT()
 
@@ -420,24 +415,6 @@ dups <- work.data %>%
 if(nrow(dups) != 0){
   print(dups)
   warning("More than one STRATA or STRATA_NEW within some TRIP_IDs")
-}
-
-# Split trips that fished both EM EFP and other strata
-work.data <- copy(work.data)[TRIP_ID %in% work.data[STRATA_NEW == "EM_TRW_EFP", TRIP_ID], N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
-                             ][N > 1, TRIP_ID := ifelse(STRATA_NEW != "EM_TRW_EFP", paste(TRIP_ID, 1), paste(TRIP_ID, 2))
-                               ][, N := NULL]
-
-# Split trips that fished both full and partial coverage
-work.data[, N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
-          ][N > 1, TRIP_ID := ifelse(STRATA_NEW == "FULL", paste(TRIP_ID, 1), TRIP_ID)
-            ][, N := NULL]
-
-# Apply chosen stratification for the final ADP
-if(ADP_version == "Final"){
-work.data[STRATA_NEW %in% c("EM_HAL", "EM_POT"), STRATA_NEW := "EM_FIXED"
-][STRATA_NEW %in% c("HAL", "POT"), STRATA_NEW := "FIXED"
-][FMP %in% c("BS", "AI"), FMP := "BSAI"
-][!STRATA_NEW %in% c("FULL", "ZERO"), STRATA_NEW := paste(STRATA_NEW, FMP, sep = "_")]
 }
 
 # For remaining combo strata trips, default to stratum with the most landed weight
