@@ -542,6 +542,8 @@ cost_summary.em_trw             # Broken up by cost category
 
 cost_params <- list(
   OB = list(
+    contract_rates = adp_contract_day_rates[, .(PERIOD = 1:2, Base_Day_Cost, Optional_Day_Cost)],
+    contract_day_min = 1200,
     contract_change_date = contract_change_date,
     current_contract_days = current_contract_days,
     travel_cpd = travel_cpd
