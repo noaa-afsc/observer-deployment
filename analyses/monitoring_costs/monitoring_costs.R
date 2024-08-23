@@ -479,6 +479,7 @@ em_trw_data_cpd <- em_trw_data_cost * inflation_dt[Calendar == 2021, Infl_Factor
 ### Count of days to review ----
 
 #' This cost assumes the number of review days in `pc_effort_object`, not in any effort predictions
+#' TODO can add this to `emtrw_cost()` function but we wouldn't be estimating the full EM TWR total carve-off here.
 em_trw_review_ND <- unique(pc_effort_st[STRATA == "EM_TRW-GOA", .(ADP, TRIP_ID, DAYS)])[
 ][, .(N = uniqueN(TRIP_ID), D = sum(DAYS)), by = .(ADP)]
 em_trw_review_days <- em_trw_review_ND$D
@@ -556,7 +557,9 @@ cost_params <- list(
   ),
   EMTRW = list(
     emtrw_total_cost = sum(cost_summary.em_trw$Cost),
-    emtrw_summary = cost_summary.em_trw
+    emtrw_summary = cost_summary.em_trw,
+    goa_plant_ob_days = goa_plant_ob_days,
+    emtrw_goa_v_count = emtrw_goa_v_count
   )
 )
 
