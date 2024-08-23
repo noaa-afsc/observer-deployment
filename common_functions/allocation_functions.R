@@ -94,6 +94,21 @@ spatiotemp_data_prep <- function(valhalla){
   pc_effort_dt
 }
 
+# This function returns a list with each trip's list of unique Julian dates
+trip_dates <- function(x) {
+  # x <- pc_effort_st
+  trip_dates_dt <- x[, .(
+    START = julian.Date(min(TRIP_TARGET_DATE, LANDING_DATE)), END = julian.Date(max(TRIP_TARGET_DATE, LANDING_DATE))
+  ), keyby = .(ADP, STRATA, TRIP_ID)]
+  trip_dates_lst <- apply(trip_dates_dt, 1, function(x) seq(x[["START"]], x[["END"]], 1))
+  names(trip_dates_lst) <- trip_dates_dt$TRIP_ID
+  list(
+    dt = trip_dates_dt,
+    lst = trip_dates_lst
+  )
+}
+
+
 #======================================================================================================================#
 # Space/Time Box Definition  -------------------------------------------------------------------------------------------
 #======================================================================================================================#
@@ -677,7 +692,27 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
     swor_bootstrap.allo_lst <- list(effort = unique(swor_bootstrap.effort[, .(ADP, STRATA, BSAI_GOA, TRIP_ID, DAYS)])[
     ][, .(STRATA_N = uniqueN(TRIP_ID), TRP_DUR = mean(DAYS)), keyby = .(ADP, STRATA)])
     
-    # Calculate rates afforded with the specified budget
+    #' * TESTING ============================*
+    ob_contract_dates <- trip_dates(swor_bootstrap.effort[STRATA %like% "OB_"])
+    # For each trip, calculate the proportion of dates the occurred BEFORE the contract change date
+    ob_contract_calc <- ob_contract_dates$dt[, .(TRIP_ID)]
+    ob_contract_calc$PROP <- sapply(
+      ob_contract_dates$lst, function(x) sum(x < julian.Date(cost_params$OB$contract_change_date)) / length(x)
+    )
+    # Merge ADP, STRATA, and DAYS back in
+    ob_contract_calc <- unique(swor_bootstrap.effort[STRATA %like% "OB_", .(ADP, STRATA, TRIP_ID, DAYS)])[
+    ][ob_contract_calc, on = .(TRIP_ID)]
+    # For each Stratum, calculate the number of days on contract period 1 and contract period 2
+    ob_contract_calc <- ob_contract_calc[, .(
+      CONTRACT_1 = sum(DAYS * PROP),
+      CONTRACT_2 = sum(DAYS *(1 - PROP))
+    ), keyby = .(ADP, STRATA)]
+    # Merge in contract proportions
+    swor_bootstrap.allo_lst$effort <- ob_contract_calc[swor_bootstrap.allo_lst$effort, on = .(ADP, STRATA)]
+    #' * TESTING ============================*
+    
+    # Calculate rates afforded with the specified budget.
+    
     #' [NOTE] The `allo_prox()` function currently excludes the "EM_TRW" strata by default.
     swor_bootstrap.rates <- allo_prox(
       swor_bootstrap.box, swor_bootstrap.allo_lst, cost_params, budget_lst[[1]], max_budget = 7e6, index_interval = 0.0001
@@ -713,7 +748,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
   
   year_vec <- unique(box_def$strata_n_dt$ADP)
   
-  # TODO FOR NOW, OMIT ZERO and EM_TRW as we will not allocate to either in 2024
+  # Omit ZERO and EM_TRW-GOA strata as we will not allocate to either via the proximity method
   box_def$strata_n_dt <- box_def$strata_n_dt[!(STRATA %like% "ZERO|EM_TRW")]
   box_def$dt_out <- box_def$dt_out[!(STRATA %like% "ZERO|EM_TRW")]
   box_def$box_smry <- box_def$box_smry[!(names(box_def$box_smry) %like% "ZERO|EM_TRW")]
@@ -728,7 +763,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
     ][, n := SAMPLE_RATE * STRATA_N
     ][, FPC := (STRATA_N - n) / STRATA_N
     ][, CV_SCALING := sqrt(FPC * (1/n))
-    ][, INDEX := PROX * (1 - CV_SCALING)][is.na(INDEX), INDEX := 0]
+    ][, INDEX := PROX * (1 - CV_SCALING)][INDEX < 0, INDEX := 0]
     setorderv(box_def_sub.prox.range, c(stratum_cols, "INDEX"))
     # Approximate the costs of a range of indices 
     index_vec <- seq(0, 1, by = 0.025)
@@ -814,19 +849,29 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
       x2
     })
     # Calculate the cost of each index
-    index_costs_vec <- sapply(index_costs2, function(x) {
-      calculate_cost(x, cost_params, allo_lst, max_budget)$INDEX_COST
+    #' *TODO `calculate_cost()` now takes much longer to run for each index than before. *
+    # Generate the cost summaries for each index
+    index_cost_lst <- lapply(index_costs2, function(x) {
+      calculate_cost(x, cost_params, allo_lst, max_budget)
     })
+    # Grab only the final costs
+    index_costs_vec <- sapply(index_cost_lst, "[[", "INDEX_COST")
+    
     
     # Find the index that is closest to the budget
     closest_to_budget <- findInterval(budget, unlist(index_costs_vec))
     out <- index_costs2[[closest_to_budget]]
     out[, INDEX_COST := unlist(index_costs_vec)[closest_to_budget]]
+    # Add the cost summaries as an attribute to the table
+    setattr(out, "cost_summary", index_cost_lst[[closest_to_budget]])
+    
     year_res[[which(year_vec == i)]] <- out
+    
   }
   
-  # Return the allocated rates, collasping the list of rates by year
-  rbindlist(year_res)
+  #' Return the allocated rates, collapsing the list of rates by year. If there is only one year (like for the ADP),
+  #' grab the only item so that the cost_summary attribute is retained.
+  if(length(year_res) > 1) rbindlist(year_res) else(year_res[[1]])
   
 }
 
@@ -851,13 +896,10 @@ calculate_cost <- function(index_rates, cost_params, allo_lst, max_budget) {
         index_rates_sub <- x[I == index_vec[i]]
         index_rates_sub_res <- cbind(
           
-          # ob_cost(index_rates_sub[STRATA %like% "OB_"], cost_params),
-          
-          #' *REPLACING OB COST FUNCTION HERE*
-          ob_cost_new(index_rates_sub[STRATA %like% "OB_"], cost_params),
+          ob_cost_new(index_rates_sub[STRATA %like% "OB_"], cost_params, allo_lst$effort[STRATA %like% "OB_"]),
           
           emfg_cost( index_rates_sub[STRATA %like% "EM_HAL|EM_POT|EM_FIXED"], cost_params),
-          emtrw_cost( index_rates_sub[STRATA %like% "EM_TRW"], cost_params)
+          emtrw_cost_new( index_rates_sub[STRATA %like% "EM_TRW"], cost_params)
         )
         index_rates_sub_res[, INDEX_COST := sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL, na.rm = T)]
         # If the cost exceeds the specified maximum budget, don't bother continuing cost calculations
@@ -1444,36 +1486,86 @@ ob_cost <- function(x, cost_params, sim = F) {
 }
 
 # This version was created for the 2025 ADP to handle new PC  contract information
-ob_cost_new <- function(x, cost_params, sim = F) {
+ob_cost_new <- function(x, cost_params, allo_sub, sim = F) {
   # Requires ADP, STRATA, N, MON_RATE (if average is assumed), TRP_DUR, n (if simulated)
   
-  day_rate_intercept <- cost_params$OB$day_rate_intercept
-  day_rate_slope     <- cost_params$OB$day_rate_slope
-  travel_day_rate    <- cost_params$OB$travel_day_rate
+  x
+  cost_params$OB
+  allo_sub
   
+  
+  
+  
+  # day_rate_intercept <- cost_params$OB$day_rate_intercept
+  # day_rate_slope     <- cost_params$OB$day_rate_slope
+  # travel_day_rate    <- cost_params$OB$travel_day_rate
+  # 
   # Subset OB pool trips
   x1 <- x[STRATA %like% "OB_"]
   
-  # If simulating, use 'n' 
-  if(sim) ob_days <- x1[, sum(d)] else {
-    # Otherwise, calculate total expected number of observed days
-    ob_days <- x1[, sum(STRATA_N * TRP_DUR * MON_RATE)]
-  }
+  # Merge contract days with monitoring rate
+  day_costs <- copy(allo_sub)[x1[, .(ADP, STRATA, MON_RATE)],  on = .(ADP, STRATA)]
+  # Calculate expected number of days monitored on each contract, and merge in day rates on by contract period
+  day_costs.contract <- rbind(
+    day_costs[, .(PERIOD = 1, OB_DAYS = sum(CONTRACT_1 * MON_RATE))],
+    day_costs[, .(PERIOD = 2, OB_DAYS = sum(CONTRACT_2 * MON_RATE))]
+  )[cost_params$OB$contract_rates, on = .(PERIOD)]
+  # Account for days already on the contract
+  day_costs.contract[PERIOD == 1, DAYS_ON_CONTRACT := cost_params$OB$current_contract_days]
+  #' Count number of base days and guaranteed days on each contract. Check to see if we allocated the minimum number
+  #' of base days on contract 1
+  min_days_met <- day_costs.contract[PERIOD == 1, OB_DAYS + DAYS_ON_CONTRACT] >= cost_params$OB$contract_day_min
+  
+  day_costs.contract[
+  ][PERIOD == 1, BASE_DAYS := min(cost_params$OB$contract_day_min - DAYS_ON_CONTRACT, OB_DAYS)
+  ][PERIOD == 2, BASE_DAYS := min(cost_params$OB$contract_day_min, OB_DAYS)
+  ][, OPT_DAYS := OB_DAYS - BASE_DAYS
+  ][, DAY_COST := (Base_Day_Cost * BASE_DAYS) + (Optional_Day_Cost * OPT_DAYS)]
+  # Total the day costs
+  ob_day_cost <- sum(day_costs.contract$DAY_COST)
+  
+  # Estimate the total travel costs
+  ob_travel_cost <- sum(day_costs.contract$OB_DAYS) * cost_params$OB$travel_cpd
+  
+  # Output a summary table
+  data.table(
+    OB_TOTAL = ob_day_cost + ob_travel_cost,
+    OB_CPD = (ob_day_cost + ob_travel_cost) / sum(day_costs.contract$OB_DAYS),
+    OB_DAYS = sum(day_costs.contract$OB_DAYS),
+    OB_DAY_COST = ob_day_cost,
+    OB_TRAVEL_COST = ob_travel_cost,
+    OB_C1_BASE = day_costs.contract[PERIOD == 1, BASE_DAYS + DAYS_ON_CONTRACT],
+    OB_C1_OPT = day_costs.contract[PERIOD == 1, OPT_DAYS],
+    OB_C2_BASE = day_costs.contract[PERIOD == 2, BASE_DAYS],
+    OB_C2_OPT = day_costs.contract[PERIOD == 2, OPT_DAYS]
+  )
+  
+  
+  
+  
+  # # If simulating, use 'n' 
+  # if(sim) ob_days <- x1[, sum(d)] else {
+  #   # Otherwise, calculate total expected number of observed days
+  #   ob_days <- x1[, sum(STRATA_N * TRP_DUR * MON_RATE)]
+  # }
+  
+  
+  
   
   
   # Calculate total cost 
-  
-  # Calculate minimum cost based on guaranteed sea days
-  ob_gua_cost <- cost_params$OB$sea_day_min * cost_params$OB$sea_day_rate_gua
-  # Calculate cost of optional sea days
-  ob_opt_cost <- (ob_days - cost_params$OB$sea_day_min) * cost_params$OB$sea_day_rate_opt
-  # Estimate total travel costs
-  travel_cost <- ob_days * cost_params$OB$travel_day_rate
-  
-  ob_total <- ob_gua_cost + ob_opt_cost + travel_cost
-  ob_cpd <- ob_total / ob_days  
-  
-  data.table(OB_TOTAL = ob_total, OB_CPD = ob_cpd, OB_DAYS = ob_days)
+  # 
+  # # Calculate minimum cost based on guaranteed sea days
+  # ob_gua_cost <- cost_params$OB$sea_day_min * cost_params$OB$sea_day_rate_gua
+  # # Calculate cost of optional sea days
+  # ob_opt_cost <- (ob_days - cost_params$OB$sea_day_min) * cost_params$OB$sea_day_rate_opt
+  # # Estimate total travel costs
+  # travel_cost <- ob_days * cost_params$OB$travel_day_rate
+  # 
+  # ob_total <- ob_gua_cost + ob_opt_cost + travel_cost
+  # ob_cpd <- ob_total / ob_days  
+  # 
+  # data.table(OB_TOTAL = ob_total, OB_CPD = ob_cpd, OB_DAYS = ob_days)
   
 }
 
@@ -1483,8 +1575,8 @@ emfg_cost <- function(x, cost_params, sim = F) {
   # x <- copy(x2[['2022']]); 
   
   emfg_v <- cost_params$EMFG$emfg_v
-  cost_per_vessel <- cost_params$EMFG$cost_per_vessel
-  cost_per_review_day <-  cost_params$EMFG$cost_per_review_day
+  cost_per_vessel <- cost_params$EMFG$emfg_nonamortized_cpv
+  cost_per_review_day <-  cost_params$EMFG$emfg_review_cpd
   
   # subset to EM fixed-gear strata
   x1 <- x[STRATA %like% "EM_HAL|EM_POT|EM_FIXED"]
@@ -1552,8 +1644,23 @@ emtrw_cost <- function(x, cost_params, sim = F) {
   )
 }
 
-# versions use for simulations where 'n' is fed instead of sample rate
+# Now that it is a carve-off and we total the costs in monitoring_costs.R, this function becomes very simple
+emtrw_cost_new <- function(x, cost_params, sim = F) {
+  
+  # TODO feed x in to get summary of trips or review days? 
+  data.table(
+    EMTRW_TOTAL = cost_params$EMTRW$emtrw_total_cost,
+    EMTRW_PLANT_OBS = cost_params$EMTRW$emtrw_summary[
+    ][Category %in% c("Observer Plant Day Costs", "Lodging", "Per Diem"), sum(Cost)],
+    EMTRW_BASE = cost_params$EMTRW$emtrw_summary[Category == "Equipment Maintenance", Cost],
+    EMTRW_DATA = cost_params$EMTRW$emtrw_summary[Category == "Data", Cost]
+  )
+  
+}
 
+
+
+# versions use for simulations where 'n' is fed instead of sample rate
 
 # For each monitoring method, calculate total given a monitoring rate, up to a maximum budget
 rates_to_costs <- function(allo_lst_effort, rate_vec, cost_params, max_budget, cost_fun) {
