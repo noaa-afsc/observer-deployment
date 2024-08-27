@@ -1487,29 +1487,52 @@ ob_cost <- function(x, cost_params, sim = F) {
 
 # This version was created for the 2025 ADP to handle new PC  contract information
 ob_cost_new <- function(x, cost_params, allo_sub, sim = F) {
-  # Requires ADP, STRATA, N, MON_RATE (if average is assumed), TRP_DUR, n (if simulated)
-  
-  x
-  cost_params$OB
-  allo_sub
-  
-  
-  
-  
-  # day_rate_intercept <- cost_params$OB$day_rate_intercept
-  # day_rate_slope     <- cost_params$OB$day_rate_slope
-  # travel_day_rate    <- cost_params$OB$travel_day_rate
-  # 
-  # Subset OB pool trips
+
   x1 <- x[STRATA %like% "OB_"]
   
-  # Merge contract days with monitoring rate
-  day_costs <- copy(allo_sub)[x1[, .(ADP, STRATA, MON_RATE)],  on = .(ADP, STRATA)]
-  # Calculate expected number of days monitored on each contract, and merge in day rates on by contract period
-  day_costs.contract <- rbind(
-    day_costs[, .(PERIOD = 1, OB_DAYS = sum(CONTRACT_1 * MON_RATE))],
-    day_costs[, .(PERIOD = 2, OB_DAYS = sum(CONTRACT_2 * MON_RATE))]
-  )[cost_params$OB$contract_rates, on = .(PERIOD)]
+  # Count the number of days on each contract
+  if(sim == T) {
+    
+    #' *If simulating trip selection, allo_sub must be subset to selected trips*
+    
+    #' *=====================================================*
+    #' *TAKEN FROM* `bootstrap_allo()` Should probably make this a function
+    
+    ob_contract_dates <- trip_dates(allo_sub[STRATA %like% "OB_"])
+    # For each trip, calculate the proportion of dates the occurred BEFORE the contract change date
+    ob_contract_calc <- ob_contract_dates$dt[, .(TRIP_ID)]
+    ob_contract_calc$PROP <- sapply(
+      ob_contract_dates$lst, function(x) sum(x < julian.Date(cost_params$OB$contract_change_date)) / length(x)
+    )
+    # Merge ADP, STRATA, and DAYS back in
+    ob_contract_calc <- unique(allo_sub[STRATA %like% "OB_", .(ADP, STRATA, TRIP_ID, DAYS)])[
+    ][ob_contract_calc, on = .(TRIP_ID)]
+    # For each Stratum, calculate the number of days on contract period 1 and contract period 2
+    ob_contract_calc <- ob_contract_calc[, .(
+      CONTRACT_1 = sum(DAYS * PROP),
+      CONTRACT_2 = sum(DAYS *(1 - PROP))
+    ), keyby = .(ADP, STRATA)]
+    #' *=====================================================*
+    
+    day_costs.contract <- rbind(
+      ob_contract_calc[, .(PERIOD = 1, OB_DAYS = sum(CONTRACT_1))],
+      ob_contract_calc[, .(PERIOD = 2, OB_DAYS = sum(CONTRACT_2))]
+    )[cost_params$OB$contract_rates, on = .(PERIOD)]
+    
+  } else {
+    
+    #' *If NOT simulating trip selection, get the average from all trips based on trip duration*
+    
+    # Merge contract days with monitoring rate
+    day_costs <- copy(allo_sub)[x1[, .(ADP, STRATA, MON_RATE)],  on = .(ADP, STRATA)]
+    # Calculate expected number of days monitored on each contract, and merge in day rates on by contract period
+    day_costs.contract <- rbind(
+      day_costs[, .(PERIOD = 1, OB_DAYS = sum(CONTRACT_1 * MON_RATE))],
+      day_costs[, .(PERIOD = 2, OB_DAYS = sum(CONTRACT_2 * MON_RATE))]
+    )[cost_params$OB$contract_rates, on = .(PERIOD)]
+ 
+  }
+  
   # Account for days already on the contract
   day_costs.contract[PERIOD == 1, DAYS_ON_CONTRACT := cost_params$OB$current_contract_days]
   #' Count number of base days and guaranteed days on each contract. Check to see if we allocated the minimum number
@@ -1539,33 +1562,6 @@ ob_cost_new <- function(x, cost_params, allo_sub, sim = F) {
     OB_C2_BASE = day_costs.contract[PERIOD == 2, BASE_DAYS],
     OB_C2_OPT = day_costs.contract[PERIOD == 2, OPT_DAYS]
   )
-  
-  
-  
-  
-  # # If simulating, use 'n' 
-  # if(sim) ob_days <- x1[, sum(d)] else {
-  #   # Otherwise, calculate total expected number of observed days
-  #   ob_days <- x1[, sum(STRATA_N * TRP_DUR * MON_RATE)]
-  # }
-  
-  
-  
-  
-  
-  # Calculate total cost 
-  # 
-  # # Calculate minimum cost based on guaranteed sea days
-  # ob_gua_cost <- cost_params$OB$sea_day_min * cost_params$OB$sea_day_rate_gua
-  # # Calculate cost of optional sea days
-  # ob_opt_cost <- (ob_days - cost_params$OB$sea_day_min) * cost_params$OB$sea_day_rate_opt
-  # # Estimate total travel costs
-  # travel_cost <- ob_days * cost_params$OB$travel_day_rate
-  # 
-  # ob_total <- ob_gua_cost + ob_opt_cost + travel_cost
-  # ob_cpd <- ob_total / ob_days  
-  # 
-  # data.table(OB_TOTAL = ob_total, OB_CPD = ob_cpd, OB_DAYS = ob_days)
   
 }
 
