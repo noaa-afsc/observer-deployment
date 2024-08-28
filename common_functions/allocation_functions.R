@@ -1570,6 +1570,8 @@ emfg_cost <- function(x, cost_params, sim = F) {
   # Requires ADP, STRATA, N, MON_RATE, MEAN_TRIP_DAYS, # of EM fixed-gear vessels
   # x <- copy(x2[['2022']]); 
   
+  #' [Example:] x <- copy(em_fg_d); sim <- T
+  
   emfg_v <- cost_params$EMFG$emfg_v
   cost_per_vessel <- cost_params$EMFG$emfg_nonamortized_cpv
   cost_per_review_day <-  cost_params$EMFG$emfg_review_cpd
@@ -1582,7 +1584,11 @@ emfg_cost <- function(x, cost_params, sim = F) {
   
   # Total EM days to review
   # If simulating....
-  if(sim) emfg_days <- x1[, sum(d)] else {
+  if(sim == T) {
+    
+    emfg_days <- x1[, sum(d)] 
+    
+  } else {
     # Otherwise, assume average from monitoring rate
     emfg_days <- x1[, sum(STRATA_N * TRP_DUR * MON_RATE)]
   }
@@ -1641,9 +1647,9 @@ emtrw_cost <- function(x, cost_params, sim = F) {
 }
 
 # Now that it is a carve-off and we total the costs in monitoring_costs.R, this function becomes very simple
-emtrw_cost_new <- function(x, cost_params, sim = F) {
+emtrw_cost_new <- function(x, cost_params) {
+  #' Note that `x` isn't actually needed, but following the same syntax as other cost functions
   
-  # TODO feed x in to get summary of trips or review days? 
   data.table(
     EMTRW_TOTAL = cost_params$EMTRW$emtrw_total_cost,
     EMTRW_PLANT_OBS = cost_params$EMTRW$emtrw_summary[
