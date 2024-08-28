@@ -113,7 +113,7 @@ stat_area_to_hex <- function(cell_size, stat_area_sf){
   # Get centroids of statistical areas
   stat_area_centroid_sf <- suppressWarnings(st_centroid(stat_area_sf))  
   
-  # Generate a hex cell grid using the projection and boundaries from stat_area_centroid_sf, will set cell size specified by
+  # Generate a hex cell grid using the projection and boundaries from stat_area_centroid_sf, will cell size specified by
   # 'cell_size'. Subset this using stat_area_centroid_sf so only cells overlapping with it are retained.
   hex_grid_sf <- st_make_grid(
     x = stat_area_centroid_sf, 
@@ -367,7 +367,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
       # stratum_mtx <- data_lst[[24]]   # 2022.OB_TRW
       
       # First, split by PS_ID
-      ps_lst <- lapply(split(stratum_mtx[, 1:2], stratum_mtx[, 3]), matrix, ncol = 2)
+      ps_lst <- lapply(split(stratum_mtx[, 1:2], stratum_mtx[,3]), matrix, ncol = 2)
       
       # Now for each PS_ID group, identify neighboring trips
       lapply(ps_lst, function(x) {
@@ -380,7 +380,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
         x2 <- do.call(rbind, lapply(x1, function(y) {
           # y <- x1[1]   # Box 5749
           
-          trip_id_centered <- x[x[, 1] == y, 2]    # Identify number of trips actually in the box
+          trip_id_centered <- x[x[,1] == y, 2]    # Identify number of trips actually  the box
           # There shouldn't ever be the same trip counted twice in the same box.
           if( length(trip_id_centered) != length(unique(trip_id_centered)) ) stop("There is a duplicate trip_id!")
           
@@ -390,9 +390,9 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
             BOX_n = length(trip_id_centered) ,
             # Weight of trips centered in BOX_ID
             # FIXME calculating BOX_w is slow!
-            BOX_w = sum(1 / trip_id_vec[trip_id_centered]), 
+            BOX_w = sum(1/trip_id_vec[trip_id_centered]), 
             # # Count of unique TRIP_IDs in neighboring BOX_IDs
-            BOX_nbr = length(unique(x[(x[, 1] %in% nbr_lst[[y]]), 2])) 
+            BOX_nbr = length(unique(x[(x[,1] %in% nbr_lst[[y]]), 2])) 
           )
           
         }))
@@ -696,7 +696,7 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
 
 
 
-#' This was the version used in the 2024 Final ADP in the final_rates.R script. Used `calculate_prox`
+#' This was the version used inthe 2024 Final ADP in the final_rates.R script. Used `calculate_prox`
 #' and `calculate_cost`
 allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_interval = 0.001, range_var = 1) { 
   
@@ -804,8 +804,8 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
     
     prox_by_list_dt <- prox_by_list_dt[, .SD[between(INDEX, index_range_afforded$MIN, index_range_afforded$MAX )], by = c(stratum_cols)]
     
-    # I can set index_interval to 0.0001 to really get the closest to affording the budget. Does take 10x longer...
-    prox_index_search <- seq(round(index_range_afforded$MIN, 3), round(index_range_afforded$MAX, 3), by = index_interval)
+    # I can set index_interval to 0.0001 to really get the closes to affording the budget. Does take 10x longer...
+    prox_index_search <- seq(round(index_range_afforded$MIN,3), round(index_range_afforded$MAX,3), by = index_interval)
     index_costs2 <- lapply(prox_index_search, function(x) {
       x1 <- data.table(INDEX = x)
       x2 <- prox_by_list_dt[, .SD[x1, on = .(INDEX), roll = "nearest"], by = c(stratum_cols)]
@@ -825,7 +825,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
     year_res[[which(year_vec == i)]] <- out
   }
   
-  # Return the allocated rates, collapsing the list of rates by year
+  # Return the allocated rates, collasping the list of rates by year
   rbindlist(year_res)
   
 }
@@ -850,15 +850,20 @@ calculate_cost <- function(index_rates, cost_params, allo_lst, max_budget) {
       for(i in 1:length(index_vec)) {
         index_rates_sub <- x[I == index_vec[i]]
         index_rates_sub_res <- cbind(
-          ob_cost(index_rates_sub[STRATA %like% "OB_"], cost_params),
+          
+          # ob_cost(index_rates_sub[STRATA %like% "OB_"], cost_params),
+          
+          #' *REPLACING OB COST FUNCTION HERE*
+          ob_cost_new(index_rates_sub[STRATA %like% "OB_"], cost_params),
+          
           emfg_cost( index_rates_sub[STRATA %like% "EM_HAL|EM_POT|EM_FIXED"], cost_params),
           emtrw_cost( index_rates_sub[STRATA %like% "EM_TRW"], cost_params)
         )
-        index_rates_sub_res[, INDEX_COST := sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL)]
+        index_rates_sub_res[, INDEX_COST := sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL, na.rm = T)]
         # If the cost exceeds the specified maximum budget, don't bother continuing cost calculations
         if(index_rates_sub_res$INDEX_COST > max_budget) break 
         else (index_rates_lst[[i]] <- cbind(index_rates_sub_res, unique(index_rates_sub[, .(ADP, INDEX, I)])))
-      }  # how long does this take? Around 2 minutes?
+      }  #how long does this take? Around 2 minutes?
       rbindlist(index_rates_lst)
     }
   ))
@@ -886,7 +891,7 @@ calculate_prox <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
     keep_strata <- rep(T, times = length(box_res$box_smry))
   }
   
-  # For a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
+  # For for a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
   # (0-1), and then multiply it by that post-stratum's total weight of component trips centered on the post-stratum.
   
   # For each sample rate...
@@ -923,7 +928,7 @@ calculate_prox <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
           # ) 
           
           a <- do.call(rbind, y)
-          sum((1 - ((1 - x)^a[, 4])) * a[, 3])   # Just doing the sum across is the same as the weighted average!
+          sum((1 - ((1 - x)^a[,4])) * a[,3])   # Just doing the sum across is the same as the weighted average!
           # FIXME I don't need to split post-strata into additional lists unless I want to weight post-strata separately!
           # I think that within a stratum, we want to weight by each trip's interspersion.
           # We don't want to weight interspersion of HAL and POT post-strata equally regardless of how many trips are in each.
@@ -976,7 +981,7 @@ calculate_proximity_old <- function(box_res, sample_rate_vec, omit_strata = c(NU
     keep_strata <- rep(T, times = length(box_res$box_smry))
   }
   
-  # For a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
+  # For for a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
   # (0-1), and then multiply it by that post-stratum's total weight of component trips centered on the post-stratum.
   
   # For each sample rate...
@@ -994,7 +999,7 @@ calculate_proximity_old <- function(box_res, sample_rate_vec, omit_strata = c(NU
           # all boxes to get expected number of sampled trips in stratum.
           # x is the sample rate, y[,4] is 'BOX_nbr' and y[, 3] is 'BOX_w'. Referencing by column is faster.
           
-          sum((1 - ((1 - x)^y[, 4])) * y[, 3])
+          sum((1 - ((1 - x)^y[,4])) * y[,3])
           # sum((1 - ((1 - x)^y[,"BOX_nbr"])) * y[,"BOX_w"])
           
         }
@@ -1044,7 +1049,7 @@ calculate_index <- function(prox_res, trip_cost_dt) {
   ][, CV_SCALING := sqrt(FPC * (1/n))
   ][, INDEX := PROX / CV_SCALING][]
   
-  # Find range of INDEX that is common to all strata x ADP
+  # Find range if INDEX that is common to all strata x ADP
   x2 <- x1[
   ][, .(MIN = min(INDEX), MAX = max(INDEX)), by = group_cols
   ][, .(MIN = max(MIN),  MAX = min(MAX)), by = year_col]
@@ -1438,6 +1443,41 @@ ob_cost <- function(x, cost_params, sim = F) {
   
 }
 
+# This version was created for the 2025 ADP to handle new PC  contract information
+ob_cost_new <- function(x, cost_params, sim = F) {
+  # Requires ADP, STRATA, N, MON_RATE (if average is assumed), TRP_DUR, n (if simulated)
+  
+  day_rate_intercept <- cost_params$OB$day_rate_intercept
+  day_rate_slope     <- cost_params$OB$day_rate_slope
+  travel_day_rate    <- cost_params$OB$travel_day_rate
+  
+  # Subset OB pool trips
+  x1 <- x[STRATA %like% "OB_"]
+  
+  # If simulating, use 'n' 
+  if(sim) ob_days <- x1[, sum(d)] else {
+    # Otherwise, calculate total expected number of observed days
+    ob_days <- x1[, sum(STRATA_N * TRP_DUR * MON_RATE)]
+  }
+  
+  
+  # Calculate total cost 
+  
+  # Calculate minimum cost based on guaranteed sea days
+  ob_gua_cost <- cost_params$OB$sea_day_min * cost_params$OB$sea_day_rate_gua
+  # Calculate cost of optional sea days
+  ob_opt_cost <- (ob_days - cost_params$OB$sea_day_min) * cost_params$OB$sea_day_rate_opt
+  # Estimate total travel costs
+  travel_cost <- ob_days * cost_params$OB$travel_day_rate
+  
+  ob_total <- ob_gua_cost + ob_opt_cost + travel_cost
+  ob_cpd <- ob_total / ob_days  
+  
+  data.table(OB_TOTAL = ob_total, OB_CPD = ob_cpd, OB_DAYS = ob_days)
+  
+}
+
+
 emfg_cost <- function(x, cost_params, sim = F) {
   # Requires ADP, STRATA, N, MON_RATE, MEAN_TRIP_DAYS, # of EM fixed-gear vessels
   # x <- copy(x2[['2022']]); 
@@ -1551,7 +1591,7 @@ rates_to_costs <- function(allo_lst_effort, rate_vec, cost_params, max_budget, c
   
 }
 
-# These functions would work a lot faster with matrices rather than data.frames! A lot of simple calculations...
+# These functions would work a lot faster with matrices rather than data.frames! A lot if simple calculations...
 # TODO VECTORIZE THIS: Will go much faster once vectorized
 # TODO Make it return an object like allo_lst that includes trip durations!
 rates_to_costs_all <- function(allo_lst, rate_vec, cost_params, max_budget, cost_fun_vec = c("ob_cost", "emfg_cost", "emtrw_cost")) {

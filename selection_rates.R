@@ -7,6 +7,8 @@
 # Preparation ----
 #======================================================================================================================#
 
+adp_year <- 2025
+
 #===================#
 ## Load Packages ----
 #===================#
@@ -117,8 +119,15 @@ pc_effort_st[
 if(nrow(pc_effort_st[is.na(DAYS)])) stop("Some records are still missing DAYS")
 
 # Re-assign the ADP Year
-pc_effort_st[, ADP := 2025]
+pc_effort_st[, ADP := adp_year]
 setkey(pc_effort_st, STRATA)
+
+#' Save and Upload pc_effort_st to the shared google drive 
+save(pc_effort_st, file = paste0("source_data/pc_effort_st", "_", adp_year, ".Rdata"))
+gdrive_upload(
+  local_path = paste0("source_data/pc_effort_st", "_", adp_year, ".Rdata"),
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output/")
+)
 
 #====================#
 ## Box Parameters ----
@@ -138,7 +147,7 @@ box_params <- list(
 #' TODO *These will need to be updated!*
 
 # Derived from: https://docs.google.com/spreadsheets/d/1kcdLjq2Ck4XJBYP0EhrQpuknRgtQFt01LN3xUaCg7cI/edit?usp=sharing
-# Monitoring cost models are applied by ob_cost(), emfg_cost(), and emtrw_cost() functions
+# Monitoring cost models are applyed by ob_cost(), emfg_cost(), and emtrw_cost() functions
 # Set all parameters involving monitoring costs
 
 cost_params <- list(
@@ -147,6 +156,36 @@ cost_params <- list(
     day_rate_intercept          = 1870.4466666667,    # To calculate the sea day cost
     day_rate_slope              =   -0.2263733333,    # To calculate the sea day cost
     travel_day_rate             =  423.7867560407     # Expected cost of travel per day
+  ),
+  
+  #' TODO Cost per vessel should replace equipment install costs with equipment replacement costs? 
+  #' Or will Murkowski funds cover this? If so, cost per vessel will largely be from maintenance.
+  EMFG = list(
+    emfg_v                      = 177,   #' Size of fixed-gear EM vessel pool. 177 in 2024. [UPDATE FOR 2025]
+    cost_per_vessel             = 5679.9002264045,
+    cost_per_review_day         =  150.3237858616
+  ),
+  
+  # TODO EMTRW will be a carve-off and needs entirely new estimates
+  EMTRW = list(
+    emtrw_goa_v                 =   trawl_em_goa_v_count,  # Number of EM_TRW vessels that fish exclusively in the GOA. 
+    trip_to_plant_factor        =    3.8059361492,    # Used to predict plant days from trips
+    amortized_equipment_per_VY  = 4100.7124800000,    # Per (Vessel x Year) amortized EM equipment install costs for GOA-only vessels
+    equipment_upkeep_per_VY     = 4746.0398955882,    # Per (Vessel x Year) EM equipment maintenance cost for GOA-only vessels
+    review_day_rate             =   27.9918948996,    # Per sea day cost for EM compliance review
+    plant_day_rate              =  908.2225000000     # Per plant day cost for shoreside monitoring by observers
+  )
+)
+
+
+#' *Use this with ob_cost_new. This has updated values f*
+cost_params_new <- list(
+  
+  OB = list(
+    sea_day_min = 1200,
+    sea_day_rate_gua = 1695.58,
+    sea_day_rate_opt = 877.73,
+    travel_day_rate = 435.5971
   ),
   
   #' TODO Cost per vessel should replace equipment install costs with equipment replacement costs? 
@@ -191,7 +230,16 @@ budget_lst <- list(4.0e6)   #' *Bleak estimate given fee revenues minus some tra
 
 #' TODO *For now just use number in dataset as a placeholder*
 sample_N <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(STRATA)]
-boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params, budget_lst, bootstrap_iter = 1)
+boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params_new, budget_lst, bootstrap_iter = 1)
+
+#' [Using a $4.5M budget]
+# boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params_new, list(4.5e6), bootstrap_iter = 1)
+
+#' [Using $5.0M budget]
+# boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params_new, list(5.0e6), bootstrap_iter = 1)
+
+#' [Using $5.82M budget (2024 ADP)]
+# boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params_new, list(5.82e6), bootstrap_iter = 1)
 
 #' TODO Save the outputs of the bootstrapping and allocation
 if(F) save(boot_lst, file = "results/swor_boot_lst.rdata")
@@ -208,7 +256,153 @@ ggplot(boot_dt, aes(x = STRATA, y = SAMPLE_RATE)) + geom_violin(draw_quantiles =
 
 # Calculate the rates to use as the mean across iterations. Also calculate average proximity (PROX) and cv_scaling metrics
 rates_adp <- boot_dt[, lapply(.SD, mean), .SDcols = c("SAMPLE_RATE", "n", "PROX", "CV_SCALING", "INDEX"), keyby = .(ADP, STRATA, STRATA_N)]
-rates_adp
 
-#' Ooof... With a $4M budget, only 6.5% in GOA , 18-20% in BSAI for observers. Although, the cost function for observer
-#' costs is hopefully currently overestimating costs at this scale, but we'll see...
+
+# Monitoring Costs ----
+
+# How much did we allocate to at-sea observers and fixed-gear EM?
+mtd <- unique(pc_effort_st[, .(ADP, STRATA, TRIP_ID, DAYS)])[, .(TRP_DUR = mean(DAYS)), keyby = .(ADP, STRATA)]
+rates_mtd_adp <- mtd[rates_adp, on = .(ADP, STRATA)]
+rates_mtd_adp[, MON_RATE := SAMPLE_RATE]
+
+rates_adp
+ob_cost(rates_mtd_adp, cost_params_new)
+emfg_cost(rates_mtd_adp, cost_params_new)
+
+#=======================================================================================================================#
+
+#' [$4.0M Budget with new values and ob_cost_new()]
+ 
+#  ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
+# 2025 EM_FIXED-BSAI       47      0.5703  26.8041 0.8758692 0.12661410 0.765
+# 2025  EM_FIXED-GOA      834      0.1388 115.7592 0.8372885 0.08625301 0.765
+# 2025 OB_FIXED-BSAI      329      0.1984  65.2736 0.8603124 0.11081794 0.765
+# 2025  OB_FIXED-GOA     2036      0.0654 133.1544 0.8348581 0.08377899 0.765
+# 2025   OB_TRW-BSAI      123      0.1846  22.7058 0.9438439 0.18950338 0.765
+# 2025    OB_TRW-GOA      534      0.0663  35.4042 0.9133382 0.16239636 0.765
+
+# OB_TOTAL   OB_CPD  OB_DAYS
+#  2829634 1968.897 1437.167
+
+# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
+#    1130945 1353.542  835.5445   1005342
+
+#' [$4.0M Budget with old values] 
+
+#  ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
+# 2025 EM_FIXED-BSAI       47      0.5758  27.0626 0.8783970 0.12519892 0.7684
+# 2025  EM_FIXED-GOA      834      0.1407 117.3438 0.8402983 0.08557410 0.7684
+# 2025 OB_FIXED-BSAI      329      0.2016  66.3264 0.8631470 0.10971526 0.7684
+# 2025  OB_FIXED-GOA     2036      0.0664 135.1904 0.8381565 0.08310124 0.7684
+# 2025   OB_TRW-BSAI      123      0.1882  23.1486 0.9454848 0.18726739 0.7684
+# 2025    OB_TRW-GOA      534      0.0675  36.0450 0.9155853 0.16084290 0.7684
+
+# OB_TOTAL   OB_CPD  OB_DAYS
+#  2867444 1963.673 1460.245
+
+# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
+#    1132539 1338.462  846.1493   1005342
+
+#=======================================================================================================================#
+
+#' [$4.5M Budget with new values]
+
+#   ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
+# 2025 EM_FIXED-BSAI       47      0.6478  30.4466 0.9084280 0.10755368 0.8107
+# 2025  EM_FIXED-GOA      834      0.1694 141.2796 0.8779806 0.07667543 0.8107
+# 2025 OB_FIXED-BSAI      329      0.2487  81.8223 0.8966051 0.09582324 0.8107
+# 2025  OB_FIXED-GOA     2036      0.0806 164.1016 0.8764112 0.07485070 0.8107
+# 2025   OB_TRW-BSAI      123      0.2437  29.9751 0.9637543 0.15884251 0.8107
+# 2025    OB_TRW-GOA      534      0.0871  46.5114 0.9428764 0.14009799 0.8107
+
+# OB_TOTAL   OB_CPD  OB_DAYS
+#  3394148 1887.071 1798.633
+
+# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
+#    1156018  1153.32  1002.339   1005342
+
+#' [$4.5M Budget (old)]
+#  ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
+# 2025 EM_FIXED-BSAI       47      0.6417  30.1599 0.9060866 0.10899547 0.8073
+# 2025  EM_FIXED-GOA      834      0.1668 139.1112 0.8750857 0.07739156 0.8073
+# 2025 OB_FIXED-BSAI      329      0.2443  80.3747 0.8940255 0.09696501 0.8073
+# 2025  OB_FIXED-GOA     2036      0.0792 161.2512 0.8732474 0.07556683 0.8073
+# 2025   OB_TRW-BSAI      123      0.2383  29.3109 0.9624164 0.16120459 0.8073
+# 2025    OB_TRW-GOA      534      0.0851  45.4434 0.9407278 0.14188987 0.8073
+
+# OB_TOTAL  OB_CPD  OB_DAYS
+#  3345267 1894.51 1765.769
+
+# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
+#    1153914 1167.525  988.3419   1005342
+
+#=======================================================================================================================#
+
+#' [$5.0M Budget] *new*
+
+#  ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
+# 2025 EM_FIXED-BSAI       47      0.7078  33.2666 0.9297243 0.09372078 0.8426
+# 2025  EM_FIXED-GOA      834      0.1990 165.9660 0.9054919 0.06947150 0.8426
+# 2025 OB_FIXED-BSAI      329      0.2985  98.2065 0.9203622 0.08451693 0.8426
+# 2025  OB_FIXED-GOA     2036      0.0956 194.6416 0.9042377 0.06816516 0.8426
+# 2025   OB_TRW-BSAI      123      0.3056  37.5888 0.9751549 0.13591758 0.8426
+# 2025    OB_TRW-GOA      534      0.1098  58.6332 0.9610388 0.12321739 0.8426
+
+# OB_TOTAL   OB_CPD  OB_DAYS
+#  3901142 1804.963 2161.341
+
+# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
+#    1179459 1018.286  1158.279   1005342
+
+#' [$5.0M Budget] (old)
+
+#  ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
+# 2025 EM_FIXED-BSAI       47      0.6990  32.8530 0.9267865 0.09571847 0.8381
+# 2025  EM_FIXED-GOA      834      0.1943 162.0462 0.9017090 0.07051269 0.8381
+# 2025 OB_FIXED-BSAI      329      0.2905  95.5745 0.9171144 0.08615990 0.8381
+# 2025  OB_FIXED-GOA     2036      0.0932 189.7552 0.9004291 0.06912878 0.8381
+# 2025   OB_TRW-BSAI      123      0.2954  36.3342 0.9736663 0.13925587 0.8381
+# 2025    OB_TRW-GOA      534      0.1060  56.6040 0.9586355 0.12567393 0.8381
+
+# OB_TOTAL   OB_CPD  OB_DAYS
+#  3823328 1818.218 2102.788
+
+# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
+#    1175777  1037.04  1133.781   1005342
+
+
+
+#=======================================================================================================================#
+
+#' [$5.82M Budget] *new* 2024 Final ADP Budget
+
+#  ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
+# 2025 EM_FIXED-BSAI       47      0.7796  36.6412 0.9515896 0.07755699 0.8778
+# 2025  EM_FIXED-GOA      834      0.2457 204.9138 0.9345233 0.06067174 0.8778
+# 2025 OB_FIXED-BSAI      329      0.3772 124.0988 0.9447299 0.07084195 0.8778
+# 2025  OB_FIXED-GOA     2036      0.1203 244.9308 0.9337055 0.05993018 0.8778
+# 2025   OB_TRW-BSAI      123      0.4062  49.9626 0.9852073 0.10901784 0.8778
+# 2025    OB_TRW-GOA      534      0.1515  80.9010 0.9779782 0.10241156 0.8778
+
+# OB_TOTAL   OB_CPD  OB_DAYS
+#  4605379 1669.938 2757.815
+
+# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
+#    1215202 870.4554  1396.054   1005342
+
+#' [$5.82M Budget] old() 2024 Final ADP Budget
+
+#  ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
+# 2025 EM_FIXED-BSAI       47      0.7794  36.6318 0.9515335 0.07760213 0.8777
+# 2025  EM_FIXED-GOA      834      0.2455 204.7470 0.9344255 0.06070449 0.8777
+# 2025 OB_FIXED-BSAI      329      0.3769 124.0001 0.9446569 0.07088721 0.8777
+# 2025  OB_FIXED-GOA     2036      0.1203 244.9308 0.9337055 0.05993018 0.8777
+# 2025   OB_TRW-BSAI      123      0.4058  49.9134 0.9851790 0.10910829 0.8777
+# 2025    OB_TRW-GOA      534      0.1513  80.7942 0.9779250 0.10249130 0.8777
+
+# OB_TOTAL   OB_CPD  OB_DAYS
+#  4604049 1670.225 2756.544
+
+# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
+#    1215055  870.961  1395.074   1005342
+
