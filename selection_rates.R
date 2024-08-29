@@ -232,7 +232,7 @@ full_efrt.smry <- pc_effort_sub[COVERAGE_TYPE == "FULL", .(
 #' [FINAL:] For the Final ADP, we will bootstrap fishing effort using outputs of `effort_prediction.R`
 
 # Set number of bootstrapping simulations for cost estimtes
-cost_boot_iter <- 1000
+cost_boot_iter <- 10000
 # Initialize results list
 cost_boot_lst <- vector(mode = "list", length = cost_boot_iter)
 # Identify trips and their strata
