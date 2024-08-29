@@ -176,36 +176,6 @@ adp_contract_day_rates[, .(PERIOD = 1:2, Base_Day_Cost, Optional_Day_Cost)]
 #' Identify the date where the contracts change, specifically, the day that the second contract starts.
 contract_change_date <- as.Date("2025-10-01")
 
-#===========================#
-### Proportion of days before contract changes` ----
-
-#' Keeping this just in case for now - will likely not need it, instead using `conract_change_date`
-
-if(F) {
-  #' *DO this in ob_cost? Have it take Contract Day and calculate the cost rather than feeding a CPD?*
-  #' Run `selection_rates.R` to create the `pc_effort_st` object. We will use the most recent year to calculate the 
-  #' proportion of trips that occur before and after the year-day the contract year changes.
-  
-  #' Subset all OB trips and their date ranges
-  ob_trips_adp <- pc_effort_st[
-    STRATA %like% "OB_", 
-    .(START = min(TRIP_TARGET_DATE, LANDING_DATE), END = max(TRIP_TARGET_DATE, LANDING_DATE)),
-    keyby = .(ADP, TRIP_ID)]
-  
-  #' For each trip, create a vector of each date between fishing start and end. Calculate the proportion of days that 
-  #' occurred on or before the contract changes
-  ob_dates <- as.Date(unlist(
-    apply(ob_trips_adp, 1, function(x) seq(as.integer(as.Date(x["START"])), as.integer(as.Date(x["END"])), 1))
-  ))
-  ob_contract_prop <- sum(yday(ob_dates) <= yday(contract_end)) / length(ob_dates) 
-  
-  #' Roughly, we can apply the total number of Observer sea Days to the proportion before/after the contract changes. But,
-  #' if fishing effort differs among strata greatly, could this result in a bias?
-  #' The ob_cost() function could instead take the contract_end yday(), count observed days using the rates, and attribute the costs?
-  #' ob_cost currently takes the yearly summary of rates, n, and TRP_DUR
-}
-#===========================#
-
 ### Number of guaranteed days on contract  ----
 
 #' The ADP year start mid-contract, so there will be some guaranteed sea days already on the contract. We will estimate
@@ -479,6 +449,7 @@ em_trw_data_cpd <- em_trw_data_cost * inflation_dt[Calendar == 2021, Infl_Factor
 ### Count of days to review ----
 
 #' This cost assumes the number of review days in `pc_effort_object`, not in any effort predictions
+#' TODO can add this to `emtrw_cost()` function but we wouldn't be estimating the full EM TWR total carve-off here.
 em_trw_review_ND <- unique(pc_effort_st[STRATA == "EM_TRW-GOA", .(ADP, TRIP_ID, DAYS)])[
 ][, .(N = uniqueN(TRIP_ID), D = sum(DAYS)), by = .(ADP)]
 em_trw_review_days <- em_trw_review_ND$D
@@ -542,6 +513,8 @@ cost_summary.em_trw             # Broken up by cost category
 
 cost_params <- list(
   OB = list(
+    contract_rates = adp_contract_day_rates[, .(PERIOD = 1:2, Base_Day_Cost, Optional_Day_Cost)],
+    contract_day_min = 1200,
     contract_change_date = contract_change_date,
     current_contract_days = current_contract_days,
     travel_cpd = travel_cpd
@@ -554,7 +527,9 @@ cost_params <- list(
   ),
   EMTRW = list(
     emtrw_total_cost = sum(cost_summary.em_trw$Cost),
-    emtrw_summary = cost_summary.em_trw
+    emtrw_summary = cost_summary.em_trw,
+    goa_plant_ob_days = goa_plant_ob_days,
+    emtrw_goa_v_count = emtrw_goa_v_count
   )
 )
 

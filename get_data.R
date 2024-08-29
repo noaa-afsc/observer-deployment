@@ -623,3 +623,9 @@ out_save <- getPass::getPass(paste0("Would you like to save off a new version of
 if(out_save == "Y"){                              
 save(list = c("work.data", "trips_melt", "efrt", "PartialCPs", "full_efrt", "max_date", "fg_em"), file=paste0("source_data/", out_name))
 }
+
+#' Upload to shared Gdrive source_data folder
+gdrive_upload(
+  local_path = paste0("source_data/", out_name),
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
+)

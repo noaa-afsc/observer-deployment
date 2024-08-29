@@ -22,30 +22,29 @@ library(readxl)             # For read_xlsx
 library(odbc)               # For database connectivity
 # library(grid)               # For unit.pmax  to get widths of grobs so that plots have matching dimensions
 # library(gridExtra)          # For arrangeGrob to combine plots
-# library(flextable)          # For print-ready tables
-# library(officer)            # For additional flextable formatting options such as fp_border
-
-#=====================================#
-## Connect to Shared Google Drive ----
-#=====================================#
-
-#' TODO upload/download using the Gdrive when the source data and outputs are available.
+library(flextable)          # For print-ready tables
+library(officer)            # For additional flextable formatting options such as fp_border
 
 #===============#
 ## Load data ----
 #===============#
 
-#' TODO *loading the most recent version of Valhalla used for the 2023 Annual Report.* Use the outputs of get_data.R
-#' when it is prepared. Download from Projects/ADP/ folder
-gdrive_download("source_data/2_AR_data.Rdata", gdrive_set_dribble("Projects/AnnRpt-Deployment-Chapter/"))
-AR_data_objects <- load("source_data/2_AR_data.Rdata")
-# Remove everything except for work.data
-rm(list = setdiff(ls(), c("work.data")))
+#' Load the outputs of `get_data.R`
+gdrive_download(
+  local_path = "source_data/2025_Draft_ADP_data.rdata",
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
+)
+(load("source_data/2025_Draft_ADP_data.rdata"))
 
-#' TODO *Do this in get_data*
-# Get count of GOA-only EM EFP Vessels for the cost_params. 
-trawl_em_goa_v_count <- length(na.omit(unlist(unname(
-  setDT(readxl::read_xlsx("source_data/2024 EM EFP Vessel List_NMFS.xlsx", col_names = F))[-c(1:3), 7]))))
+#' Load `cost_params`, the output of `monitoring_costs.R``
+gdrive_download(
+  local_path = "source_data/cost_params_2025.Rdata", 
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
+)
+(load("source_data/cost_params_2025.Rdata"))
+
+#' Using `fg_em`, add the number of fixed-gear EM vessels to the `cost_params` list
+cost_params$EMFG$emfg_v <- uniqueN(fg_em$PERMIT)
 
 # Load the ADFG statistical area shapefile.
 stat_area_sf <- st_read(
@@ -65,29 +64,49 @@ source("common_functions/allocation_functions.R")
 #' TODO *model_trip_duration should be used by get_data.R, but until it is ready, using it here.*
 source("common_functions/model_trip_duration.R")
 
+format_dollar <- function(x, digits) paste0("$", formatC(x, digits = digits, big.mark = ",", format = "f"))
+
+# Setting for flextable outputs
+set_flextable_defaults(font.family = "Times New Roman", font.size = 10) 
+
 #===============#
 ## Data Prep ----
 #===============#
 
-# Wrangle the Valhalla data set for spatiotemporal analyses
-pc_effort_st <- spatiotemp_data_prep(work.data) 
+#' Wrangle the Valhalla data set for spatiotemporal analyses using at least 2 full years
+pc_effort_sub <- work.data[ADP >= adp_year - 2]
+#' Use the STRATA_NEW column to define stratum and CVG_NEW to define coverage category
+pc_effort_sub[
+][, STRATA := STRATA_NEW
+][, COVERAGE_TYPE := CVG_NEW] 
+
+#' Simplify the dataset
+pc_effort_st <- spatiotemp_data_prep(pc_effort_sub) 
 
 #' Grab the most recent 1-year of data (trimming off 2 weeks from the last trip)
-valhalla_date <- as.Date(max(work.data$TRIP_TARGET_DATE)) - 14
+valhalla_date <- max_date - 14
 pc_prev_year_trips <- pc_effort_st[
 ][, .(MIN_TRIP_TARGET_DATE = min(TRIP_TARGET_DATE)), keyby = .(TRIP_ID)
 ][between(MIN_TRIP_TARGET_DATE, valhalla_date - 365, valhalla_date), TRIP_ID]
 pc_effort_st <- pc_effort_st[TRIP_ID %in% pc_prev_year_trips]
 range(pc_effort_st$TRIP_TARGET_DATE)
 
-#' TODO *Assigning strata to 2024 definitions. Do this in get_data.R for 2025.* 
-pc_effort_st[, STRATA := fcase(
-  STRATA %in% c("EM_HAL", "EM_POT"), "EM_FIXED",
-  STRATA %in% c("OB_HAL", "OB_POT"), "OB_FIXED",
-  STRATA == "EM_TRW_EFP", "EM_TRW",
-  STRATA == "OB_TRW", "OB_TRW",
-  STRATA == "ZERO", "ZERO"
-)][, STRATA := ifelse(STRATA != "ZERO", paste0(STRATA, "-", BSAI_GOA), STRATA)]
+#' TODO *Assigning strata to 2024/2025 definitions. Do this in get_data.R for 2025.* 
+unique(pc_effort_st$STRATA) 
+#' [get_data.R:  EM_FIXED_GOA   EM_FIXED_BSAI   EM_TRW_GOA   TRW   HAL   POT   ZERO]
+#' [2025_strata: EM_FIXED-GOA   EM_FIXED-BSAI   EM_TRW-GOA   OB_TRW-GOA   OB_TRW-BSAI   OB_FIXED-GOA   OB_FIXED-BSAI   ZERO]
+#' TODO The NEW_STRATA labels in get_data.R are still different from how we used them in 2024 or will for 2025
+#' Rename STRATA to reflect monitoring method only
+pc_effort_st[
+][STRATA == "EM_FIXED_GOA", STRATA := "EM_FIXED"
+][STRATA == "EM_FIXED_BSAI", STRATA := "EM_FIXED"
+][STRATA == "EM_TRW_GOA", STRATA := "EM_TRW"
+][STRATA %in% c("HAL", "POT"), STRATA := "FIXED"
+][STRATA %in% c("FIXED", "TRW"), STRATA := paste0("OB_", STRATA)
+#' Now apply FMP, separating monitoring method and FMP with a hyphen. Using BSAI_GOA, which determines FMP based on 
+#' which had the most total retained catch
+][, STRATA := ifelse(STRATA != "ZERO", paste0(STRATA, "-", BSAI_GOA), STRATA)]
+unique(pc_effort_st$STRATA)
 
 #' TODO *Assign DAYS column. Do this in get_data.R!*
 #' Get actual days observed, otherwise apply model.
@@ -120,6 +139,9 @@ if(nrow(pc_effort_st[is.na(DAYS)])) stop("Some records are still missing DAYS")
 
 # Re-assign the ADP Year
 pc_effort_st[, ADP := adp_year]
+# Modify the trip dates to match the ADP Year
+pc_effort_st[, TRIP_TARGET_DATE := TRIP_TARGET_DATE + (adp_year - year(TRIP_TARGET_DATE)) * 365]
+pc_effort_st[, LANDING_DATE := LANDING_DATE + (adp_year - year(LANDING_DATE)) * 365]
 setkey(pc_effort_st, STRATA)
 
 #' Save and Upload pc_effort_st to the shared google drive 
@@ -128,10 +150,14 @@ gdrive_upload(
   local_path = paste0("source_data/pc_effort_st", "_", adp_year, ".Rdata"),
   gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output/")
 )
+#' [NOTE:] *Re-run monitoring_costs.R if pc_effort_st is changed!*
 
 #====================#
 ## Box Parameters ----
 #====================#
+
+#' These parameters define our spatiotemporal boxes, how they neighbor one another, and which columns are used to 
+#' identify the ADP year, strata, and post-strata.
 
 box_params <- list(
   space = c(2e5, 2e5),
@@ -140,106 +166,28 @@ box_params <- list(
   stat_area_sf = stat_area_sf
 )
 
-#=======================#
-## Monitoring  Costs ----
-#=======================#
+#============#
+## Budget ----
+#============#
 
-#' TODO *These will need to be updated!*
+#' Set the budget(s) to evaluate. The allocation functions were originally built to handle multiple budgets for the 
+#' 2024 ADP (as a list). Can't be sure if they still can, but either way, the budget should be defined as a list.
+budget_lst <- list(4.4e6)   #' *2024 Draft ADP Budget*
 
-# Derived from: https://docs.google.com/spreadsheets/d/1kcdLjq2Ck4XJBYP0EhrQpuknRgtQFt01LN3xUaCg7cI/edit?usp=sharing
-# Monitoring cost models are applyed by ob_cost(), emfg_cost(), and emtrw_cost() functions
-# Set all parameters involving monitoring costs
+#======================================================================================================================#
+# Sampling Rates ----
+#======================================================================================================================#
 
-cost_params <- list(
-  
-  OB = list(
-    day_rate_intercept          = 1870.4466666667,    # To calculate the sea day cost
-    day_rate_slope              =   -0.2263733333,    # To calculate the sea day cost
-    travel_day_rate             =  423.7867560407     # Expected cost of travel per day
-  ),
-  
-  #' TODO Cost per vessel should replace equipment install costs with equipment replacement costs? 
-  #' Or will Murkowski funds cover this? If so, cost per vessel will largely be from maintenance.
-  EMFG = list(
-    emfg_v                      = 177,   #' Size of fixed-gear EM vessel pool. 177 in 2024. [UPDATE FOR 2025]
-    cost_per_vessel             = 5679.9002264045,
-    cost_per_review_day         =  150.3237858616
-  ),
-  
-  # TODO EMTRW will be a carve-off and needs entirely new estimates
-  EMTRW = list(
-    emtrw_goa_v                 =   trawl_em_goa_v_count,  # Number of EM_TRW vessels that fish exclusively in the GOA. 
-    trip_to_plant_factor        =    3.8059361492,    # Used to predict plant days from trips
-    amortized_equipment_per_VY  = 4100.7124800000,    # Per (Vessel x Year) amortized EM equipment install costs for GOA-only vessels
-    equipment_upkeep_per_VY     = 4746.0398955882,    # Per (Vessel x Year) EM equipment maintenance cost for GOA-only vessels
-    review_day_rate             =   27.9918948996,    # Per sea day cost for EM compliance review
-    plant_day_rate              =  908.2225000000     # Per plant day cost for shoreside monitoring by observers
-  )
-)
+#' [DRAFT:] No bootstrap is performed, simply sampling all trips in `pc_effort_st` 1 time.
+#' [FINAL: TODO]  Use the outputs of effort_prediction.R, specifically 'effort_strata[ADP == 2024]', to predict 
+#' the total number of trips to sample for each stratum
 
+#=================================#
+## Partial Coverage Allocation ----
+#=================================#
 
-#' *Use this with ob_cost_new. This has updated values f*
-cost_params_new <- list(
-  
-  OB = list(
-    sea_day_min = 1200,
-    sea_day_rate_gua = 1695.58,
-    sea_day_rate_opt = 877.73,
-    travel_day_rate = 435.5971
-  ),
-  
-  #' TODO Cost per vessel should replace equipment install costs with equipment replacement costs? 
-  #' Or will Murkowski funds cover this? If so, cost per vessel will largely be from maintenance.
-  EMFG = list(
-    emfg_v                      = 177,   #' Size of fixed-gear EM vessel pool. 177 in 2024. [UPDATE FOR 2025]
-    cost_per_vessel             = 5679.9002264045,
-    cost_per_review_day         =  150.3237858616
-  ),
-  
-  # TODO EMTRW will be a carve-off and needs entirely new estimates
-  EMTRW = list(
-    emtrw_goa_v                 =   trawl_em_goa_v_count,  # Number of EM_TRW vessels that fish exclusively in the GOA. 
-    trip_to_plant_factor        =    3.8059361492,    # Used to predict plant days from trips
-    amortized_equipment_per_VY  = 4100.7124800000,    # Per (Vessel x Year) amortized EM equipment install costs for GOA-only vessels
-    equipment_upkeep_per_VY     = 4746.0398955882,    # Per (Vessel x Year) EM equipment maintenance cost for GOA-only vessels
-    review_day_rate             =   27.9918948996,    # Per sea day cost for EM compliance review
-    plant_day_rate              =  908.2225000000     # Per plant day cost for shoreside monitoring by observers
-  )
-)
-
-#' [Set the budget(s) to evaluate]
-#' budget_lst <- list(4.8e6 + 1.019e6)        *UPDATE THIS* [Budget of $5,819,000 used in the 2024 ADP]
-budget_lst <- list(4.0e6)   #' *Bleak estimate given fee revenues minus some trawl EM costs and no additional funds*
-
-#========================#
-## Trawl EM Carve-off ----
-#========================#
-
-#' TODO *Estimate the total costs of trawl EM for 2025, then subtract from the estimated budget*
-
-#====================================#
-## Determine Trip Selection Rates ----
-#====================================#
-
-#=========================#
-### Bootstrap sampling ----
-#=========================#
-
-#' TODO  Use the outputs of effort_prediction.R, specifically 'effort_strata[ADP == 2024]', to predict the total number of
-#' trips to sample for each stratum
-
-#' TODO *For now just use number in dataset as a placeholder*
 sample_N <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(STRATA)]
-boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params_new, budget_lst, bootstrap_iter = 1)
-
-#' [Using a $4.5M budget]
-# boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params_new, list(4.5e6), bootstrap_iter = 1)
-
-#' [Using $5.0M budget]
-# boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params_new, list(5.0e6), bootstrap_iter = 1)
-
-#' [Using $5.82M budget (2024 ADP)]
-# boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params_new, list(5.82e6), bootstrap_iter = 1)
+boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params, budget_lst, bootstrap_iter = 1)
 
 #' TODO Save the outputs of the bootstrapping and allocation
 if(F) save(boot_lst, file = "results/swor_boot_lst.rdata")
@@ -247,162 +195,341 @@ if(F) save(boot_lst, file = "results/swor_boot_lst.rdata")
 # Extract the results from each iteration
 boot_dt <- rbindlist(lapply(boot_lst, "[[", "rates"), idcol = "BOOT_ITER")
 
-ggplot(boot_dt, aes(x = STRATA, y = SAMPLE_RATE)) + geom_violin(draw_quantiles = 0.5) + 
-  facet_wrap(.~ STRATA, scales = "free") + stat_summary(geom = "point", fun = mean)
-
-ggplot(boot_dt, aes(x = STRATA, y = SAMPLE_RATE)) + geom_violin(draw_quantiles = 0.5) + 
-  stat_summary(geom = "point", fun = mean) + labs(x = "Stratum", y = "Sample Rate") + 
-  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + geom_hline(yintercept = 0)
+# If bootstrapping multiple populations, view the distribution of allocated rates
+if(uniqueN(boot_dt$BOOT_ITER) > 1) {
+  
+  ggplot(boot_dt, aes(x = STRATA, y = SAMPLE_RATE)) + geom_violin(draw_quantiles = 0.5) + 
+    facet_wrap(.~ STRATA, scales = "free") + stat_summary(geom = "point", fun = mean)
+  
+  ggplot(boot_dt, aes(x = STRATA, y = SAMPLE_RATE)) + geom_violin(draw_quantiles = 0.5) + 
+    stat_summary(geom = "point", fun = mean) + labs(x = "Stratum", y = "Sample Rate") + 
+    theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + geom_hline(yintercept = 0)
+}
 
 # Calculate the rates to use as the mean across iterations. Also calculate average proximity (PROX) and cv_scaling metrics
 rates_adp <- boot_dt[, lapply(.SD, mean), .SDcols = c("SAMPLE_RATE", "n", "PROX", "CV_SCALING", "INDEX"), keyby = .(ADP, STRATA, STRATA_N)]
 
 
+#===========================#
+## Full Coverage Summary ---- 
+#===========================#
+
+# Generate full coverage summary so summary tables can reference it
+full_efrt.smry <- pc_effort_sub[COVERAGE_TYPE == "FULL", .(
+  START = min(TRIP_TARGET_DATE, LANDING_DATE, na.rm = T), 
+  END = max(TRIP_TARGET_DATE, LANDING_DATE, na.rm = T)),
+  keyby = .(STRATA, VESSEL_ID, TRIP_ID)
+][START >= (max_date - 14) - 365 & START < (max_date - 14)]
+
+#======================================================================================================================#
+# Cost Simulation ----
+#======================================================================================================================#
+
+#' Now that rates are determined, simulate sampling to create a distribution of expected costs, where variance is caused 
+#' only by the random selection of trips in the at-sea observer and fixed-gear EM strata.
+
+#' [DRAFT:] For the Draft ADP, we will not simulate fishing effort, so `pc_effort_st` can be used as-is.
+#' [FINAL:] For the Final ADP, we will bootstrap fishing effort using outputs of `effort_prediction.R`
+
+# Set number of bootstrapping simulations for cost estimtes
+cost_boot_iter <- 1000
+# Initialize results list
+cost_boot_lst <- vector(mode = "list", length = cost_boot_iter)
+# Identify trips and their strata
+cost_boot_trips_dt <- unique(pc_effort_st[, .(ADP, STRATA, TRIP_ID)])
+
+#' Hard-code the EM_TRW sampling rate, which is 1/3
+rates_em_trw_goa <- cost_boot_trips_dt[STRATA == "EM_TRW-GOA", .(STRATA_N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)]
+cost_boot_rates <- rbind(rates_adp, rates_em_trw_goa, fill = T)
+cost_boot_rates[STRATA == "EM_TRW-GOA", SAMPLE_RATE := 0.3333]
+cost_boot_rates[, MON_RATE := SAMPLE_RATE]
+
+# Begin trip simulation
+set.seed(12345)
+for(i in seq_len(cost_boot_iter)) {
+  
+  if(i == 1) cat(paste0(cost_boot_iter, " iterations:\n"))
+  if( (i %% (cost_boot_iter/10)) == 0 ) cat(paste0(i, ", "))
+  
+  cost_boot_trips_dt.iter <- copy(cost_boot_trips_dt)
+  # Merge in sampling rates. 
+  cost_boot_trips_dt.iter <- cost_boot_trips_dt.iter[rates_adp[, .(ADP, STRATA, SAMPLE_RATE)], on = .(ADP, STRATA) ]
+  # Assign random numbers
+  cost_boot_trips_dt.iter[, RN := runif(.N)]
+  # Subset the sampled trips, then subset pc_effort_st
+  cost_boot_trips_dt.n <- pc_effort_st[cost_boot_trips_dt.iter[RN < SAMPLE_RATE, ], on = .(ADP, STRATA, TRIP_ID)]
+  
+  #' Calculate cost of each stratum. Just need a day summary 
+  em_fg_d <- unique(cost_boot_trips_dt.n[STRATA %like% "EM_FIXED", .(ADP, STRATA, TRIP_ID, DAYS)])[
+  ][, .(d = sum(DAYS)), keyby = .(ADP, STRATA)]
+  
+  cost_boot_lst[[i]] <- cbind(
+    ob_cost_new(cost_boot_rates, cost_params = cost_params, allo_sub = cost_boot_trips_dt.n, sim = T),
+    emfg_cost(em_fg_d, cost_params = cost_params, sim = T),
+    emtrw_cost_new(cost_boot_trips_dt.n, cost_params = cost_params)
+  )
+  
+}
+cost_boot_dt <- rbindlist(cost_boot_lst, idcol = "iter")
+cost_boot_dt.med <- cost_boot_dt[, median(OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)]
+cost_boot_dt.95 <- cost_boot_dt[, list(quantile(OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL, c(0.025, .975)))]
+
+#====================================#
+## Figure B-2. Cost Distribution  ----
+#====================================#
+figure_b2 <- ggplot(cost_boot_dt, aes(x = OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)) + 
+  geom_histogram(fill = "gray65", bins = 30) + 
+  geom_vline(aes(xintercept = budget_lst[[1]]), color = "purple", linetype = 2, linewidth = 1.1) +
+  geom_text(
+    x = budget_lst[[1]], y = cost_boot_iter / 20, label = paste("Budget:", format_dollar(budget_lst[[1]], 0)), 
+    angle = 90, hjust = 1, vjust = 2, color = "purple", check_overlap = T) + 
+  geom_vline(aes(xintercept = cost_boot_dt.med), color = "blue", linetype = 2, linewidth = 1) + 
+  geom_text(
+    x = cost_boot_dt.med, y = cost_boot_iter / 20, label = paste("Median:", format_dollar(cost_boot_dt.med, 0)), 
+    angle = 90, hjust = 1, vjust = -1, color = "blue", check_overlap = T) + 
+  geom_vline(data = cost_boot_dt.95, aes(xintercept = V1), color = "red", linetype = 2, linewidth = 1) + 
+  geom_text(
+    data = cost_boot_dt.95, aes(x = V1, y = cost_boot_iter / 20, label = format_dollar(V1, 0)), 
+    angle = 90, hjust = 1, vjust = c(1.8, -1), color = "red") + 
+  scale_x_continuous(labels = function(x) formatC(x / 1e6, digits = 1, format = "f")) + 
+  labs(x = "Total cost (millions)", y = "Number of ODDS iterations with this outcome") +
+  theme(axis.text = element_text(color = "black")) # Make text black so it's easier to read
+
+# Note that this includes the cost of EM_TRW which in this simulation, had no variability.
+
+#======================================================================================================================#
+# Sampling Summaries ----
+#======================================================================================================================#
+
+#===================================#
+## Table B-3. Allocation Indices ----
+#===================================#
+
+# Proximity allocation indices
+table_b3 <- copy(rates_adp)[, -"ADP"]
+# Change 
+table_b3[, SAMPLE_RATE := round(SAMPLE_RATE * 100, 2)]
+# 
+table_b3[
+][, STRATA := gsub("-", " ", STRATA)
+][, STRATA := sub("_FIXED", " Fixed-gear", STRATA)
+][, STRATA := sub("_TRW", " Trawl", STRATA)
+][, STRATA := sub("^OB", "At-sea Observer", STRATA)
+][, STRATA := sub("ZERO", "Zero", STRATA)]
+setorder(table_b3, STRATA)
+setnames(table_b3, new = c("Stratum", "N", "r", "n", "T", "F", "D"))
+table_b3.flex <- table_b3 %>% 
+  flextable() %>%
+  compose(i = 1, j = 1, part = "header", value = as_paragraph(., " (", as_i("h"), ")" ), use_dot = T) %>%
+  compose(i = 1, j = c(2, 3:7), part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
+  mk_par(i = 1, j = 5, part = "header", value = as_paragraph(as_i("T\U0302"), as_sub(as_i("h")))) %>%
+  mk_par(i = 1, j = 7, part = "header", value = as_paragraph(as_i("D\U0302"), as_sub(as_i("h")))) %>%
+  colformat_num(j = 2, big.mark = ",", part = "body") %>%
+  colformat_double(j = 4, digits = 2) %>%
+  colformat_double(j = 5:7, digits = 4) %>%
+  add_header_row(top = F, values = c(paste0("Draft ", adp_year, " ADP"), ""), colwidths = c(1, 6)) %>%
+  bold(i = 2, j = 1, part = "header") %>%
+  autofit()
+
+
+#=====================================#
+## Table B-4. Rates Trips and Days ----
+#=====================================#
+
+#' TODO Would be nice to capture trips and days monitored by stratum in the trip selection simulations!
+#' Note that days monitored 'd' for EM_TRW strata reflects the 100% at-sea compliance monitoring rate. 
+#' 'n' is a reflection of the shoreside monitoring rate and should be considered as an estimate for the number of deliveries
+
+rates_trips_days.pc <- unique(pc_effort_st[, .(POOL, STRATA, TRIP_ID, DAYS)])[, .(STRATA_N = uniqueN(TRIP_ID), MTD = mean(DAYS)), keyby = .(POOL, STRATA)]
+# Merge in monitoring rates and stratum trip counts
+rates_trips_days.pc <- rates_adp[, .(STRATA, SAMPLE_RATE, n)][rates_trips_days.pc, on = .(STRATA)]
+# Hard-code the EM_TRW-GOA and ZERO pool selection rates
+rates_trips_days.pc[
+][STRATA == "EM_TRW-GOA", SAMPLE_RATE := 0.3333
+][STRATA == "ZERO", SAMPLE_RATE := 0
+][is.na(n), n := STRATA_N * SAMPLE_RATE]
+# Estimated days monitored based on trips sampled 'n' and mean trip duration 'MTD'
+rates_trips_days.pc[, d := n * MTD][, MTD := NULL]
+# Refine pool labels
+rates_trips_days.pc[, POOL := fcase(
+  POOL == "OB", "At-sea Observer",
+  POOL == "ZE", "Zero",
+  STRATA %like% "EM_FIXED", "Fixed-gear EM",
+  STRATA %like% "EM_TRW", "Trawl EM")]
+# Refine strata names
+rates_trips_days.pc[
+][, STRATA := gsub("-", " ", STRATA)
+][, STRATA := sub("_FIXED", " Fixed-gear", STRATA)
+][, STRATA := sub("_TRW", " Trawl", STRATA)
+][, STRATA := sub("^OB", "At-sea Observer", STRATA)
+][, STRATA := sub("ZERO", "Zero", STRATA)]
+# Convert sample rate to percentage
+rates_trips_days.pc[, SAMPLE_RATE := SAMPLE_RATE * 100]
+# Round off estimates
+round_cols <- c("STRATA_N", "n", "d")
+rates_trips_days.pc[, (round_cols) := lapply(.SD, round), .SDcols = round_cols]
+setnames(rates_trips_days.pc, new = c("Stratum", "r", "n", "Pool", "N", "d"))
+setcolorder(rates_trips_days.pc, c("Pool", "Stratum", "N", "n", "d", "r"))
+# Get list of strata 
+rates_trips_days.pc.strata <- unique(rates_trips_days.pc$Stratum)
+# Create totals by POOL when there is more than one stratum
+rates_trips_days.pc.total <- rates_trips_days.pc[, .(
+  Stratum = "Total", N = sum(N), n = sum(n), d = sum(d), r = round(sum(n)/sum(N) * 100, 2), STRATA_COUNT = .N
+), keyby = .(Pool)][STRATA_COUNT > 1][, STRATA_COUNT := NULL]
+# Add totals in
+rates_trips_days.pc <- rbind(
+  rates_trips_days.pc,
+  rates_trips_days.pc.total
+)
+# Make Stratum column a factor and add Total as the final level
+rates_trips_days.pc[, Stratum := factor(Stratum, levels = c(rates_trips_days.pc.strata, "Total") )]
+setorder(rates_trips_days.pc, Pool, Stratum)
+
+# Add full coverage in as well.
+rates_trips_days.fc <- full_efrt.smry[, .(
+  Pool = "Full Coverage", r = 100, N = uniqueN(TRIP_ID), n = uniqueN(TRIP_ID),
+  d = sum(as.numeric(END - START, units = "days") + 1)), 
+  keyby = .(STRATA)]
+# Refine strata names
+rates_trips_days.fc[, STRATA := fcase(
+  STRATA == "EM_TRW_BSAI", "EM Trawl BSAI",
+  STRATA == "FULL", "Full"
+)]
+# Create totals by POOL
+rates_trips_days.fc.total <- rates_trips_days.fc[, .(
+  STRATA = "Total", N = sum(N), n = sum(n), d = sum(d), r = round(sum(n)/sum(N) * 100, 2)
+), keyby = .(Pool)]
+rates_trips_days.fc.strata <- rev(unique(rates_trips_days.fc$STRATA))
+setorder(rates_trips_days.fc, -STRATA)
+# Add totals in
+rates_trips_days.fc <- rbind(
+  rates_trips_days.fc,
+  rates_trips_days.fc.total
+)
+setnames(rates_trips_days.fc , new = c("Stratum", "Pool", "r", "N", "n", "d"))
+setcolorder(rates_trips_days.fc, c("Pool", "Stratum", "N", "n", "d", "r"))
+
+table_b4 <- rbind(
+  rates_trips_days.pc,
+  rates_trips_days.fc
+)
+
+# Now that totals are made for pool, remove pool column
+table_b4.flex <- table_b4[, -"Pool"] %>% 
+  flextable() %>%
+  autofit() %>%
+  compose(i = 1, j = 1, part = "header", value = as_paragraph(., " (", as_i("h"), ")" ), use_dot = T) %>%
+  compose(i = 1, j = 2:4, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
+  compose(i = 1, j = 5, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") ), " (%)"), use_dot = T) %>%
+  bold(i = ~ Stratum == "Total", part = "body") %>%
+  bold(i = c(9,10), j = 2:5, part = "body") %>%
+  hline(i = ~ Stratum == "Total") %>%
+  hline(i = c(9, 10)) %>%
+  compose(i = ~ Stratum == "Total", j = 1, value = as_paragraph("\t", .), use_dot = T) %>%
+  add_header_row(top = F, values = c(paste0("Draft ", adp_year, " ADP"), ""), colwidths = c(1, 4)) %>%
+  bold(i = 2, j = 1, part = "header") %>%
+  fix_border_issues()
+# Note that the rates for EM_TRW-GOA are for shoreside monitoring only and that 'n' is an approximation
+
+
+#======================================================================================================================#
 # Monitoring Costs ----
+#======================================================================================================================#
 
-# How much did we allocate to at-sea observers and fixed-gear EM?
-mtd <- unique(pc_effort_st[, .(ADP, STRATA, TRIP_ID, DAYS)])[, .(TRP_DUR = mean(DAYS)), keyby = .(ADP, STRATA)]
-rates_mtd_adp <- mtd[rates_adp, on = .(ADP, STRATA)]
-rates_mtd_adp[, MON_RATE := SAMPLE_RATE]
+# Extract the cost summary used in the allocation.
+#' [DRAFT: Grabbing attributes from the only iteration]
+cost_summary <- attr(boot_lst[[1]]$rates, "cost_summary")
+#' [FINAL: Average across attributes from all iterations]
 
-rates_adp
-ob_cost(rates_mtd_adp, cost_params_new)
-emfg_cost(rates_mtd_adp, cost_params_new)
+#===================================#
+## Table B-2. Budget and Vessels ----
+#===================================#
 
-#=======================================================================================================================#
+#' Cost summary
 
-#' [$4.0M Budget with new values and ob_cost_new()]
- 
-#  ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
-# 2025 EM_FIXED-BSAI       47      0.5703  26.8041 0.8758692 0.12661410 0.765
-# 2025  EM_FIXED-GOA      834      0.1388 115.7592 0.8372885 0.08625301 0.765
-# 2025 OB_FIXED-BSAI      329      0.1984  65.2736 0.8603124 0.11081794 0.765
-# 2025  OB_FIXED-GOA     2036      0.0654 133.1544 0.8348581 0.08377899 0.765
-# 2025   OB_TRW-BSAI      123      0.1846  22.7058 0.9438439 0.18950338 0.765
-# 2025    OB_TRW-GOA      534      0.0663  35.4042 0.9133382 0.16239636 0.765
+# Get totals, rounding to the nearest $1K
+cost_totals <- round(
+  unlist(cost_summary[, .(TOTAL = sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL), OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL)]), -3
+)
+#' Naming the monitoring method 'strata' here for the sake of keeping the same header as the vessel counts below. The 
+#' final table's column names will be named manually
+cost_totals.pc <- data.table("STRATA" = names(cost_totals), data.table("value" = format_dollar(cost_totals, 0)))
+# Rename the pools
+cost_totals.pc[, STRATA := fcase(
+  STRATA == "TOTAL", "Total",
+  STRATA == "OB_TOTAL", "At-sea Observer",
+  STRATA == "EMFG_TOTAL", "EM Fixed-Gear",
+  STRATA == "EMTRW_TOTAL", "EM Trawl GOA"
+)]
+cost_totals.pc <- rbind(data.table(STRATA = "Partial Coverage Monitoring Budget ($)"), cost_totals.pc, fill = T)
 
-# OB_TOTAL   OB_CPD  OB_DAYS
-#  2829634 1968.897 1437.167
+# Number of vessels
+vessel_totals.pc <- pc_effort_st[, .(value = uniqueN(PERMIT)), keyby = .(STRATA)]
+vessel_totals.pc[
+][, STRATA := gsub("-", " ", STRATA)
+][, STRATA := sub("_FIXED", " Fixed-gear", STRATA)
+][, STRATA := sub("_TRW", " Trawl", STRATA)
+][, STRATA := sub("^OB", "At-sea Observer", STRATA)
+][, STRATA := sub("ZERO", "Zero", STRATA)]
+setorder(vessel_totals.pc, STRATA)
+vessel_totals.pc <- rbind(data.table(STRATA = "Vessels Participating (Partial Coverage)"), vessel_totals.pc, fill = T)
 
-# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
-#    1130945 1353.542  835.5445   1005342
+vessel_totals.fc <- full_efrt.smry[, .(value = uniqueN(VESSEL_ID)), keyby = .(STRATA)]
+vessel_totals.fc[, STRATA := fcase(
+  STRATA == "EM_TRW_BSAI", "EM Trawl BSAI",
+  STRATA == "FULL", "Full Coverage"
+)]
+setorder(vessel_totals.fc, -STRATA)
+vessel_totals.fc <- rbind(data.table(STRATA = "Vessels Participating (Full Coverage)"), vessel_totals.fc, fill = T)
 
-#' [$4.0M Budget with old values] 
-
-#  ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
-# 2025 EM_FIXED-BSAI       47      0.5758  27.0626 0.8783970 0.12519892 0.7684
-# 2025  EM_FIXED-GOA      834      0.1407 117.3438 0.8402983 0.08557410 0.7684
-# 2025 OB_FIXED-BSAI      329      0.2016  66.3264 0.8631470 0.10971526 0.7684
-# 2025  OB_FIXED-GOA     2036      0.0664 135.1904 0.8381565 0.08310124 0.7684
-# 2025   OB_TRW-BSAI      123      0.1882  23.1486 0.9454848 0.18726739 0.7684
-# 2025    OB_TRW-GOA      534      0.0675  36.0450 0.9155853 0.16084290 0.7684
-
-# OB_TOTAL   OB_CPD  OB_DAYS
-#  2867444 1963.673 1460.245
-
-# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
-#    1132539 1338.462  846.1493   1005342
-
-#=======================================================================================================================#
-
-#' [$4.5M Budget with new values]
-
-#   ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
-# 2025 EM_FIXED-BSAI       47      0.6478  30.4466 0.9084280 0.10755368 0.8107
-# 2025  EM_FIXED-GOA      834      0.1694 141.2796 0.8779806 0.07667543 0.8107
-# 2025 OB_FIXED-BSAI      329      0.2487  81.8223 0.8966051 0.09582324 0.8107
-# 2025  OB_FIXED-GOA     2036      0.0806 164.1016 0.8764112 0.07485070 0.8107
-# 2025   OB_TRW-BSAI      123      0.2437  29.9751 0.9637543 0.15884251 0.8107
-# 2025    OB_TRW-GOA      534      0.0871  46.5114 0.9428764 0.14009799 0.8107
-
-# OB_TOTAL   OB_CPD  OB_DAYS
-#  3394148 1887.071 1798.633
-
-# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
-#    1156018  1153.32  1002.339   1005342
-
-#' [$4.5M Budget (old)]
-#  ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
-# 2025 EM_FIXED-BSAI       47      0.6417  30.1599 0.9060866 0.10899547 0.8073
-# 2025  EM_FIXED-GOA      834      0.1668 139.1112 0.8750857 0.07739156 0.8073
-# 2025 OB_FIXED-BSAI      329      0.2443  80.3747 0.8940255 0.09696501 0.8073
-# 2025  OB_FIXED-GOA     2036      0.0792 161.2512 0.8732474 0.07556683 0.8073
-# 2025   OB_TRW-BSAI      123      0.2383  29.3109 0.9624164 0.16120459 0.8073
-# 2025    OB_TRW-GOA      534      0.0851  45.4434 0.9407278 0.14188987 0.8073
-
-# OB_TOTAL  OB_CPD  OB_DAYS
-#  3345267 1894.51 1765.769
-
-# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
-#    1153914 1167.525  988.3419   1005342
-
-#=======================================================================================================================#
-
-#' [$5.0M Budget] *new*
-
-#  ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
-# 2025 EM_FIXED-BSAI       47      0.7078  33.2666 0.9297243 0.09372078 0.8426
-# 2025  EM_FIXED-GOA      834      0.1990 165.9660 0.9054919 0.06947150 0.8426
-# 2025 OB_FIXED-BSAI      329      0.2985  98.2065 0.9203622 0.08451693 0.8426
-# 2025  OB_FIXED-GOA     2036      0.0956 194.6416 0.9042377 0.06816516 0.8426
-# 2025   OB_TRW-BSAI      123      0.3056  37.5888 0.9751549 0.13591758 0.8426
-# 2025    OB_TRW-GOA      534      0.1098  58.6332 0.9610388 0.12321739 0.8426
-
-# OB_TOTAL   OB_CPD  OB_DAYS
-#  3901142 1804.963 2161.341
-
-# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
-#    1179459 1018.286  1158.279   1005342
-
-#' [$5.0M Budget] (old)
-
-#  ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
-# 2025 EM_FIXED-BSAI       47      0.6990  32.8530 0.9267865 0.09571847 0.8381
-# 2025  EM_FIXED-GOA      834      0.1943 162.0462 0.9017090 0.07051269 0.8381
-# 2025 OB_FIXED-BSAI      329      0.2905  95.5745 0.9171144 0.08615990 0.8381
-# 2025  OB_FIXED-GOA     2036      0.0932 189.7552 0.9004291 0.06912878 0.8381
-# 2025   OB_TRW-BSAI      123      0.2954  36.3342 0.9736663 0.13925587 0.8381
-# 2025    OB_TRW-GOA      534      0.1060  56.6040 0.9586355 0.12567393 0.8381
-
-# OB_TOTAL   OB_CPD  OB_DAYS
-#  3823328 1818.218 2102.788
-
-# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
-#    1175777  1037.04  1133.781   1005342
+table_b2 <- rbind(cost_totals.pc, vessel_totals.pc, vessel_totals.fc)
+table_b2.flex <- table_b2 %>% 
+  flextable() %>%
+  compose(i = ~ !is.na(value), value = as_paragraph("\t", .), use_dot = T) %>%
+  set_header_labels(values = c("", paste0("Draft ", adp_year, " ADP"))) %>%
+  align(j = 2, align = "right", part = "all") %>%
+  bold(i = ~ is.na(value)) %>%
+  bold(part = "header") %>%
+  hline(i = ~ STRATA == "") %>%
+  hline(i = 5) %>%
+  autofit()
 
 
+#======================================================================================================================#
+# Outputs ----
+#======================================================================================================================#
 
-#=======================================================================================================================#
+## Allocation products
 
-#' [$5.82M Budget] *new* 2024 Final ADP Budget
+budget_lst[[1]]   #' Total Budget
+rates_adp         #' Allocated Rates, excluding EM_TRW
+cost_summary      #' Breakdown of costs
+cost_boot_iter    #' Number of ODDS iterations
 
-#  ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
-# 2025 EM_FIXED-BSAI       47      0.7796  36.6412 0.9515896 0.07755699 0.8778
-# 2025  EM_FIXED-GOA      834      0.2457 204.9138 0.9345233 0.06067174 0.8778
-# 2025 OB_FIXED-BSAI      329      0.3772 124.0988 0.9447299 0.07084195 0.8778
-# 2025  OB_FIXED-GOA     2036      0.1203 244.9308 0.9337055 0.05993018 0.8778
-# 2025   OB_TRW-BSAI      123      0.4062  49.9626 0.9852073 0.10901784 0.8778
-# 2025    OB_TRW-GOA      534      0.1515  80.9010 0.9779782 0.10241156 0.8778
 
-# OB_TOTAL   OB_CPD  OB_DAYS
-#  4605379 1669.938 2757.815
+## Tables (export for Rmarkdown)
 
-# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
-#    1215202 870.4554  1396.054   1005342
+table_b2
+table_b2.flex 
+table_b3
+table_b3.flex
+table_b4
+table_b4.flex
 
-#' [$5.82M Budget] old() 2024 Final ADP Budget
+#' Save table outputs for `tables.Rmd` to knit to docx format
+save(
+  table_b2, table_b2.flex,
+  table_b3, table_b3.flex,
+  table_b4, table_b4.flex,
+  file = "tables.rdata"
+)
 
-#  ADP        STRATA STRATA_N SAMPLE_RATE        n      PROX CV_SCALING  INDEX
-# 2025 EM_FIXED-BSAI       47      0.7794  36.6318 0.9515335 0.07760213 0.8777
-# 2025  EM_FIXED-GOA      834      0.2455 204.7470 0.9344255 0.06070449 0.8777
-# 2025 OB_FIXED-BSAI      329      0.3769 124.0001 0.9446569 0.07088721 0.8777
-# 2025  OB_FIXED-GOA     2036      0.1203 244.9308 0.9337055 0.05993018 0.8777
-# 2025   OB_TRW-BSAI      123      0.4058  49.9134 0.9851790 0.10910829 0.8777
-# 2025    OB_TRW-GOA      534      0.1513  80.7942 0.9779250 0.10249130 0.8777
+## Figures 
 
-# OB_TOTAL   OB_CPD  OB_DAYS
-#  4604049 1670.225 2756.544
+#' TODO simulations could capture what rates are actually realized as well. We shouldn't have THAT much of a difference
+#' in the variation between strata because smaller strata have much higher sampling rates. 
 
-# EMFG_TOTAL EMFG_CPD EMFG_DAYS EMFG_BASE
-#    1215055  870.961  1395.074   1005342
-
+#' *Figure B-2.* Summary of `cost_boot_iter` outcomes of simulated sampling in ODDS showing the total costs of the 
+#' partial coverage monitoring program expected for 2025. Vertical lines depict the available budget (purple line), 
+#' median expected cost (blue line), and 95% confidence limits (red lines).
+ggsave(filename = "output_figures/figure_b2.png", plot = figure_b2, width = 5, height = 5, units = "in")
