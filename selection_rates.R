@@ -278,11 +278,11 @@ cost_boot_dt.95 <- cost_boot_dt[, list(quantile(OB_TOTAL + EMFG_TOTAL + EMTRW_TO
 ## Figure B-2. Cost Distribution  ----
 #====================================#
 figure_b2 <- ggplot(cost_boot_dt, aes(x = OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)) + 
-  geom_histogram(fill = "gray", bins = 30) + 
+  geom_histogram(fill = "gray65", bins = 30) + 
   geom_vline(aes(xintercept = budget_lst[[1]]), color = "purple", linetype = 2, linewidth = 1.1) +
   geom_text(
     x = budget_lst[[1]], y = cost_boot_iter / 20, label = paste("Budget:", format_dollar(budget_lst[[1]], 0)), 
-    angle = 90, hjust = 1, vjust = 1.5, color = "purple", check_overlap = T) + 
+    angle = 90, hjust = 1, vjust = 2, color = "purple", check_overlap = T) + 
   geom_vline(aes(xintercept = cost_boot_dt.med), color = "blue", linetype = 2, linewidth = 1) + 
   geom_text(
     x = cost_boot_dt.med, y = cost_boot_iter / 20, label = paste("Median:", format_dollar(cost_boot_dt.med, 0)), 
@@ -290,9 +290,11 @@ figure_b2 <- ggplot(cost_boot_dt, aes(x = OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)) 
   geom_vline(data = cost_boot_dt.95, aes(xintercept = V1), color = "red", linetype = 2, linewidth = 1) + 
   geom_text(
     data = cost_boot_dt.95, aes(x = V1, y = cost_boot_iter / 20, label = format_dollar(V1, 0)), 
-    angle = 90, hjust = 1, vjust = c(1.5, -1), color = "red") + 
+    angle = 90, hjust = 1, vjust = c(1.8, -1), color = "red") + 
   scale_x_continuous(labels = function(x) formatC(x / 1e6, digits = 1, format = "f")) + 
-  labs(x = "Total Cost (Millions)", y = "Number of ODDS iterations with this outcome")
+  labs(x = "Total cost (millions)", y = "Number of ODDS iterations with this outcome") +
+  theme(axis.text = element_text(color = "black")) # Make text black so it's easier to read
+
 # Note that this includes the cost of EM_TRW which in this simulation, had no variability.
 
 #======================================================================================================================#
@@ -320,6 +322,8 @@ table_b3.flex <- table_b3 %>%
   flextable() %>%
   compose(i = 1, j = 1, part = "header", value = as_paragraph(., " (", as_i("h"), ")" ), use_dot = T) %>%
   compose(i = 1, j = c(2, 3:7), part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
+  mk_par(i = 1, j = 5, part = "header", value = as_paragraph(as_i("T\U0302"), as_sub(as_i("h")))) %>%
+  mk_par(i = 1, j = 7, part = "header", value = as_paragraph(as_i("D\U0302"), as_sub(as_i("h")))) %>%
   colformat_num(j = 2, big.mark = ",", part = "body") %>%
   colformat_double(j = 4, digits = 2) %>%
   colformat_double(j = 5:7, digits = 4) %>%
@@ -352,8 +356,6 @@ rates_trips_days.pc[, POOL := fcase(
   POOL == "ZE", "Zero",
   STRATA %like% "EM_FIXED", "Fixed-gear EM",
   STRATA %like% "EM_TRW", "Trawl EM")]
-# Convert sample rate to percentage
-rates_trips_days.pc[, SAMPLE_RATE := SAMPLE_RATE * 100]
 # Refine strata names
 rates_trips_days.pc[
 ][, STRATA := gsub("-", " ", STRATA)
@@ -361,6 +363,8 @@ rates_trips_days.pc[
 ][, STRATA := sub("_TRW", " Trawl", STRATA)
 ][, STRATA := sub("^OB", "At-sea Observer", STRATA)
 ][, STRATA := sub("ZERO", "Zero", STRATA)]
+# Convert sample rate to percentage
+rates_trips_days.pc[, SAMPLE_RATE := SAMPLE_RATE * 100]
 # Round off estimates
 round_cols <- c("STRATA_N", "n", "d")
 rates_trips_days.pc[, (round_cols) := lapply(.SD, round), .SDcols = round_cols]
