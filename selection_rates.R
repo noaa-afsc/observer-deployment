@@ -22,8 +22,6 @@ library(dplyr)              # For piping and handling sf objects
 library(FMAtools)           # For connectivity to Analytical Services Program's Shared Google Drive
 library(readxl)             # For read_xlsx
 library(odbc)               # For database connectivity
-# library(grid)               # For unit.pmax  to get widths of grobs so that plots have matching dimensions
-# library(gridExtra)          # For arrangeGrob to combine plots
 library(flextable)          # For print-ready tables
 library(officer)            # For additional flextable formatting options such as fp_border
 
