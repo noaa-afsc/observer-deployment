@@ -2,7 +2,6 @@ The `analyses/monitoring_costs/sql_pulls/` folder houses `.rdata` files that are
 
 Contains:
 
-**kodiak_plant_days.rdata**
-
--   *created_by:* analyses/monitoring_costs/monitoring_costs.R
--   *objects:* kodiak_plant_days
+-   **kodiak_plant_days.rdata**
+    -   created_by: `analyses/monitoring_costs/monitoring_costs.R`
+    -   objects: `kodiak_plant_days`
