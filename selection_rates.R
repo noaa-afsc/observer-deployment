@@ -16,6 +16,8 @@ adp_year <- 2025
 library(data.table)         # Data wrangling
 library(ggplot2)            # Plotting
 library(sf)                 # Spatial analyses
+library(ggh4x)              # For facets with nested labels
+library(waffle)             # For waffle plots of coverage/tonnage summaries
 library(dplyr)              # For piping and handling sf objects
 library(FMAtools)           # For connectivity to Analytical Services Program's Shared Google Drive
 library(readxl)             # For read_xlsx
@@ -32,14 +34,14 @@ library(officer)            # For additional flextable formatting options such a
 #' Load the outputs of `get_data.R`
 gdrive_download(
   local_path = "source_data/2025_Draft_ADP_data.rdata",
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/", ver = 1)
 )
 (load("source_data/2025_Draft_ADP_data.rdata"))
 
 #' Load `cost_params`, the output of `monitoring_costs.R``
 gdrive_download( 
   local_path = "source_data/cost_params_2025.Rdata", 
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/", ver = 3)
 )
 (load("source_data/cost_params_2025.Rdata"))
 
@@ -499,168 +501,82 @@ table_b3.flex <- table_b3[, -"Pool"] %>%
 # Monitoring Summary ----
 #======================================================================================================================#
 
-#' Here we will summarize the monitoring of the entire AK 
+#' Here we will summarize the monitoring of the entire AK. Used in the PCFMAC pressentation of the 2025 Draft ADP.
 
+#' *Full coverage*
 # Grab all full coverage trips in the last year
-coverage_summary.fc <- work.data[, -c("STRATA")][full_efrt.smry, on = .(VESSEL_ID, TRIP_ID)]
-coverage_summary.fc[, FIXED_TRW := ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", "FIXED")]
-coverage_summary.fc <- coverage_summary.fc[, .(
+mon_catch.fc <- work.data[
+][, -c("STRATA")
+  # Subset, grabbing only full coverage trips from the most recent year
+][full_efrt.smry, on = .(VESSEL_ID, TRIP_ID)
+  # Broadly categorize gear types by fixed and trawl.
+][, FIXED_TRW := ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", "FIXED")
+  # Categorize monitoring method
+][, MON := ifelse(STRATA %like% "EM_", "EM", "OB")
+  # Sum up retained catch by monitoring method, FMP, and gear
+][, .(RET_CATCH = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)), keyby = .(MON, FMP, FIXED_TRW)
+][, MON_CATCH := RET_CATCH
+][, PERC_MON := MON_CATCH / RET_CATCH * 100][]
+
+#' *Partial Coverage*
+
+mon_catch.pc <- work.data[
+][, -"STRATA"
+  # Subset only partial coverage sector trips
+][unique(pc_effort_st[, .(wd_TRIP_ID, STRATA)]), on = c(TRIP_ID = "wd_TRIP_ID")
+  # Remove any program management codes that are state-managed
+][!(MANAGEMENT_PROGRAM_CODE %in% c("SMO", "SMPC", "SMS"))
+  # Broadly categorize gear types by fixed and trawl.
+][, FIXED_TRW := ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", "FIXED")
+  # Sum retained catch by stratum, FMP and gear type category
+][, .(
   RET_CATCH = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)
-  ), keyby = .(VESSEL_ID, TRIP_ID, FMP, FIXED_TRW, MANAGEMENT_PROGRAM_CODE, STRATA)]
-coverage_summary.fc[, N := .N, by =.(TRIP_ID)]
-
-# Calculate proportion of catch retained under each managemnt program code
-coverage_summary.fc[, PROP := RET_CATCH / sum(RET_CATCH), by = .(TRIP_ID)]
-coverage_summary.fc[PROP != 1]
-coverage_summary.fc[STRATA == "EM_TRW_BSAI", MANAGEMENT_PROGRAM_CODE := "AFA/EM_TRW"]
-
-# Full coverage total
-ggplot(coverage_summary.fc, aes(x = FIXED_TRW, y = RET_CATCH, fill = MANAGEMENT_PROGRAM_CODE)) + 
-  facet_grid(FMP ~ .) + 
-  geom_col()
-
-
-coverage_summary.pc <- pc_effort_sub[COVERAGE_TYPE == "PARTIAL"]
-# Remove state-managed fisheries
-coverage_summary.pc <- coverage_summary.pc[!(MANAGEMENT_PROGRAM_CODE %in% c("SMO", "SMPC", "SMS"))]
-
-coverage_summary.pc[, FIXED_TRW := ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", "FIXED")]
-coverage_summary.pc <- coverage_summary.pc[, .(
-  RET_CATCH = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)
-), keyby = .(VESSEL_ID, TRIP_ID, FMP, FIXED_TRW, MANAGEMENT_PROGRAM_CODE, STRATA)]
-coverage_summary.pc[, N := .N, by =.(TRIP_ID)]
-coverage_summary.pc[, PROP := RET_CATCH / sum(RET_CATCH), by = .(TRIP_ID)]
-coverage_summary.pc[PROP != 1]
-coverage_summary.pc[STRATA == "EM_TRW_GOA", MANAGEMENT_PROGRAM_CODE := "AFA/EM_TRW"]
-ggplot(coverage_summary.pc, aes(x = FIXED_TRW, y = RET_CATCH, fill = MANAGEMENT_PROGRAM_CODE)) + 
-  facet_grid(FMP ~ .) + 
-  geom_col()
-
-coverage_summary <- rbind(
-  cbind(SECTOR = "FULL", coverage_summary.fc),
-  cbind(SECTOR = "PARTIAL", coverage_summary.pc)
-)
-coverage_summary.total <- coverage_summary[, .(
-  RET_CATCH = sum(RET_CATCH)
-), keyby = .(SECTOR, FMP, FIXED_TRW, MANAGEMENT_PROGRAM_CODE)
-]
-
-ggplot(coverage_summary.total , aes(x = FIXED_TRW, y = RET_CATCH, fill = MANAGEMENT_PROGRAM_CODE)) + 
-  facet_grid(FMP ~ SECTOR, scales = "free_y", space = "free_y") + 
-  geom_col(color = "black")
-
-## Proportions monitored by sector and FMP ----
-coverage_summary.pc.strata <- unique(pc_effort_st[, .(wd_TRIP_ID, STRATA)])
-coverage_summary.pc.strata <- work.data[, -"STRATA"][coverage_summary.pc.strata, on = c(TRIP_ID = "wd_TRIP_ID")]
-# Remove state-managed fisheries
-coverage_summary.pc.strata <- coverage_summary.pc.strata[!(MANAGEMENT_PROGRAM_CODE %in% c("SMO", "SMPC", "SMS"))]
-
-coverage_summary.pc.strata[, FIXED_TRW := ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", "FIXED")]
-coverage_summary.pc.strata <- coverage_summary.pc.strata[, .(
-  RET_CATCH = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)
-), keyby = .(VESSEL_ID, TRIP_ID, FMP, FIXED_TRW, MANAGEMENT_PROGRAM_CODE, STRATA)]
+), keyby = .(FMP, FIXED_TRW, STRATA)]
 # Merge partial coverage sampling rates in
-coverage_summary.pc.strata[, SAMPLE_RATE := rates_adp[coverage_summary.pc.strata, SAMPLE_RATE, on = .(STRATA)]]
-coverage_summary.pc.strata[STRATA == "ZERO", SAMPLE_RATE := 0]
-coverage_summary.pc.strata[STRATA == "EM_TRW-GOA", SAMPLE_RATE := 1]
-a1 <- coverage_summary.pc.strata[, .(RET_CATCH = sum(RET_CATCH), MON_CATCH = sum(RET_CATCH * SAMPLE_RATE)), keyby = .(FMP, FIXED_TRW)]
-a1[, PERC_MON  := MON_CATCH / RET_CATCH * 100]
-a1  # 76% of GOA TRW effort is expected to be monitored
+mon_catch.pc <- mon_catch.pc[, SAMPLE_RATE := rates_adp[mon_catch.pc, SAMPLE_RATE, on = .(STRATA)]
+][STRATA == "ZERO", SAMPLE_RATE := 0
+][STRATA == "EM_TRW-GOA", SAMPLE_RATE := 1
+  # Define Monitoring category
+][, MON := fcase(STRATA %like% "EM", "EM", STRATA %like% "OB", "OB", STRATA %like% "ZERO", "ZERO")
+  # Sum up retained catch by monitoring method, FMP, and gear
+][, .(RET_CATCH = sum(RET_CATCH), MON_CATCH = sum(RET_CATCH * SAMPLE_RATE)), keyby = .(MON, FMP, FIXED_TRW)
+][, PERC_MON  := MON_CATCH / RET_CATCH * 100][]
 
-
-a2 <- coverage_summary.fc[, .(RET_CATCH = sum(RET_CATCH), MON_CATCH = sum(RET_CATCH)), keyby = .(FMP, FIXED_TRW)]
-a2[, PERC_MON  := MON_CATCH / RET_CATCH * 100]
-
-a3 <- rbind(
-  cbind(SECTOR = "PARTIAL", a1),
-  cbind(SECTOR = "FULL", a2)
-)
-setorder(a3, SECTOR, FMP, FIXED_TRW)
-a3[, TOTAL_PERC := sum(MON_CATCH) / sum(RET_CATCH) * 100]  # 96% of tonnage monitored
-a3[, FMP_PERC := sum(MON_CATCH) / sum(RET_CATCH) * 100, by = .(FMP)]
-a3[, FMP_GEAR_PERC :=  sum(MON_CATCH) / sum(RET_CATCH) * 100, by = .(FMP, FIXED_TRW)]
-a3[, UNMON_CATCH := RET_CATCH - MON_CATCH]
-
-a4 <- melt(a3, id.vars = c("SECTOR", "FMP", "FIXED_TRW"), measure.vars = c("UNMON_CATCH", "MON_CATCH"))
-ggplot(a4, aes(x = SECTOR, y = value, fill = variable)) + 
-  facet_grid(FMP ~ FIXED_TRW, scales = "free_y", space = "free_y") + 
-  geom_col(color = "black") + 
-  theme(legend.position = "bottom")
-
-#install.packages("waffle")
-library(waffle)
-
-
-a4[, value2 := value/sum(value)*400]  # with 500, each box represents .25% of catch
-a4[, value3 := round(value2)]
-a4[, GROUP := fcase(
-  SECTOR == "FULL" & variable == "MON_CATCH", "Full coverage",
-  SECTOR == "PARTIAL" & variable == "UNMON_CATCH", "Unmonitored",
-  SECTOR == "PARTIAL" & variable == "MON_CATCH", "Partial coverage"
-)]
-# TODO Add EM flag to this?
-a4[, GROUP := factor(GROUP, levels = c("Full coverage", "Partial coverage", "Unmonitored"))]
-a4[, FMP := factor(FMP, levels = c("BSAI", "GOA"))]
-a4[, FIXED_TRW := factor(FIXED_TRW, levels = c("TRW", "FIXED"))]
-setorder(a4, GROUP, FMP, FIXED_TRW)
-ggplot(a4, aes(values = value3, fill = GROUP)) + 
-  facet_grid(. ~ FMP + FIXED_TRW, scales = "free_x", space = "free_x") + 
-  geom_waffle(color = "white", n_rows = 20) +   #' with 20 rows and 400 units (each box = 0.25%), makes each full column represent 20/400 = 5% or 20 * .25% = 5%
-  theme_minimal() + 
-  theme_enhance_waffle() +
-  theme(legend.position = "bottom") + 
-  scale_fill_manual(values = c("blue", "dodgerblue", "pink")) + 
-  labs(fill = "Expected monitoring")
-# NOTE If I split up this figure into portions monitored by EM, GOA-FIXED would have its one box of partial monitoring split by both observers and EM.
-# remember, these summaries are by tonnage!
-
-
-
-#' TODO Try to add trips in here. Split trips by gear/FMP based on retained catch.
-coverage_summary.fc[, MON := ifelse(STRATA %like% "EM_", "EM", "OB")]
-mon_catch.fc <- coverage_summary.fc[, .(RET_CATCH = sum(RET_CATCH), MON_CATCH = sum(RET_CATCH)), keyby = .(MON, FMP, FIXED_TRW)]
-mon_catch.fc[, PERC_MON  := MON_CATCH / RET_CATCH * 100]
-
-coverage_summary.pc.strata[, MON := fcase(
-  STRATA %like% "EM", "EM",
-  STRATA %like% "OB", "OB",
-  STRATA %like% "ZERO", "ZERO"
-)]
-mon_catch.pc <- coverage_summary.pc.strata[, .(RET_CATCH = sum(RET_CATCH), MON_CATCH = sum(RET_CATCH * SAMPLE_RATE)), keyby = .(MON, FMP, FIXED_TRW)]
-mon_catch.pc[, PERC_MON  := MON_CATCH / RET_CATCH * 100]
-
-a3 <- rbind(
+mon_catch <- rbind(
   cbind(SECTOR = "FULL", mon_catch.fc),
   cbind(SECTOR = "PARTIAL", mon_catch.pc)
-)
+)[
+  # Calculate tonnage of unmonitored catch
+][, UNMON_CATCH := RET_CATCH - MON_CATCH][]
 
-setorder(a3, SECTOR, FMP, FIXED_TRW, MON)
-# a3[, TOTAL_PERC := sum(MON_CATCH) / sum(RET_CATCH) * 100]  # 96% of tonnage monitored
-# a3[, FMP_PERC := sum(MON_CATCH) / sum(RET_CATCH) * 100, by = .(FMP)]
-# a3[, FMP_GEAR_PERC :=  sum(MON_CATCH) / sum(RET_CATCH) * 100, by = .(FMP, FIXED_TRW)]
-a3[, UNMON_CATCH := RET_CATCH - MON_CATCH]
-a4 <- melt(a3, id.vars = c("SECTOR", "FMP", "FIXED_TRW", "MON"), measure.vars = c("UNMON_CATCH", "MON_CATCH"))
-
-a4[, value2 := value/sum(value)*800]  # with 500, each box represents .25% of catch
-a4[, value3 := round(value2)]
-a4[, GROUP := fcase(
+# Convert the sumamry to long form
+mon_catch.long <- melt(
+  mon_catch, 
+  id.vars = c("SECTOR", "FMP", "FIXED_TRW", "MON"),
+  measure.vars = c("UNMON_CATCH", "MON_CATCH")
+)[
+  # Divide tonnage into 800 units. With 800, each box represents .25% of catch, each colum represents 5%
+][, unit_count := round(value/sum(value) * 800)
+  # Define groupings based on sector, monitoring method, and whether catch was expected to be monitored.
+][, GROUP := fcase(
   SECTOR == "FULL" & variable == "MON_CATCH" & MON == "OB", "Full coverage - Observer",
   SECTOR == "FULL" & variable == "MON_CATCH" & MON == "EM", "Full coverage - EM",
   SECTOR == "PARTIAL" & MON == "ZERO", "No selection",
   SECTOR == "PARTIAL" & variable == "UNMON_CATCH", "Partial coverage - Unmonitored",
   SECTOR == "PARTIAL" & variable == "MON_CATCH" & MON == "OB", "Partial coverage - Observer",
   SECTOR == "PARTIAL" & variable == "MON_CATCH" & MON == "EM", "Partial coverage - EM"
-)]
-a4[, FIXED_TRW := ifelse(FIXED_TRW == "FIXED", "Fixed", "Trawl")]
-a4[, GROUP := factor(GROUP, levels = c(
+)
+# Re-lable variables for plotting
+][, FIXED_TRW := ifelse(FIXED_TRW == "FIXED", "Fixed", "Trawl")
+][, GROUP := factor(GROUP, levels = c(
   "Full coverage - Observer", "Full coverage - EM",
-  "Partial coverage - Observer", "Partial coverage - EM", "Partial coverage - Unmonitored", "No selection"))]
-a4[, FMP := factor(FMP, levels = c("BSAI", "GOA"))]
-a4[, FIXED_TRW := factor(FIXED_TRW, levels = c("Trawl", "Fixed"))]
-setorder(a4, GROUP, FMP, FIXED_TRW)
+  "Partial coverage - Observer", "Partial coverage - EM", "Partial coverage - Unmonitored", "No selection"))
+][, FMP := factor(FMP, levels = c("BSAI", "GOA"))
+][, FIXED_TRW := factor(FIXED_TRW, levels = c("Trawl", "Fixed"))][]
+setorder(mon_catch.long, GROUP, FMP, FIXED_TRW)
 
-library(ggh4x)
-figure_ppt_monitoring_summary <- ggplot(a4, aes(values = value3, fill = GROUP)) + 
+## Figure for PCFMAC - Waffle plot of tonnage monitored ----
+figure_ppt_monitoring_summary <- ggplot(mon_catch.long, aes(values = unit_count, fill = GROUP)) + 
   facet_nested(. ~ FMP + FIXED_TRW, scales = "free_x", space = "free_x") + 
   geom_waffle(color = "white", n_rows = 40) +   #' with 20 rows and 400 units (each box = 0.25%), makes each full column represent 20/400 = 5% or 20 * .25% = 5%
   #theme_minimal() + 
@@ -675,62 +591,19 @@ figure_ppt_monitoring_summary <- ggplot(a4, aes(values = value3, fill = GROUP)) 
   scale_fill_manual(values = c("deepskyblue", "dodgerblue",  "magenta", "purple", "pink", "gray")) + 
   labs(fill = "Expected monitoring") 
 
-ggsave("output_figures/figure_ppt_monitoring_summary.png" , figure_ppt_monitoring_summary, width = 8, height = 5, units = "in")
-
 # Proportion of tonnage monitored
-a4[, sum(value[variable == "MON_CATCH"]) / sum(value)] # 96% of fisheries are monitored
-a4[, sum(value[variable == "MON_CATCH"]) / sum(value), keyby = .(FMP)] # 99% in the BSAI and 72% in the GOA
-a4[, sum(value), keyby = .(SECTOR)][, .(SECTOR, Tonnage = V1, Percent = 100 * V1 / sum(V1))] # 10% of fisheries is in partial coverage
+mon_catch.long[, sum(value[variable == "MON_CATCH"]) / sum(value)] # 96% of fisheries are monitored
+mon_catch.long[, sum(value[variable == "MON_CATCH"]) / sum(value), keyby = .(FMP)] # 99% in the BSAI and 72% in the GOA
+mon_catch.long[, sum(value), keyby = .(SECTOR)][, .(SECTOR, Tonnage = V1, Percent = 100 * V1 / sum(V1))] # 10% of fisheries is in partial coverage
 
 # Excluding EM TRW, we are monitoring 13% of tonnage in partial coverage
-a4[!(FIXED_TRW != "TRW" & MON == "EM") & SECTOR == "PARTIAL", sum(value[variable == "MON_CATCH"]) / sum(value)]
+mon_catch.long[!(FIXED_TRW != "TRW" & MON == "EM") & SECTOR == "PARTIAL", sum(value[variable == "MON_CATCH"]) / sum(value)]
 
-a4[, .(PERC_MON = 100 * sum(value[variable == "MON_CATCH"]) / sum(value)), keyby = .(FMP, FIXED_TRW)]
-a4[SECTOR == "PARTIAL", .(PERC_MON = 100 * sum(value[variable == "MON_CATCH"]) / sum(value)), keyby = .(FMP, FIXED_TRW)]
+# Percent monitored by FMP and Gear (both full and partial coverage)
+mon_catch.long[, .(PERC_MON = 100 * sum(value[variable == "MON_CATCH"]) / sum(value)), keyby = .(FMP, FIXED_TRW)]
+# Percent monitored by FMP and Gear in partial coverage only
+mon_catch.long[SECTOR == "PARTIAL", .(PERC_MON = 100 * sum(value[variable == "MON_CATCH"]) / sum(value)), keyby = .(FMP, FIXED_TRW)]
 
-coverage_summary.fc[FMP == "BSAI" & FIXED_TRW == "FIXED"]
-
-#' TODO Can you make the same figure but make it number of trips?
-
-
-#' *======================================*
-
-# Most trips with multiple records have multiple management program codes (e.g., both CDQ and IFQ, both CDQ and OA)
-coverage_summary.fc[N > 1, table(MANAGEMENT_PROGRAM_CODE)]
-
-#' [NOTE: this summary has more N than because trips are being split by management program code, gear, etc]
-coverage_summary.fc[, .(N = uniqueN(TRIP_ID), RET_CATCH = sum(RET_CATCH)), keyby = .(FMP, GEAR, MANAGEMENT_PROGRAM_CODE, PROCESSING_SECTOR, STRATA)]
-
-
-
-
-coverage_summary.fc[, .(N = uniqueN(TRIP_ID), RET_CATCH = sum(RET_CATCH)), keyby = .(FMP, FIXED_TRW, MANAGEMENT_PROGRAM_CODE, STRATA)]
-
-# For each Trip, compute percentage of retained catch in each Management Program Code
-coverage_summary.fc[, .(PROP = RET_CATCH / sum(RET_CATCH)), keyby = .(TRIP_ID)]
-
-
-# Virtually all BSAI Fixed gear effort is CP cod fishing
-
-
-# Can mix RPP with OA
-coverage_summary.fc[TRIP_ID %in% coverage_summary.fc[N > 1 & MANAGEMENT_PROGRAM_CODE == "RPP", TRIP_ID]]  
-
-
-
-
-# Can Mix AFA with PCTC and CDW and A80
-coverage_summary.fc[TRIP_ID %in% coverage_summary.fc[N > 1 & MANAGEMENT_PROGRAM_CODE == "AFA", TRIP_ID], table(MANAGEMENT_PROGRAM_CODE)]  
-
-coverage_summary.fc[TRIP_ID %in% coverage_summary.fc[N > 1 & MANAGEMENT_PROGRAM_CODE == "A80", TRIP_ID], table(MANAGEMENT_PROGRAM_CODE)]  
-
-coverage_summary.fc[N == 1 & MANAGEMENT_PROGRAM_CODE == "OA", table(GEAR)]
-
-coverage_summary.fc[N == 1 & MANAGEMENT_PROGRAM_CODE == "OA" & GEAR == "TRW"]
-work.data[TRIP_ID == 2406523, table(TRIP_TARGET_CODE)]
-work.data[TRIP_ID == 2406528, table(TRIP_TARGET_CODE)]
-work.data[TRIP_ID == 2654541, table(TRIP_TARGET_CODE)]
-work.data[TRIP_ID == 2756214, table(TRIP_TARGET_CODE)]
 
 #======================================================================================================================#
 # Outputs ----
@@ -743,10 +616,16 @@ save(
   pc_effort_st, budget_lst, box_params, 
   ## Allocation products
   boot_lst, rates_adp,      
-  cost_summary, cost_boot_dt, 
+  cost_summary, cost_boot_dt,
+  ## Raw tables
   table_b1, table_b2, table_b3,
+  ## Location
   file = paste0("results/draft_adp_", adp_year, "_results.rdata")
-)  # was 297mb, box_params is the largest thing thank to the spatial data? weird..
+)
+gdrive_upload(
+  local_path = paste0("results/draft_adp_", adp_year, "_results.rdata"),
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output")
+)
 
 #' *Tables*
 #' Save table outputs for `tables.Rmd` to knit to docx format
@@ -759,7 +638,10 @@ save(
 
 #' *Figures* 
 
-#' *Figure B-2.* Summary of `cost_boot_iter` outcomes of simulated sampling in ODDS showing the total costs of the 
+#'   *Figure B-2.* Summary of `cost_boot_iter` outcomes of simulated sampling in ODDS showing the total costs of the 
 #' partial coverage monitoring program expected for 2025. Vertical lines depict the available budget (purple line), 
 #' median expected cost (blue line), and 95% confidence limits (red lines).
 ggsave(filename = "output_figures/figure_b2.png", plot = figure_b2, width = 5, height = 5, units = "in")
+
+#'   *Figure for PCFMAC* Waffle plot of tonnage monitored
+ggsave("output_figures/figure_ppt_monitoring_summary.png" , figure_ppt_monitoring_summary, width = 8, height = 5, units = "in")
