@@ -88,6 +88,12 @@ kodiak_plant_days <- setDT(dbGetQuery(channel, paste(
   ORDER BY EMBARK_DATE
   "
 )))
+# Save the SQL pull
+save(kodiak_plant_days, file = "analyses/monitoring_costs/sql_pulls/kodiak_plant_days.rdata")
+gdrive_upload(
+  local_path = "analyses/monitoring_costs/sql_pulls/kodiak_plant_days.rdata",
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
+)
 
 #======================================================================================================================#
 # AT-SEA OBSERVER COSTS ----

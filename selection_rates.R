@@ -16,12 +16,12 @@ adp_year <- 2025
 library(data.table)         # Data wrangling
 library(ggplot2)            # Plotting
 library(sf)                 # Spatial analyses
+library(ggh4x)              # For facets with nested labels
+library(waffle)             # For waffle plots of coverage/tonnage summaries
 library(dplyr)              # For piping and handling sf objects
 library(FMAtools)           # For connectivity to Analytical Services Program's Shared Google Drive
 library(readxl)             # For read_xlsx
 library(odbc)               # For database connectivity
-# library(grid)               # For unit.pmax  to get widths of grobs so that plots have matching dimensions
-# library(gridExtra)          # For arrangeGrob to combine plots
 library(flextable)          # For print-ready tables
 library(officer)            # For additional flextable formatting options such as fp_border
 
@@ -32,14 +32,14 @@ library(officer)            # For additional flextable formatting options such a
 #' Load the outputs of `get_data.R`
 gdrive_download(
   local_path = "source_data/2025_Draft_ADP_data.rdata",
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/", ver = 1)
 )
 (load("source_data/2025_Draft_ADP_data.rdata"))
 
 #' Load `cost_params`, the output of `monitoring_costs.R``
-gdrive_download(
+gdrive_download( 
   local_path = "source_data/cost_params_2025.Rdata", 
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/", ver = 3)
 )
 (load("source_data/cost_params_2025.Rdata"))
 
@@ -298,27 +298,89 @@ figure_b2 <- ggplot(cost_boot_dt, aes(x = OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)) 
 # Note that this includes the cost of EM_TRW which in this simulation, had no variability.
 
 #======================================================================================================================#
-# Sampling Summaries ----
+# Monitoring Costs ----
 #======================================================================================================================#
 
+# Extract the cost summary used in the allocation.
+#' [DRAFT: Grabbing attributes from the only iteration]
+cost_summary <- attr(boot_lst[[1]]$rates, "cost_summary")
+#' [FINAL: Average across attributes from all iterations]
+
 #===================================#
-## Table B-3. Allocation Indices ----
+## Table B-1. Budget and Vessels ----
 #===================================#
 
-# Proximity allocation indices
-table_b3 <- copy(rates_adp)[, -"ADP"]
-# Change 
-table_b3[, SAMPLE_RATE := round(SAMPLE_RATE * 100, 2)]
-# 
-table_b3[
+#' Cost summary
+
+# Get totals, rounding to the nearest $1K
+cost_totals <- round(
+  unlist(cost_summary[, .(TOTAL = sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL), OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL)]), -3
+)
+#' Naming the monitoring method 'strata' here for the sake of keeping the same header as the vessel counts below. The 
+#' final table's column names will be named manually
+cost_totals.pc <- data.table("STRATA" = names(cost_totals), data.table("value" = format_dollar(cost_totals, 0)))
+# Rename the pools
+cost_totals.pc[, STRATA := fcase(
+  STRATA == "TOTAL", "Total",
+  STRATA == "OB_TOTAL", "At-sea Observer",
+  STRATA == "EMFG_TOTAL", "EM Fixed-Gear",
+  STRATA == "EMTRW_TOTAL", "EM Trawl GOA"
+)]
+cost_totals.pc <- rbind(data.table(STRATA = "Partial Coverage Monitoring Budget ($)"), cost_totals.pc, fill = T)
+
+# Number of vessels
+vessel_totals.pc <- pc_effort_st[, .(value = uniqueN(PERMIT)), keyby = .(STRATA)]
+vessel_totals.pc[
 ][, STRATA := gsub("-", " ", STRATA)
 ][, STRATA := sub("_FIXED", " Fixed-gear", STRATA)
 ][, STRATA := sub("_TRW", " Trawl", STRATA)
 ][, STRATA := sub("^OB", "At-sea Observer", STRATA)
 ][, STRATA := sub("ZERO", "Zero", STRATA)]
-setorder(table_b3, STRATA)
-setnames(table_b3, new = c("Stratum", "N", "r", "n", "T", "F", "D"))
-table_b3.flex <- table_b3 %>% 
+setorder(vessel_totals.pc, STRATA)
+vessel_totals.pc <- rbind(data.table(STRATA = "Vessels Participating (Partial Coverage)"), vessel_totals.pc, fill = T)
+
+vessel_totals.fc <- full_efrt.smry[, .(value = uniqueN(VESSEL_ID)), keyby = .(STRATA)]
+vessel_totals.fc[, STRATA := fcase(
+  STRATA == "EM_TRW_BSAI", "EM Trawl BSAI",
+  STRATA == "FULL", "Full Coverage"
+)]
+setorder(vessel_totals.fc, -STRATA)
+vessel_totals.fc <- rbind(data.table(STRATA = "Vessels Participating (Full Coverage)"), vessel_totals.fc, fill = T)
+
+table_b1 <- rbind(cost_totals.pc, vessel_totals.pc, vessel_totals.fc)
+table_b1.flex <- table_b1 %>% 
+  flextable() %>%
+  compose(i = ~ !is.na(value), value = as_paragraph("\t", .), use_dot = T) %>%
+  set_header_labels(values = c("", paste0("Draft ", adp_year, " ADP"))) %>%
+  align(j = 2, align = "right", part = "all") %>%
+  bold(i = ~ is.na(value)) %>%
+  bold(part = "header") %>%
+  hline(i = ~ STRATA == "") %>%
+  hline(i = 5) %>%
+  autofit()
+
+#======================================================================================================================#
+# Sampling Summaries ----
+#======================================================================================================================#
+
+#===================================#
+## Table B-2. Allocation Indices ----
+#===================================#
+
+# Proximity allocation indices
+table_b2 <- copy(rates_adp)[, -"ADP"]
+# Change 
+table_b2[, SAMPLE_RATE := round(SAMPLE_RATE * 100, 2)]
+# 
+table_b2[
+][, STRATA := gsub("-", " ", STRATA)
+][, STRATA := sub("_FIXED", " Fixed-gear", STRATA)
+][, STRATA := sub("_TRW", " Trawl", STRATA)
+][, STRATA := sub("^OB", "At-sea Observer", STRATA)
+][, STRATA := sub("ZERO", "Zero", STRATA)]
+setorder(table_b2, STRATA)
+setnames(table_b2, new = c("Stratum", "N", "r", "n", "T", "F", "D"))
+table_b2.flex <- table_b2 %>% 
   flextable() %>%
   compose(i = 1, j = 1, part = "header", value = as_paragraph(., " (", as_i("h"), ")" ), use_dot = T) %>%
   compose(i = 1, j = c(2, 3:7), part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
@@ -333,7 +395,7 @@ table_b3.flex <- table_b3 %>%
 
 
 #=====================================#
-## Table B-4. Rates Trips and Days ----
+## Table B-3. Rates Trips and Days ----
 #=====================================#
 
 #' TODO Would be nice to capture trips and days monitored by stratum in the trip selection simulations!
@@ -348,8 +410,9 @@ rates_trips_days.pc[
 ][STRATA == "EM_TRW-GOA", SAMPLE_RATE := 0.3333
 ][STRATA == "ZERO", SAMPLE_RATE := 0
 ][is.na(n), n := STRATA_N * SAMPLE_RATE]
-# Estimated days monitored based on trips sampled 'n' and mean trip duration 'MTD'
-rates_trips_days.pc[, d := n * MTD][, MTD := NULL]
+# Estimated days monitored based on trips sampled 'n' and mean trip duration 'MTD'.
+# Also, dh (days) for EM_TRW-GOA were modified to reflect a 100% compliance monitoring rate at sea, using N.
+rates_trips_days.pc[, d := ifelse(STRATA == "EM_TRW-GOA", STRATA_N * MTD, n * MTD)][, MTD := NULL]
 # Refine pool labels
 rates_trips_days.pc[, POOL := fcase(
   POOL == "OB", "At-sea Observer",
@@ -409,13 +472,13 @@ rates_trips_days.fc <- rbind(
 setnames(rates_trips_days.fc , new = c("Stratum", "Pool", "r", "N", "n", "d"))
 setcolorder(rates_trips_days.fc, c("Pool", "Stratum", "N", "n", "d", "r"))
 
-table_b4 <- rbind(
+table_b3 <- rbind(
   rates_trips_days.pc,
   rates_trips_days.fc
 )
 
 # Now that totals are made for pool, remove pool column
-table_b4.flex <- table_b4[, -"Pool"] %>% 
+table_b3.flex <- table_b3[, -"Pool"] %>% 
   flextable() %>%
   autofit() %>%
   compose(i = 1, j = 1, part = "header", value = as_paragraph(., " (", as_i("h"), ")" ), use_dot = T) %>%
@@ -433,103 +496,150 @@ table_b4.flex <- table_b4[, -"Pool"] %>%
 
 
 #======================================================================================================================#
-# Monitoring Costs ----
+# Monitoring Summary ----
 #======================================================================================================================#
 
-# Extract the cost summary used in the allocation.
-#' [DRAFT: Grabbing attributes from the only iteration]
-cost_summary <- attr(boot_lst[[1]]$rates, "cost_summary")
-#' [FINAL: Average across attributes from all iterations]
+#' Here we will summarize the monitoring of the entire AK. Used in the PCFMAC pressentation of the 2025 Draft ADP.
 
-#===================================#
-## Table B-2. Budget and Vessels ----
-#===================================#
+#' *Full coverage*
+# Grab all full coverage trips in the last year
+mon_catch.fc <- work.data[
+][, -c("STRATA")
+  # Subset, grabbing only full coverage trips from the most recent year
+][full_efrt.smry, on = .(VESSEL_ID, TRIP_ID)
+  # Broadly categorize gear types by fixed and trawl.
+][, FIXED_TRW := ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", "FIXED")
+  # Categorize monitoring method
+][, MON := ifelse(STRATA %like% "EM_", "EM", "OB")
+  # Sum up retained catch by monitoring method, FMP, and gear
+][, .(RET_CATCH = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)), keyby = .(MON, FMP, FIXED_TRW)
+][, MON_CATCH := RET_CATCH
+][, PERC_MON := MON_CATCH / RET_CATCH * 100][]
 
-#' Cost summary
+#' *Partial Coverage*
 
-# Get totals, rounding to the nearest $1K
-cost_totals <- round(
-  unlist(cost_summary[, .(TOTAL = sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL), OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL)]), -3
+mon_catch.pc <- work.data[
+][, -"STRATA"
+  # Subset only partial coverage sector trips
+][unique(pc_effort_st[, .(wd_TRIP_ID, STRATA)]), on = c(TRIP_ID = "wd_TRIP_ID")
+  # Remove any program management codes that are state-managed
+][!(MANAGEMENT_PROGRAM_CODE %in% c("SMO", "SMPC", "SMS"))
+  # Broadly categorize gear types by fixed and trawl.
+][, FIXED_TRW := ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", "FIXED")
+  # Sum retained catch by stratum, FMP and gear type category
+][, .(
+  RET_CATCH = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)
+), keyby = .(FMP, FIXED_TRW, STRATA)]
+# Merge partial coverage sampling rates in
+mon_catch.pc <- mon_catch.pc[, SAMPLE_RATE := rates_adp[mon_catch.pc, SAMPLE_RATE, on = .(STRATA)]
+][STRATA == "ZERO", SAMPLE_RATE := 0
+][STRATA == "EM_TRW-GOA", SAMPLE_RATE := 1
+  # Define Monitoring category
+][, MON := fcase(STRATA %like% "EM", "EM", STRATA %like% "OB", "OB", STRATA %like% "ZERO", "ZERO")
+  # Sum up retained catch by monitoring method, FMP, and gear
+][, .(RET_CATCH = sum(RET_CATCH), MON_CATCH = sum(RET_CATCH * SAMPLE_RATE)), keyby = .(MON, FMP, FIXED_TRW)
+][, PERC_MON  := MON_CATCH / RET_CATCH * 100][]
+
+mon_catch <- rbind(
+  cbind(SECTOR = "FULL", mon_catch.fc),
+  cbind(SECTOR = "PARTIAL", mon_catch.pc)
+)[
+  # Calculate tonnage of unmonitored catch
+][, UNMON_CATCH := RET_CATCH - MON_CATCH][]
+
+# Convert the sumamry to long form
+mon_catch.long <- melt(
+  mon_catch, 
+  id.vars = c("SECTOR", "FMP", "FIXED_TRW", "MON"),
+  measure.vars = c("UNMON_CATCH", "MON_CATCH")
+)[
+  # Divide tonnage into 800 units. With 800, each box represents .25% of catch, each colum represents 5%
+][, unit_count := round(value/sum(value) * 800)
+  # Define groupings based on sector, monitoring method, and whether catch was expected to be monitored.
+][, GROUP := fcase(
+  SECTOR == "FULL" & variable == "MON_CATCH" & MON == "OB", "Full coverage - Observer",
+  SECTOR == "FULL" & variable == "MON_CATCH" & MON == "EM", "Full coverage - EM",
+  SECTOR == "PARTIAL" & MON == "ZERO", "No selection",
+  SECTOR == "PARTIAL" & variable == "UNMON_CATCH", "Partial coverage - Unmonitored",
+  SECTOR == "PARTIAL" & variable == "MON_CATCH" & MON == "OB", "Partial coverage - Observer",
+  SECTOR == "PARTIAL" & variable == "MON_CATCH" & MON == "EM", "Partial coverage - EM"
 )
-#' Naming the monitoring method 'strata' here for the sake of keeping the same header as the vessel counts below. The 
-#' final table's column names will be named manually
-cost_totals.pc <- data.table("STRATA" = names(cost_totals), data.table("value" = format_dollar(cost_totals, 0)))
-# Rename the pools
-cost_totals.pc[, STRATA := fcase(
-  STRATA == "TOTAL", "Total",
-  STRATA == "OB_TOTAL", "At-sea Observer",
-  STRATA == "EMFG_TOTAL", "EM Fixed-Gear",
-  STRATA == "EMTRW_TOTAL", "EM Trawl GOA"
-)]
-cost_totals.pc <- rbind(data.table(STRATA = "Partial Coverage Monitoring Budget ($)"), cost_totals.pc, fill = T)
+# Re-lable variables for plotting
+][, FIXED_TRW := ifelse(FIXED_TRW == "FIXED", "Fixed", "Trawl")
+][, GROUP := factor(GROUP, levels = c(
+  "Full coverage - Observer", "Full coverage - EM",
+  "Partial coverage - Observer", "Partial coverage - EM", "Partial coverage - Unmonitored", "No selection"))
+][, FMP := factor(FMP, levels = c("BSAI", "GOA"))
+][, FIXED_TRW := factor(FIXED_TRW, levels = c("Trawl", "Fixed"))][]
+setorder(mon_catch.long, GROUP, FMP, FIXED_TRW)
 
-# Number of vessels
-vessel_totals.pc <- pc_effort_st[, .(value = uniqueN(PERMIT)), keyby = .(STRATA)]
-vessel_totals.pc[
-][, STRATA := gsub("-", " ", STRATA)
-][, STRATA := sub("_FIXED", " Fixed-gear", STRATA)
-][, STRATA := sub("_TRW", " Trawl", STRATA)
-][, STRATA := sub("^OB", "At-sea Observer", STRATA)
-][, STRATA := sub("ZERO", "Zero", STRATA)]
-setorder(vessel_totals.pc, STRATA)
-vessel_totals.pc <- rbind(data.table(STRATA = "Vessels Participating (Partial Coverage)"), vessel_totals.pc, fill = T)
+## Figure for PCFMAC - Waffle plot of tonnage monitored ----
+figure_ppt_monitoring_summary <- ggplot(mon_catch.long, aes(values = unit_count, fill = GROUP)) + 
+  facet_nested(. ~ FMP + FIXED_TRW, scales = "free_x", space = "free_x") + 
+  geom_waffle(color = "white", n_rows = 40) +   #' with 20 rows and 400 units (each box = 0.25%), makes each full column represent 20/400 = 5% or 20 * .25% = 5%
+  #theme_minimal() + 
+  theme_enhance_waffle() +
+  theme(
+    axis.ticks = element_blank(), 
+    panel.background = element_blank(), panel.border = element_rect(color = "gray85", fill = NA),
+    strip.background = element_rect(color = "gray85"),
+    legend.position = "bottom"
+  ) +
+  guides(fill = guide_legend(nrow = 2, byrow = T)) + 
+  scale_fill_manual(values = c("deepskyblue", "dodgerblue",  "magenta", "purple", "pink", "gray")) + 
+  labs(fill = "Expected monitoring") 
 
-vessel_totals.fc <- full_efrt.smry[, .(value = uniqueN(VESSEL_ID)), keyby = .(STRATA)]
-vessel_totals.fc[, STRATA := fcase(
-  STRATA == "EM_TRW_BSAI", "EM Trawl BSAI",
-  STRATA == "FULL", "Full Coverage"
-)]
-setorder(vessel_totals.fc, -STRATA)
-vessel_totals.fc <- rbind(data.table(STRATA = "Vessels Participating (Full Coverage)"), vessel_totals.fc, fill = T)
+# Proportion of tonnage monitored
+mon_catch.long[, sum(value[variable == "MON_CATCH"]) / sum(value)] # 96% of fisheries are monitored
+mon_catch.long[, sum(value[variable == "MON_CATCH"]) / sum(value), keyby = .(FMP)] # 99% in the BSAI and 72% in the GOA
+mon_catch.long[, sum(value), keyby = .(SECTOR)][, .(SECTOR, Tonnage = V1, Percent = 100 * V1 / sum(V1))] # 10% of fisheries is in partial coverage
 
-table_b2 <- rbind(cost_totals.pc, vessel_totals.pc, vessel_totals.fc)
-table_b2.flex <- table_b2 %>% 
-  flextable() %>%
-  compose(i = ~ !is.na(value), value = as_paragraph("\t", .), use_dot = T) %>%
-  set_header_labels(values = c("", paste0("Draft ", adp_year, " ADP"))) %>%
-  align(j = 2, align = "right", part = "all") %>%
-  bold(i = ~ is.na(value)) %>%
-  bold(part = "header") %>%
-  hline(i = ~ STRATA == "") %>%
-  hline(i = 5) %>%
-  autofit()
+# Excluding EM TRW, we are monitoring 13% of tonnage in partial coverage
+mon_catch.long[!(FIXED_TRW != "TRW" & MON == "EM") & SECTOR == "PARTIAL", sum(value[variable == "MON_CATCH"]) / sum(value)]
+
+# Percent monitored by FMP and Gear (both full and partial coverage)
+mon_catch.long[, .(PERC_MON = 100 * sum(value[variable == "MON_CATCH"]) / sum(value)), keyby = .(FMP, FIXED_TRW)]
+# Percent monitored by FMP and Gear in partial coverage only
+mon_catch.long[SECTOR == "PARTIAL", .(PERC_MON = 100 * sum(value[variable == "MON_CATCH"]) / sum(value)), keyby = .(FMP, FIXED_TRW)]
 
 
 #======================================================================================================================#
 # Outputs ----
 #======================================================================================================================#
 
-## Allocation products
+#' *Allocation Objects*
+#' Upload all allocation inputs and outputs to the shared google drive.
+save(
+  ## Allocation inputs
+  pc_effort_st, budget_lst, box_params, 
+  ## Allocation products
+  boot_lst, rates_adp,      
+  cost_summary, cost_boot_dt,
+  ## Raw tables
+  table_b1, table_b2, table_b3,
+  ## Location
+  file = paste0("results/draft_adp_", adp_year, "_results.rdata")
+)
+gdrive_upload(
+  local_path = paste0("results/draft_adp_", adp_year, "_results.rdata"),
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output")
+)
 
-budget_lst[[1]]   #' Total Budget
-rates_adp         #' Allocated Rates, excluding EM_TRW
-cost_summary      #' Breakdown of costs
-cost_boot_iter    #' Number of ODDS iterations
-
-
-## Tables (export for Rmarkdown)
-
-table_b2
-table_b2.flex 
-table_b3
-table_b3.flex
-table_b4
-table_b4.flex
-
+#' *Tables*
 #' Save table outputs for `tables.Rmd` to knit to docx format
 save(
+  table_b1, table_b1.flex,
   table_b2, table_b2.flex,
   table_b3, table_b3.flex,
-  table_b4, table_b4.flex,
   file = "tables.rdata"
 )
 
-## Figures 
+#' *Figures* 
 
-#' TODO simulations could capture what rates are actually realized as well. We shouldn't have THAT much of a difference
-#' in the variation between strata because smaller strata have much higher sampling rates. 
-
-#' *Figure B-2.* Summary of `cost_boot_iter` outcomes of simulated sampling in ODDS showing the total costs of the 
+#'   *Figure B-2.* Summary of `cost_boot_iter` outcomes of simulated sampling in ODDS showing the total costs of the 
 #' partial coverage monitoring program expected for 2025. Vertical lines depict the available budget (purple line), 
 #' median expected cost (blue line), and 95% confidence limits (red lines).
 ggsave(filename = "output_figures/figure_b2.png", plot = figure_b2, width = 5, height = 5, units = "in")
+
+#'   *Figure for PCFMAC* Waffle plot of tonnage monitored
+ggsave("output_figures/figure_ppt_monitoring_summary.png" , figure_ppt_monitoring_summary, width = 8, height = 5, units = "in")
