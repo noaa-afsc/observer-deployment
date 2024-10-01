@@ -95,7 +95,7 @@ up_dates <- setDT(dbGetQuery(channel_akro, paste0(
 
 # Save and Upload to Shared Gdrive -------------------------------------------------------------------------------------
 
-out_name <- paste(ADPyear, ADP_version, "ADP_data.rdata", sep = "_")
+out_name <- paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", sep = "_")
 
 save(
   list = c("ADPyear", "ADP_version", "PSC", "pctc", "BSAIVoluntary", "up_dates"), 
