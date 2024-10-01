@@ -1,5 +1,6 @@
 #' *sql_pull_akro*
-#' This script is to be run by AKRO staff to pull all the necessary source data for the ADP
+#' This script is to be run by AKRO staff to pull all the necessary source data for the ADP.
+#' AKRO will also need to re-run Valhalla so that it can get mirrored on the loki.valhalla view.
 
 # User inputs ----------------------------------------------------------------------------------------------------------
 ADPyear     <- 2025     # Enter numeric year you are doing the ADP for
@@ -23,13 +24,14 @@ PSC <- setDT(dbGetQuery(channel_akro, paste(
   "
   SELECT
     year, el_report_id as report_id, species_group_code, 
-    sum(case when psc_total_count is not null then psc_total_count
-            when psc_total_catch_weight is not null then psc_total_catch_weight
-            else 0 end) as psc_total_catch,
-    sum(psc_total_mortality_weight) as psc_total_mortality_weight
+    sum(CASE 
+      WHEN psc_total_count IS NOT NULL THEN psc_total_count
+      WHEN psc_total_catch_weight IS NOT NULL THEN psc_total_catch_weight
+      ELSE 0 end) AS psc_total_catch,
+    sum(psc_total_mortality_weight) AS psc_total_mortality_weight
   FROM akfish_report.v_cas_psc
   WHERE year >=", ADPyear - 4,"
-  AND el_report_id is not null
+  AND el_report_id IS NOT NULL
   GROUP BY year, el_report_id, species_group_code
   "
 )))
@@ -40,16 +42,14 @@ pctc <- setDT(dbGetQuery(channel_akro, paste(
   SELECT DISTINCT llp.current_vessel_id vessel_id, llp.current_vessel_name vessel_name
   FROM akfish.v_llp_groundfish_license llp
     JOIN akfish.pctc_llp_initial_quota_share qs ON substr(llp.license,4,4) = qs.license_number
-  WHERE llp.current_vessel_id is not null
+  WHERE llp.current_vessel_id IS NOT NULL
   ORDER BY vessel_name
   "
 )))
 
 ##  Voluntary full coverage ----
 #   Requests to join must be made prior to October 15  
-BSAIVoluntary <- setDT(dbGetQuery(
-  channel_akro, 
-  if(ADP_version == "Draft" | Sys.Date() < paste0(ADPyear-1, "-10-15")) { paste0(
+BSAIVoluntary <- setDT(dbGetQuery(channel_akro, paste0(
   "
   SELECT DISTINCT 
     ev.vessel_id, ev.begin_date, ev.end_date, v.name AS vessel_name, e.name AS eligibility,
@@ -58,29 +58,24 @@ BSAIVoluntary <- setDT(dbGetQuery(
     JOIN akfish.eligibility e ON e.id = ev.eligibility_id
     JOIN akfish_report.vessel v ON v.vessel_id = ev.vessel_id
   WHERE e.name = 'CV FULL COVERAGE' AND v.end_date IS NULL AND v.expire_date IS NULL 
+  ",
+  if(ADP_version == "Draft" | Sys.Date() < paste0(ADPyear - 1, "-10-15")) { paste(
+    "
     AND EXTRACT(YEAR FROM ev.begin_date) < ", ADPyear," 
     AND (ev.end_date IS NULL OR EXTRACT(YEAR FROM ev.end_date) >= ", ADPyear - 1,")
-  ORDER BY v.name
-  "
-  )} else { paste0(
-  "
-  SELECT DISTINCT 
-    ev.vessel_id, ev.begin_date, ev.end_date, v.name AS vessel_name, e.name AS eligibility,
-    trunc(ev.last_modified_date) AS last_modified_date
-  FROM akfish.eligible_vessel ev
-    JOIN akfish.eligibility e ON e.id = ev.eligibility_id
-    JOIN akfish_report.vessel v ON v.vessel_id = ev.vessel_id
-  WHERE e.name = 'CV FULL COVERAGE' AND v.end_date IS NULL AND v.expire_date IS NULL 
+    "
+  )} else { paste(
+    "
     AND EXTRACT(YEAR FROM ev.begin_date) < ", ADPyear + 1,"
     AND (ev.end_date IS NULL OR EXTRACT(YEAR FROM ev.end_date) >= ", ADPyear,")
-  ORDER BY v.name
-  "
-  )}
-))
+    "
+  )},
+  "ORDER BY v.name"
+)))
 
-## Valhalla ----
+## Valhalla Updates ----
 
-# Defer to database dates for all trips in valhalla with dates that don't match the database
+# Defer to database dates for all trips in Valhalla with dates that don't match the database
 up_dates <- setDT(dbGetQuery(channel_akro, paste0(
   "
   SELECT DISTINCT
