@@ -32,14 +32,14 @@ library(officer)            # For additional flextable formatting options such a
 #' Load the outputs of `get_data.R`
 gdrive_download(
   local_path = "source_data/2025_Draft_ADP_data.rdata",
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/", ver = 1)
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/"), ver = 1
 )
 (load("source_data/2025_Draft_ADP_data.rdata"))
 
 #' Load `cost_params`, the output of `monitoring_costs.R``
 gdrive_download( 
   local_path = "source_data/cost_params_2025.Rdata", 
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/", ver = 3)
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/"), ver = 3
 )
 (load("source_data/cost_params_2025.Rdata"))
 
@@ -547,7 +547,7 @@ mon_catch <- rbind(
   # Calculate tonnage of unmonitored catch
 ][, UNMON_CATCH := RET_CATCH - MON_CATCH][]
 
-# Convert the sumamry to long form
+# Convert the summary to long form
 mon_catch.long <- melt(
   mon_catch, 
   id.vars = c("SECTOR", "FMP", "FIXED_TRW", "MON"),
