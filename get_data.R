@@ -1,6 +1,6 @@
 # User inputs -------------------------------------------------------------
 ADPyear     <- 2025     # Enter numeric year you are doing the ADP for
-ADP_version <- "Draft"  # Enter "Draft" or "Final"
+ADP_version <- "Final"  # Enter "Draft" or "Final"
 EM_final    <- "N"      # Is the final EM list approved? Y/N (caps)
 options(scipen = 9999)  # Avoid scientific notation
 
@@ -8,71 +8,78 @@ options(scipen = 9999)  # Avoid scientific notation
 if(!require("devtools"))  install.packages("devtools")
 if(!require("FMAtools")) install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
 if(!require("odbc")) install.packages("odbc", repos='http://cran.us.r-project.org')
-if(!require("ROracle")) install.packages("ROracle", repos='http://cran.us.r-project.org')
+#if(!require("ROracle")) install.packages("ROracle", repos='http://cran.us.r-project.org')
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
 if(!require("lubridate"))   install.packages("lubridate", repos='http://cran.us.r-project.org') # For fixing datetimes
 if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.r-project.org') # ggplot2, dplyr, tidyr, readr, purrr, tibble, stringr, forcats  
 
 # Establish channels ------------------------------------------------------
 channel_afsc <- eval(parse(text = Sys.getenv("channel_afsc")))
-channel_akro <- eval(parse(text = Sys.getenv("channel_cas")))
+#channel_akro <- eval(parse(text = Sys.getenv("channel_cas")))
+
+# Load AKRO pull ------------------------------------------------------
+# The pulls from AKRO were all moved to the sql_pull_akro.R
+gdrive_download(
+  local_path = paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", sep = "_")),
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
+)
 
 # Data queries ------------------------------------------------------------
 
 # * PSC ----
-PSC <- 
-  dbGetQuery(channel_akro,
-             paste("SELECT
-                   year,
-                   el_report_id as report_id,
-                   species_group_code, 
-                   sum(case when psc_total_count is not null then psc_total_count
-                            when psc_total_catch_weight is not null then psc_total_catch_weight
-                            else 0 end) as psc_total_catch,
-                   sum(psc_total_mortality_weight) as psc_total_mortality_weight
-                   FROM akfish_report.v_cas_psc
-                   WHERE year >=", ADPyear - 4,"
-                   AND el_report_id is not null
-                   GROUP BY year, el_report_id, species_group_code"))
+# PSC <- 
+#   dbGetQuery(channel_akro,
+#              paste("SELECT
+#                    year,
+#                    el_report_id as report_id,
+#                    species_group_code, 
+#                    sum(case when psc_total_count is not null then psc_total_count
+#                             when psc_total_catch_weight is not null then psc_total_catch_weight
+#                             else 0 end) as psc_total_catch,
+#                    sum(psc_total_mortality_weight) as psc_total_mortality_weight
+#                    FROM akfish_report.v_cas_psc
+#                    WHERE year >=", ADPyear - 4,"
+#                    AND el_report_id is not null
+#                    GROUP BY year, el_report_id, species_group_code"))
 
 # * PCTC ----
-pctc <- dbGetQuery(channel_akro, 
-                   "SELECT DISTINCT llp.current_vessel_id vessel_id, llp.current_vessel_name vessel_name
-                    FROM akfish.v_llp_groundfish_license llp
-                    JOIN akfish.pctc_llp_initial_quota_share qs ON substr(llp.license,4,4) = qs.license_number
-                    WHERE llp.current_vessel_id is not null
-                    ORDER BY vessel_name")
+# pctc <- dbGetQuery(channel_akro, 
+#                    "SELECT DISTINCT llp.current_vessel_id vessel_id, llp.current_vessel_name vessel_name
+#                     FROM akfish.v_llp_groundfish_license llp
+#                     JOIN akfish.pctc_llp_initial_quota_share qs ON substr(llp.license,4,4) = qs.license_number
+#                     WHERE llp.current_vessel_id is not null
+#                     ORDER BY vessel_name")
 
 # * Voluntary full coverage ----
 #   Requests to join must be made prior to October 15  
-BSAIVoluntary <-
-  dbGetQuery(channel_akro,
-             if(ADP_version == "Draft" | Sys.Date() < paste0(ADPyear-1, "-10-15")){
-               paste0(
-                 "select distinct 
-                  ev.vessel_id, ev.begin_date, ev.end_date, v.name as vessel_name, e.name as eligibility, trunc(ev.last_modified_date) as last_modified_date
-                  from akfish.eligible_vessel ev
-                  join akfish.eligibility e on e.id = ev.eligibility_id
-                  join akfish_report.vessel v on v.vessel_id = ev.vessel_id
-                  where e.name = 'CV FULL COVERAGE'
-                  and v.end_date is null
-                  and v.expire_date is null
-                  and extract(year from ev.begin_date) < ", ADPyear,"
-                  and (ev.end_date is null or extract(year from ev.end_date) >= ", ADPyear - 1,")
-                  order by v.name")} else
-                   paste0(
-                     "select distinct 
-                      ev.vessel_id, ev.begin_date, ev.end_date, v.name as vessel_name, e.name as eligibility, trunc(ev.last_modified_date) as last_modified_date
-                      from akfish.eligible_vessel ev
-                      join akfish.eligibility e on e.id = ev.eligibility_id
-                      join akfish_report.vessel v on v.vessel_id = ev.vessel_id
-                      where e.name = 'CV FULL COVERAGE'
-                      and v.end_date is null
-                      and v.expire_date is null
-                      and extract(year from ev.begin_date) < ", ADPyear + 1,"
-                      and (ev.end_date is null or extract(year from ev.end_date) >= ", ADPyear,")
-                      order by v.name")
-             )
+# BSAIVoluntary <-
+#   dbGetQuery(channel_akro,
+#              if(ADP_version == "Draft" | Sys.Date() < paste0(ADPyear-1, "-10-15")){
+#                paste0(
+#                  "select distinct 
+#                   ev.vessel_id, ev.begin_date, ev.end_date, v.name as vessel_name, e.name as eligibility, trunc(ev.last_modified_date) as last_modified_date
+#                   from akfish.eligible_vessel ev
+#                   join akfish.eligibility e on e.id = ev.eligibility_id
+#                   join akfish_report.vessel v on v.vessel_id = ev.vessel_id
+#                   where e.name = 'CV FULL COVERAGE'
+#                   and v.end_date is null
+#                   and v.expire_date is null
+#                   and extract(year from ev.begin_date) < ", ADPyear,"
+#                   and (ev.end_date is null or extract(year from ev.end_date) >= ", ADPyear - 1,")
+#                   order by v.name")} else
+#                    paste0(
+#                      "select distinct 
+#                       ev.vessel_id, ev.begin_date, ev.end_date, v.name as vessel_name, e.name as eligibility, trunc(ev.last_modified_date) as last_modified_date
+#                       from akfish.eligible_vessel ev
+#                       join akfish.eligibility e on e.id = ev.eligibility_id
+#                       join akfish_report.vessel v on v.vessel_id = ev.vessel_id
+#                       where e.name = 'CV FULL COVERAGE'
+#                       and v.end_date is null
+#                       and v.expire_date is null
+#                       and extract(year from ev.begin_date) < ", ADPyear + 1,"
+#                       and (ev.end_date is null or extract(year from ev.end_date) >= ", ADPyear,")
+#                       order by v.name")
+#              )
 
 # * Partial Coverage CPs ----
 #   Requests to join must be made prior to July 1  
@@ -173,19 +180,19 @@ work.data <- mutate(work.data, VESSEL_ID = as.character(VESSEL_ID))
 work.data <- mutate(work.data, TENDER = toupper(TENDER))
 
 # Defer to database dates for all trips in valhalla with dates that don't match the database
-up_dates <- setDT(dbGetQuery(channel_akro, paste0("select distinct 
-                                                  cr.el_report_id as report_id,
-                                                  td.calendar_date as db_trip_target_date,
-                                                  cr.el_report_date as db_landing_date,
-                                                  g.gear_code as db_agency_gear_code
-                                                  FROM akfish_report.transaction_fact tf
-                                                  JOIN akfish_report.v_current_keys K ON tf.TRANSACTION_FACT_LOG_PK = k.transaction_fact_log_pk
-                                                  AND tf.PARTITION_KEY_PK = k.partition_key_pk
-                                                  JOIN akfish_report.catch_report cr on cr.catch_report_pk= tf.catch_report_pk
-                                                  JOIN akfish_report.calendar_date td on td.calendar_date_pk = tf.trip_target_date_pk
-                                                  JOIN akfish_report.gear g on g.gear_pk = tf.gear_pk
-                                                  WHERE k.year >=", ADPyear - 12,"
-                                                  AND cr.el_report_id is not null")))
+# up_dates <- setDT(dbGetQuery(channel_akro, paste0("select distinct 
+#                                                   cr.el_report_id as report_id,
+#                                                   td.calendar_date as db_trip_target_date,
+#                                                   cr.el_report_date as db_landing_date,
+#                                                   g.gear_code as db_agency_gear_code
+#                                                   FROM akfish_report.transaction_fact tf
+#                                                   JOIN akfish_report.v_current_keys K ON tf.TRANSACTION_FACT_LOG_PK = k.transaction_fact_log_pk
+#                                                   AND tf.PARTITION_KEY_PK = k.partition_key_pk
+#                                                   JOIN akfish_report.catch_report cr on cr.catch_report_pk= tf.catch_report_pk
+#                                                   JOIN akfish_report.calendar_date td on td.calendar_date_pk = tf.trip_target_date_pk
+#                                                   JOIN akfish_report.gear g on g.gear_pk = tf.gear_pk
+#                                                   WHERE k.year >=", ADPyear - 12,"
+#                                                   AND cr.el_report_id is not null")))
 
 up_dates[, ':='(DB_TRIP_TARGET_DATE = as.Date(DB_TRIP_TARGET_DATE), DB_LANDING_DATE = as.Date(DB_LANDING_DATE))]
 
