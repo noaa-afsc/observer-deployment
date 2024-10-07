@@ -1,6 +1,8 @@
 #' *sql_pull_akro*
 #' This script is to be run by AKRO staff to pull all the necessary source data for the ADP.
-#' AKRO will also need to re-run Valhalla so that it can get mirrored on the loki.valhalla view.
+#' AKRO will also need to re-run Valhalla so that it can get mirrored on the loki.valhalla view:
+#' [https://akr-internal.alaskafisheries.noaa.gov/gitlab/sf/valhalla], and upload the Valhalla .rdata file to the 
+#' FMA shared G-drive projects/ADP/source_data folder.
 
 # User inputs ----------------------------------------------------------------------------------------------------------
 ADPyear     <- 2025     # Enter numeric year you are doing the ADP for
