@@ -24,6 +24,7 @@ gdrive_download(
   local_path = paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", sep = "_")),
   gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
 )
+load(paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", sep = "_")))
 
 # Data queries ------------------------------------------------------------
 
@@ -252,9 +253,6 @@ work.data <- select(work.data, -c(FMAVL, AKROVL))
 # * Combine catcher-processors and motherships into one processing sector ----
 work.data <- mutate(work.data, PROCESSING_SECTOR = ifelse(PROCESSING_SECTOR %in% c("CP", "M"), "CP_M", PROCESSING_SECTOR))
 
-# * View coverage type / strata combinations ----
-distinct(work.data, COVERAGE_TYPE, STRATA) %>% arrange(COVERAGE_TYPE, STRATA)
-  
 # * CVG_NEW ---- 
 
 # View past coverage / strata combinations
@@ -318,6 +316,9 @@ arrange(ADP, COVERAGE_TYPE, CVG_NEW, STRATA)
 # Correct FMP
 work.data[FMP %in% c("BS", "AI"), FMP := "BSAI"]
 
+
+
+
 # Base STRATA_NEW on AGENCY_GEAR_CODE
 work.data <- mutate(work.data, STRATA_NEW = recode(AGENCY_GEAR_CODE, "PTR" = "TRW", "NPT" = "TRW", "JIG" = "ZERO"))
 
@@ -328,12 +329,12 @@ work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "FULL", "FULL", ST
 work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "PARTIAL" & STRATA == "ZERO", "ZERO", STRATA_NEW))
 
 # Fixed-gear EM
-work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), paste("EM_FIXED", FMP, sep = "_"), STRATA_NEW))
+work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), paste("EM_FIXED", FMP, sep = "-"), STRATA_NEW))
 
 # Fixed-gear EM research
 work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_research$VESSEL_ID, "ZERO", STRATA_NEW))
 
-# Trawl EM ----
+# Trawl EM
 work.data <- work.data %>% 
              group_by(TRIP_ID) %>% 
              mutate(STRATA_NEW = ifelse(VESSEL_ID %in% trawl_em$PERMIT & 
@@ -342,8 +343,15 @@ work.data <- work.data %>%
                                         paste("EM_TRW", FMP, sep = "_"),
                                         STRATA_NEW)) %>% 
              ungroup() %>% 
-             mutate(CVG_NEW = ifelse(STRATA_NEW == "EM_TRW_GOA", "PARTIAL", CVG_NEW)) %>% 
+             mutate(CVG_NEW = ifelse(STRATA_NEW == "EM_TRW-GOA", "PARTIAL", CVG_NEW)) %>% 
              setDT()
+work.data[STRATA_NEW %like% "EM_TRW_", STRATA_NEW := sub("EM_TRW_", "EM_TRW-", STRATA_NEW)]
+
+# At-sea Observer Strata
+unique(work.data$STRATA_NEW)
+
+work.data[STRATA_NEW  == "POT", table(FMP)]
+
 
 # View all strata conversions
 distinct(work.data, CVG_NEW, STRATA, STRATA_NEW) %>% 
