@@ -14,7 +14,8 @@ if(!require("lubridate"))   install.packages("lubridate", repos='http://cran.us.
 if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.r-project.org') # ggplot2, dplyr, tidyr, readr, purrr, tibble, stringr, forcats  
 
 # Establish channels ------------------------------------------------------
-channel_afsc <- eval(parse(text = Sys.getenv("channel_afsc")))
+source("common_functions/open_channel.R")
+channel_afsc <- open_channel()
 #channel_akro <- eval(parse(text = Sys.getenv("channel_cas")))
 
 # Load AKRO pull ------------------------------------------------------
@@ -138,6 +139,7 @@ em_requests <-
                    AND em_request_status = 'NEW'
                    AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'"))
 
+#' @UDPATE *This currently reflects what was used in the 2024 ADP. Update for 2025 or remove!*
 # Hardcode EM removals, opt-outs, and approvals
 em_base <- em_base %>% 
            # removal
@@ -149,6 +151,7 @@ em_base <- em_base %>%
   
 # * Trawl EM ----
 trawl_em <- read.csv("source_data/efp_list_2023-09-05.csv")
+#' @TODO This file is in the [Vision 2024 ADP/Data] folder. We should have a more updated version? 
 # https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
 
 # * Vessel lengths ----
@@ -159,19 +162,21 @@ FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT as vessel_id, length a
                     FROM norpac.atl_lov_vessel")
 
 # * Valhalla ----
-# Pull data from prior years
-work.data <- dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla"))
+# Pull data from prior years. This pull may never finish when working remotely via VPN. 
+work.data <- setDT(dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla where ADP >= ", ADPyear - 4)))
 
 # Load data from current year
 ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
-gdrive_download("source_data/2024-08-19cas_valhalla.Rdata", ADP_dribble)
-load("source_data/2024-08-19cas_valhalla.Rdata")
+gdrive_download("source_data/2024-10-01valhalla.Rdata", ADP_dribble)
+load("source_data/2024-10-01valhalla.Rdata")
 
 # Append data from current year to data from prior year
-work.data <- rbind(work.data, valhalla)
 
-# Convert dates using as.Date to avoid timestamp issues
-work.data <- mutate(work.data, TRIP_TARGET_DATE = as.Date(TRIP_TARGET_DATE), LANDING_DATE = as.Date(LANDING_DATE))
+# First, ensure data types match between the old and new datasets
+date_cols <- c("TRIP_TARGET_DATE", "LANDING_DATE")
+work.data[, (date_cols) := lapply(.SD, as.Date), .SDcols = date_cols]
+
+work.data <- rbind(work.data, valhalla, fill = T)
 
 # Convert VESSEL_IDs using as.character to facilitate a later join with vessel lengths
 work.data <- mutate(work.data, VESSEL_ID = as.character(VESSEL_ID))
