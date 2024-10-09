@@ -575,57 +575,6 @@ trips_melt <- trips_melt %>%
 # * Check for NAs in trips_melt ----
 if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected in trips_melt")}
 
-# * efrt object ----
-
-#'*====================================*
-# DO WE STILL NEED THIS efrt_object ----
-#'*====================================*
-
-# 'efrt' is just a simplified verson of work.data for non-jig PC trips for the past 3 years, and defines pool (OB, EM, or ZE)
-# Uses 'max_date' to trim dataset to last 3 full years (instead of using ADP)
-wd <- unique(work.data[CVG_NEW=="PARTIAL" & AGENCY_GEAR_CODE!="JIG", .(PERMIT=VESSEL_ID, TARGET=TRIP_TARGET_CODE, PORT = PORT_NEW, AREA=REPORTING_AREA_CODE, AGENCY_GEAR_CODE, GEAR=ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", AGENCY_GEAR_CODE), STRATA=STRATA_NEW, FMP, START=min(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), END=max(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE)), keyby=.(ADP, TRIP_ID)])
-wd[TARGET=="B", TARGET:="P"]  # Convert all 'bottom pollock' to 'pelagic pollock', allowing us to treat all pollock target trips the same
-wd[, POOL := ifelse(grepl("EM", STRATA), "EM", ifelse(STRATA == "ZERO", "ZE", "OB"))]   # define pool
-wd[, MONTH := month(START)]
-wd <- wd[, .(ADP, POOL, STRATA, FMP, PORT, AREA, TARGET, AGENCY_GEAR_CODE, GEAR, PERMIT, TRIP_ID, START, END, MONTH)]
-efrt <- unique(wd)  # final efrt object to output!
-
-# If any trips fished both PTR and NPT gear, remove instances of PTR - only trips that fished with PTR exclusively can be within the pollock EFP
-trw_dup <- unique(efrt[grepl("TRW", STRATA) & AGENCY_GEAR_CODE %in% c("NPT", "PTR"), .(ADP, POOL, STRATA, AGENCY_GEAR_CODE, GEAR, PERMIT, TRIP_ID, START, END, MONTH)])
-trw_dup_id <- unique(trw_dup[, .N, by=TRIP_ID][N>1, TRIP_ID])
-if(as.numeric(diff(table(trw_dup[TRIP_ID %in% trw_dup_id, AGENCY_GEAR_CODE]))) != 0){warning("Something else other than NPT/PTR is creating unique records.")}
-efrt <- unique(efrt[TRIP_ID %in% trw_dup_id & AGENCY_GEAR_CODE == "PTR", AGENCY_GEAR_CODE := "NPT"])        # Remove PTR records by making all trips by these mixed-gear trips have NPT only
-
-# Check that fixed gear duplicates are due only to combo HAL/POT gear trips (which we will retain in AGENCY_GEAR_CODE and GEAR)
-hal_pot_dup <- unique(efrt[POOL %in% c("OB", "ZE") & AGENCY_GEAR_CODE %in% c("HAL", "POT"), .(ADP, POOL, STRATA, AGENCY_GEAR_CODE, GEAR, PERMIT, TRIP_ID, START, END, MONTH)])
-hal_pot_dup_id <- unique(hal_pot_dup[, .N, by=TRIP_ID][N>1, TRIP_ID])
-if(as.numeric(diff(table(hal_pot_dup[TRIP_ID %in% hal_pot_dup_id, AGENCY_GEAR_CODE]))) != 0){warning("Something other than HAL/POT is creating unique records.")}
-
-# For zero coverage trips, set STRATA equal to the AGENCY_GEAR_CODE with the most landed weight
-efrt <- # Isolate zero coverage trips in work.data, because efrt doesn't contain catch weight
-        work.data[TRIP_ID %in% efrt[POOL == "ZE", TRIP_ID]
-                  # Calculate which gear type had the most landed (SOURCE_TABLE == "Y") weight
-                  ][, .(GEAR_WEIGHT = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"])), by = .(TRIP_ID, AGENCY_GEAR_CODE)
-                    # Left join this back onto the efrt object
-                    ][efrt, on = .(TRIP_ID, AGENCY_GEAR_CODE)
-                      # The trips that we're interested in will not be NA for GEAR_WEIGHT
-                      # Set AGENCY_GEAR_CODE and GEAR to that which had the most landed weight
-                      ][!is.na(GEAR_WEIGHT), STRATA := AGENCY_GEAR_CODE[which.max(GEAR_WEIGHT)], by = .(TRIP_ID)
-                        # Remove the GEAR_WEIGHT column
-                        ][, GEAR_WEIGHT := NULL]
-
-# View how these trips were re-stratified
-efrt[POOL == "ZE", .(N = uniqueN(TRIP_ID)), by = .(POOL, STRATA)][order(POOL, STRATA)]
-
-# Check that all trips in efrt have optimization metrics associated with them  
-if((length(unique(trips_melt$TRIP_ID)) == length(unique(efrt[POOL!="ZE", TRIP_ID]))) != TRUE){message("Wait! Some trips are missing metrics in trips_melt!")}
-
-
-#'*====================================*
-# ABOVE NOT NEEDED ----
-#'*====================================*
-
-
 # * Full Coverage Summary ----
 full_efrt <- unique(work.data[CVG_NEW == "FULL", .(POOL="FULL", STRATA=STRATA_NEW, FMP, AREA=REPORTING_AREA_CODE, TARGET=TRIP_TARGET_CODE, AGENCY_GEAR_CODE, PERMIT, START=min(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), END=max(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), MONTH), keyby=.(ADP, TRIP_ID)])
 full_efrt[, GEAR := ifelse(AGENCY_GEAR_CODE %in% c("NPT", "PTR"), "TRW", AGENCY_GEAR_CODE)]   # Create GEAR column (i.e. TRW instead of NPT or PTR)
