@@ -313,11 +313,14 @@ arrange(ADP, COVERAGE_TYPE, CVG_NEW, STRATA)
 
 # * STRATA_NEW ----
 
-# Correct FMP
-work.data[FMP %in% c("BS", "AI"), FMP := "BSAI"]
-
-
-
+# For each trip, identify which FMP had most retained catch, splitting FMP by BSAI and GOA
+fmp_bsai_goa <- work.data[, .(
+  FMP_WT = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)
+), by = .(TRIP_ID, BSAI_GOA = FMP)
+][, .SD[which.max(FMP_WT)], by = .(TRIP_ID)
+][, FMP_WT := NULL][]
+# Merge in FMP classifications, the BSAI_COL that identifies which FMP contains the majority of retained catch. 
+work.data <- work.data[fmp_bsai_goa, on = .(TRIP_ID)]
 
 # Base STRATA_NEW on AGENCY_GEAR_CODE
 work.data <- mutate(work.data, STRATA_NEW = recode(AGENCY_GEAR_CODE, "PTR" = "TRW", "NPT" = "TRW", "JIG" = "ZERO"))
@@ -328,8 +331,8 @@ work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "FULL", "FULL", ST
 # Zero coverage
 work.data <- mutate(work.data, STRATA_NEW = ifelse(CVG_NEW == "PARTIAL" & STRATA == "ZERO", "ZERO", STRATA_NEW))
 
-# Fixed-gear EM
-work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), paste("EM_FIXED", FMP, sep = "-"), STRATA_NEW))
+# Fixed-gear EM. Base STRATUM_NEW on gear type and BSAI_GOA
+work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), paste("EM_FIXED", BSAI_GOA, sep = "-"), STRATA_NEW))
 
 # Fixed-gear EM research
 work.data <- mutate(work.data, STRATA_NEW = ifelse(VESSEL_ID %in% em_research$VESSEL_ID, "ZERO", STRATA_NEW))
@@ -347,10 +350,9 @@ work.data <- work.data %>%
              setDT()
 work.data[STRATA_NEW %like% "EM_TRW_", STRATA_NEW := sub("EM_TRW_", "EM_TRW-", STRATA_NEW)]
 
-# At-sea Observer Strata
-unique(work.data$STRATA_NEW)
-
-work.data[STRATA_NEW  == "POT", table(FMP)]
+# At-sea Observer Strata. Base STRATUM_NEW on gear type and BSAI_GOA
+work.data[STRATA_NEW == "TRW", STRATA_NEW := paste0("OB_", STRATA_NEW, "-", BSAI_GOA)]
+work.data[STRATA_NEW %in% c("HAL", "POT"), STRATA_NEW := paste0("OB_FIXED-", BSAI_GOA)]
 
 
 # View all strata conversions
