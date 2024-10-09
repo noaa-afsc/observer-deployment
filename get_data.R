@@ -354,7 +354,6 @@ work.data[STRATA_NEW %like% "EM_TRW_", STRATA_NEW := sub("EM_TRW_", "EM_TRW-", S
 work.data[STRATA_NEW == "TRW", STRATA_NEW := paste0("OB_", STRATA_NEW, "-", BSAI_GOA)]
 work.data[STRATA_NEW %in% c("HAL", "POT"), STRATA_NEW := paste0("OB_FIXED-", BSAI_GOA)]
 
-
 # View all strata conversions
 distinct(work.data, CVG_NEW, STRATA, STRATA_NEW) %>% 
 arrange(CVG_NEW, STRATA)
@@ -378,14 +377,14 @@ over_forties <- filter(work.data, LENGTH_OVERALL > 39 & AGENCY_GEAR_CODE != "JIG
 over_forties
 
 # Flip STRATA_NEW to gear-based strata for vessels that are > 40
-work.data <- mutate(work.data, STRATA_NEW = ifelse(TRIP_ID %in% over_forties$TRIP_ID & !(VESSEL_ID %in% em_base$VESSEL_ID), AGENCY_GEAR_CODE, STRATA_NEW))
+work.data <- mutate(work.data, STRATA_NEW = ifelse(TRIP_ID %in% over_forties$TRIP_ID & !(VESSEL_ID %in% em_base$VESSEL_ID), paste0("OB_FIXED-", BSAI_GOA), STRATA_NEW))
 
 work.data <- work.data %>% 
              group_by(TRIP_ID) %>% 
              mutate(STRATA_NEW = ifelse(TRIP_ID %in% over_forties$TRIP_ID & 
                                         VESSEL_ID %in% em_base$VESSEL_ID &
                                         any(AGENCY_GEAR_CODE %in% c("HAL", "POT")), 
-                                        paste("EM_FIXED", FMP, sep = "_"), 
+                                        paste("EM_FIXED", BSAI_GOA, sep = "-"), 
                                         STRATA_NEW)) %>% 
              setDT()
 
@@ -440,10 +439,13 @@ if(nrow(dups) != 0){
 }
 
 # For remaining combo strata trips, default to stratum with the most landed weight
-work.data[, N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
-          ][N > 1, STRATA_WEIGHT := sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = TRUE), by = .(TRIP_ID, STRATA_NEW)
-            ][N > 1, ':=' (CVG_NEW = CVG_NEW[which.max(STRATA_WEIGHT)], STRATA_NEW = STRATA_NEW[which.max(STRATA_WEIGHT)]), by = .(TRIP_ID)
-              ][, ':=' (N = NULL, STRATA_WEIGHT = NULL)]
+if( nrow(work.data[, .(STRATA_N = uniqueN(STRATA_NEW)), keyby = .(TRIP_ID)][STRATA_N > 1]) > 0 ) {
+  warning("Some trips still have multiple STRATA_NEW. Defaulting to STRATA_NEW with highest landed weight")
+  work.data[, N := uniqueN(STRATA_NEW), by = .(TRIP_ID)
+            ][N > 1, STRATA_WEIGHT := sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = TRUE), by = .(TRIP_ID, STRATA_NEW)
+              ][N > 1, ':=' (CVG_NEW = CVG_NEW[which.max(STRATA_WEIGHT)], STRATA_NEW = STRATA_NEW[which.max(STRATA_WEIGHT)]), by = .(TRIP_ID)
+                ][, ':=' (N = NULL, STRATA_WEIGHT = NULL)]
+}
 
 # Check for any remaining combo strata trips 
 unique(work.data[, .(TRIP_ID, CVG_NEW)])[, .N, by = .(TRIP_ID)][N > 1]
@@ -536,9 +538,9 @@ if(nrow(
 # Merge relevant work.data columns with metrics
 trip_wgts_strata <- left_join(
   work.data %>%
-  filter(CVG_NEW!="FULL" & STRATA_NEW!="ZERO") %>% 
+  filter(CVG_NEW != "FULL" & STRATA_NEW != "ZERO") %>% 
   distinct(ADP, TRIP_ID, STRATA_NEW, TENDER),
-  metrics, by="TRIP_ID")
+  metrics, by = "TRIP_ID")
 
 # trip_wgts_strata has NAs where there were no PSC for a trip.  Change to zeros
 trip_wgts_strata[is.na(trip_wgts_strata)] <- 0
@@ -574,6 +576,10 @@ trips_melt <- trips_melt %>%
 if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected in trips_melt")}
 
 # * efrt object ----
+
+#'*====================================*
+# DO WE STILL NEED THIS efrt_object ----
+#'*====================================*
 
 # 'efrt' is just a simplified verson of work.data for non-jig PC trips for the past 3 years, and defines pool (OB, EM, or ZE)
 # Uses 'max_date' to trim dataset to last 3 full years (instead of using ADP)
@@ -614,15 +620,21 @@ efrt[POOL == "ZE", .(N = uniqueN(TRIP_ID)), by = .(POOL, STRATA)][order(POOL, ST
 # Check that all trips in efrt have optimization metrics associated with them  
 if((length(unique(trips_melt$TRIP_ID)) == length(unique(efrt[POOL!="ZE", TRIP_ID]))) != TRUE){message("Wait! Some trips are missing metrics in trips_melt!")}
 
+
+#'*====================================*
+# ABOVE NOT NEEDED ----
+#'*====================================*
+
+
 # * Full Coverage Summary ----
-full_efrt <- unique(work.data[CVG_NEW=="FULL", .(POOL="FULL", STRATA=STRATA_NEW, FMP, AREA=REPORTING_AREA_CODE, TARGET=TRIP_TARGET_CODE, AGENCY_GEAR_CODE, PERMIT, START=min(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), END=max(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), MONTH), keyby=.(ADP, TRIP_ID)])
+full_efrt <- unique(work.data[CVG_NEW == "FULL", .(POOL="FULL", STRATA=STRATA_NEW, FMP, AREA=REPORTING_AREA_CODE, TARGET=TRIP_TARGET_CODE, AGENCY_GEAR_CODE, PERMIT, START=min(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), END=max(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), MONTH), keyby=.(ADP, TRIP_ID)])
 full_efrt[, GEAR := ifelse(AGENCY_GEAR_CODE %in% c("NPT", "PTR"), "TRW", AGENCY_GEAR_CODE)]   # Create GEAR column (i.e. TRW instead of NPT or PTR)
-full_efrt[TARGET=="B", TARGET := "P"]                                           # Simplify 'bottom pollock' and 'pelagic pollock' to have only one 'pollock' target designation
+full_efrt[TARGET == "B", TARGET := "P"]                                           # Simplify 'bottom pollock' and 'pelagic pollock' to have only one 'pollock' target designation
 full_efrt <- unique(full_efrt)
-unique(full_efrt[, .(TRIP_ID, GEAR)])[, .N, keyby=GEAR]                         # Here is a rough summary of trip counts by gear type without adjusting for EM/COD
+unique(full_efrt[, .(TRIP_ID, GEAR)])[, .N, keyby = GEAR]                         # Here is a rough summary of trip counts by gear type without adjusting for EM/COD
 
 # * EM Vessel Summary ----
-fg_em <- setDT(copy(em_base))[, .(VESSEL_NAME, PERMIT=VESSEL_ID)]
+fg_em <- setDT(copy(em_base))[, .(VESSEL_NAME, PERMIT = VESSEL_ID)]
 
 # Add back EM research vessels
 fg_em <- rbind(fg_em, data.table(VESSEL_NAME = em_research$VESSEL_NAME, PERMIT = em_research$VESSEL_ID))
@@ -636,7 +648,7 @@ fg_em[, FLAG := ifelse(PERMIT %in% em_requests$VESSEL_ID, "REQUEST", FLAG)]
 fg_em <- unique(fg_em)
 
 # Counts of vessels listed in EM
-fg_em[, .N, by=FLAG]  
+fg_em[, .N, by = FLAG]  
 
 # * Final outputs ----
 out_name <- paste(ADPyear, ADP_version, "ADP_data.rdata", sep="_")
