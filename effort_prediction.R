@@ -31,55 +31,47 @@ gdrive_download(# Will only execute if you are not already up to date.
 
 load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
 
-# End data pull --------------------------------------------------------------------------------------------------------
+rm(ADP_dribble)
 
-# select necessary columns
-effort_strata <- work.data[CVG_NEW == "PARTIAL", .(ADP, STRATA = STRATA_NEW, TRIP_TARGET_DATE, TRIP_ID)]
-
-# ensure one trip target date per trip, making it the minimum trip target date
-effort_strata[, TRIP_TARGET_DATE := min(TRIP_TARGET_DATE), by = TRIP_ID]
-
-# select only distinct rows
-effort_strata <- unique(effort_strata)
-
-# order the data
-setorder(effort_strata, ADP, STRATA, TRIP_TARGET_DATE)
-
-# split trips if they occurred in more than one stratum
-effort_strata[ , TRIPS := 1/.N, by = TRIP_ID]
-
-# find julian dates
-effort_strata[, JULIAN_DATE := yday(TRIP_TARGET_DATE)]
-
-# set julian date to 1 for trips that left in year adp - 1
-effort_strata[, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) < ADP, 1, JULIAN_DATE)]
-
-# set julian date to 366 for trips that left in year adp + 1
-effort_strata[, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) > ADP, 366, JULIAN_DATE)]
-
-# isolate the latest date for which we have data in the most recent year of valhalla
-max_date <- max(effort_strata[ADP == ADPyear - 1, JULIAN_DATE])
-
-# count trips through max_date and total trips by year and stratum
-effort_strata <- effort_strata[, .(MAX_DATE_TRIPS = sum(TRIPS[JULIAN_DATE <= max_date]), TOTAL_TRIPS = sum(TRIPS)), by = .(ADP, STRATA)]
-
-# make total trips NA for ADPyear - 1, since the year is not over
-effort_strata[ADP == ADPyear - 1, TOTAL_TRIPS := NA]
+# Models ---------------------------------------------------------------------------------------------------------------
 
 # model total trips against year, stratum, and trips through October
 effort_mod1 <- lm(TOTAL_TRIPS ~ ADP, data = effort_strata[ADP < ADPyear - 1])
 effort_mod2 <- lm(TOTAL_TRIPS ~ ADP * STRATA, data = effort_strata[ADP < ADPyear - 1])
 effort_mod3 <- lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1])
+#TODO I couldn't help myself
+effort_mod4 <- lm(TOTAL_TRIPS ~ STRATA * MAX_DATE_TRIPS + poly(ADP,2), data = effort_strata[ADP < ADPyear - 1])
+effort_mod5 <- lm(TOTAL_TRIPS ~ STRATA * MAX_DATE_TRIPS + poly(ADP,3), data = effort_strata[ADP < ADPyear - 1])
+effort_mod6 <- lm(TOTAL_TRIPS ~ STRATA * MAX_DATE_TRIPS * poly(ADP,2), data = effort_strata[ADP < ADPyear - 1])
+effort_mod7 <- lm(TOTAL_TRIPS ~ STRATA * MAX_DATE_TRIPS * poly(ADP,3), data = effort_strata[ADP < ADPyear - 1])
 
-# evaluate candidate models
-AIC(effort_mod1, effort_mod2, effort_mod3)
+# identify candidate models
+AIC(effort_mod1, effort_mod2, effort_mod3, effort_mod4, effort_mod5, effort_mod6, effort_mod7)
+# Models 1 & 2 are overly simplistic, and model 7 is wack complicated with 65 parameters on only 96 rows of data
+# Model 6 may have the same problem with 49 parameters (but maybe worth checking out)
+# Models 4 & 5 are very similar (AIC < 2)
 
+BIC(effort_mod1, effort_mod2, effort_mod3, effort_mod4, effort_mod5, effort_mod6, effort_mod7)
+#Models 4 & 5 have lowest BIC as well.  So if we believe it, one of these is the 'true' model.
+
+canditate_models <- c("effort_mod3", "effort_mod4", "effort_mod5", "effort_mod_6")
+# Plot the diagnostics for each candidate model.  Zeroing in on 4 & 5
+
+# TODO - For the sake of testing, I am choosing model 3.
 # choose a winning model
-effort_mod <- effort_mod3
-rm(effort_mod1, effort_mod2, effort_mod3)
+#TODO - here the winner has been selected based on AIC I presume, but this is before any diagnostics.
+effort_mod <- effort_mod3  #TODO - this effort_mod is never really used!
+#rm(effort_mod1, effort_mod2, effort_mod3)
+
+#TODO - why a separate statement for each year, and why use the exact model statement?
+#Apparently this is mimicking the true process of using all data up to the one you are in to predict the year you are in.
+#However, a flaw with this is that the formula is manual.  Can we leverage the selected model?
 
 # predict ADPyear - 6 effort
-effort_strata[ADP == ADPyear - 6, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 6]), effort_strata[ADP == ADPyear - 6])]
+effort_strata[ADP == ADPyear - 6, 
+              TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, 
+                                             data = effort_strata[ADP < ADPyear - 6]), 
+                                          effort_strata[ADP == ADPyear - 6])]
 
 # predict ADPyear - 5 effort
 effort_strata[ADP == ADPyear - 5, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 5]), effort_strata[ADP == ADPyear - 5])]
@@ -95,6 +87,39 @@ effort_strata[ADP == ADPyear - 2, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ A
 
 # predict ADPyear - 1 effort
 effort_strata[ADP == ADPyear - 1, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1]), effort_strata[ADP == ADPyear - 1])]
+
+# TODO - Testing alternative format for above code
+library(dplyr)
+effort_strata_cf <- effort_strata %>% select(-TOTAL_TRIPS_PRED, -RESIDUALS)
+
+maxback <- 6
+
+for(i in 1:maxback){  
+preds <- effort_strata_cf %>% filter(ADP == ADPyear - i)
+
+#TODO - replace the lm statement below with the model form selected by the user.
+preds$TOTAL_TRIPS_PRED <- predict(lm(effort_mod$call$formula, 
+                                     data = effort_strata_cf[effort_strata_cf$ADP < ADPyear - i,]), preds)
+if(i == 1)
+  preds_out <- preds
+else
+  preds_out <- rbind(preds, preds_out)
+}
+
+effort_strata_cf <- merge(effort_strata_cf, preds_out, all.x = TRUE)
+rm(preds_out)
+
+effort_strata_cf$RESIDUALS <- effort_strata_cf$TOTAL_TRIPS - effort_strata_cf$TOTAL_TRIPS_PRED
+
+#Check for same as original
+all.equal(effort_strata_cf, effort_strata)  #All same but effort_strata has a key due to it being a DT.
+#[1] "Datasets has different keys. 'target': ADP, STRATA, MAX_DATE_TRIPS, TOTAL_TRIPS. 'current' has no key."
+sum(effort_strata_cf$RESIDUALS, na.rm = TRUE) - sum(effort_strata$RESIDUALS, na.rm = TRUE)
+
+# End testing ----------------------------------------------------------------------------------------------------------
+
+
+
 
 # calculate residuals
 effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
@@ -206,6 +231,7 @@ alpha <- 0.95
 # estimate t-values for the prediction interval
 Qt <- qt((1 - alpha) / 2, effort_mod$df.residual, lower.tail = FALSE)
 
+#TODO - This line is throwing an error
 # estimate the prediction intervals for year-level estimates
 effort_year[, ':=' (se = sqrt(var), lwr = TOTAL_TRIPS - (Qt * sqrt(var)), upr = TOTAL_TRIPS + (Qt * sqrt(var)), var = NULL)]
 
@@ -244,6 +270,7 @@ p6 <- ggplot(effort_strata, aes(x = ADP, y = TOTAL_TRIPS)) +
 p7 <- ggplot(effort_year, aes(x = ADP, y = TOTAL_TRIPS)) +
       geom_point(aes(color = PREDICTION)) +
       scale_color_manual(values = c("black", "red")) +
+  #TODO - the below throws and error bc there is no lwr or upr.
       geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.2, color = "red") + 
       geom_line() + 
       geom_line(data = effort_year[ADP >= ADPyear - 1], color = "red") +
