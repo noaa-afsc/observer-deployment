@@ -3,20 +3,35 @@ if(!require("data.table"))   install.packages("data.table", repos='http://cran.u
 if(!require("ggplot2"))   install.packages("ggplot2", repos='http://cran.us.r-project.org')
 if(!require("gridExtra"))   install.packages("gridExtra", repos='http://cran.us.r-project.org')
 if(!require("scales"))   install.packages("scales", repos='http://cran.us.r-project.org')
+if(!require("FMAtools")) install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
 
 # avoid scientific notation
 options(scipen = 9999)
 
-# user inputs
-ADPyear  <- 2024
+# TODO - make into API calls
+#user inputs
+ADPyear  <- 2025
 
+#Former
 # get data object produced by get_data.R
-load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
+#load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
 # https://drive.google.com/file/d/1xH-P54wW3vPXtaQmgEDxb3YgHh-yJlp8/view?usp=drive_link
 
 # get list of trawl EM EFP vessels
-efp_list <- fread("source_data/efp_list_2023-09-05.csv")[, PERMIT := as.character(PERMIT)]
+# efp_list <- fread("source_data/efp_list_2023-09-05.csv")[, PERMIT := as.character(PERMIT)]
 # https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
+
+#New
+ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
+
+gdrive_download(# Will only execute if you are not already up to date.
+  local_path = paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"),
+  gdrive_dribble = ADP_dribble
+  )
+
+load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
+
+# End data pull --------------------------------------------------------------------------------------------------------
 
 # select necessary columns
 effort_strata <- work.data[CVG_NEW == "PARTIAL", .(ADP, STRATA = STRATA_NEW, TRIP_TARGET_DATE, TRIP_ID)]
