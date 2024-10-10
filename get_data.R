@@ -593,11 +593,20 @@ effort_strata <- effort_strata[, .(
 out_name <- paste(ADPyear, ADP_version, "ADP_data.rdata", sep="_")
 out_save <- getPass::getPass(paste0("Would you like to save off a new version of ", out_name, "? (Enter Y or N)"))
 
-if(out_save == "Y"){                              
+if(out_save == "Y"){  
+  #' For posterity, we will save the full `work.data` object. 
+  save(work.data, file = "source_data/work.data.rdata")
+  #' Upload to shared Gdrive source_data folder
+  gdrive_upload(local_path = "source_data/work.data.rdata", gdrive_dribble = ADP_dribble)
+  
+  #' For the data to be used by the rest of our scripts, we trim work.data to contain only the most recent 3 full 
+  #' years and the current year.
+  work.data <- work.data[ADP >= ADPyear - 4]
   save(
     list = c("work.data", "trips_melt", "PartialCPs", "full_efrt", "max_date", "fg_em", "effort_strata", "effort_strata.max_date"),
-    file = paste0("source_data/", out_name))
+    file = paste0("source_data/", out_name)
+  )
+  #' Upload to shared Gdrive source_data folder
+  gdrive_upload(local_path = paste0("source_data/", out_name), gdrive_dribble = ADP_dribble)
 }
 
-#' Upload to shared Gdrive source_data folder
-gdrive_upload(local_path = paste0("source_data/", out_name), gdrive_dribble = ADP_dribble)
