@@ -561,7 +561,7 @@ fg_em <- unique(fg_em)
 fg_em[, .N, by = FLAG]  
 
 
-#* Effort prediction prep ----
+# Effort prediction prep ----
 
 effort_strata <- unique(work.data[
 # select necessary columns
@@ -589,7 +589,7 @@ effort_strata <- effort_strata[, .(
 # make total trips NA for ADPyear - 1, since the year is not over
 ][ADP == ADPyear - 1, TOTAL_TRIPS := NA][]
 
-# * Final outputs ----
+# Final outputs ----
 out_name <- paste(ADPyear, ADP_version, "ADP_data.rdata", sep="_")
 out_save <- getPass::getPass(paste0("Would you like to save off a new version of ", out_name, "? (Enter Y or N)"))
 
@@ -603,7 +603,7 @@ if(out_save == "Y"){
   #' years and the current year.
   work.data <- work.data[ADP >= ADPyear - 4]
   save(
-    list = c("work.data", "trips_melt", "PartialCPs", "full_efrt", "max_date", "fg_em", "effort_strata", "effort_strata.max_date"),
+    work.data, trips_melt, PartialCPs, full_efrt, max_date, fg_em, effort_strata,
     file = paste0("source_data/", out_name)
   )
   #' Upload to shared Gdrive source_data folder
