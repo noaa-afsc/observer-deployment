@@ -16,13 +16,16 @@ if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.
 # Establish channels ------------------------------------------------------
 source("common_functions/open_channel.R")
 channel_afsc <- open_channel()
+
+ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
+
 #channel_akro <- eval(parse(text = Sys.getenv("channel_cas")))
 
 # Load AKRO pull ------------------------------------------------------
 # The pulls from AKRO were all moved to the sql_pull_akro.R
 gdrive_download(
   local_path = paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", sep = "_")),
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
+  gdrive_dribble = ADP_dribble
 )
 load(paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", sep = "_")))
 
@@ -112,7 +115,6 @@ FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT as vessel_id, length a
 work.data <- setDT(dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla where ADP >= ", ADPyear - 4)))
 
 # Load data from current year
-ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
 gdrive_download("source_data/2024-10-01valhalla.Rdata", ADP_dribble)
 load("source_data/2024-10-01valhalla.Rdata")
 
@@ -535,11 +537,10 @@ out_name <- paste(ADPyear, ADP_version, "ADP_data.rdata", sep="_")
 out_save <- getPass::getPass(paste0("Would you like to save off a new version of ", out_name, "? (Enter Y or N)"))
 
 if(out_save == "Y"){                              
-save(list = c("work.data", "trips_melt", "efrt", "PartialCPs", "full_efrt", "max_date", "fg_em"), file=paste0("source_data/", out_name))
+  save(
+    list = c("work.data", "trips_melt", "PartialCPs", "full_efrt", "max_date", "fg_em"),
+    file = paste0("source_data/", out_name))
 }
 
 #' Upload to shared Gdrive source_data folder
-gdrive_upload(
-  local_path = paste0("source_data/", out_name),
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
-)
+gdrive_upload(local_path = paste0("source_data/", out_name), gdrive_dribble = ADP_dribble)
