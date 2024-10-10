@@ -166,7 +166,7 @@ work.data[, DB_AGENCY_GEAR_CODE := NULL]
 
 # Maximum date in valhalla - This will be saved as an output and used to ensure 
 # 3 full years of data are packaged for trips_melt, efrt, and full coverage summaries
-max_date <- max(work.data$LANDING_DATE, na.rm=TRUE)                    
+max_date <- max(work.data$LANDING_DATE, na.rm = TRUE)                    
 
 # Default to the lesser ADP year when a trip spans two years, because that is the ADP year we deploy by.
 work.data[, ADP := min(ADP), by = .(TRIP_ID)]
@@ -255,15 +255,23 @@ work.data[, N := uniqueN(CVG_NEW), by = .(TRIP_ID)
 filter(work.data, is.na(CVG_NEW)) %>% 
 distinct(ADP, COVERAGE_TYPE, CVG_NEW, STRATA) %>% 
 arrange(ADP, COVERAGE_TYPE, CVG_NEW, STRATA)
+gc()
 
 # * STRATA_NEW ----
 
 # For each trip, identify which FMP had most retained catch, splitting FMP by BSAI and GOA
-fmp_bsai_goa <- work.data[, .(
-  FMP_WT = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)
-), by = .(TRIP_ID, BSAI_GOA = FMP)
+fmp_bsai_goa <- work.data[
+][SOURCE_TABLE == "Y", .(
+  TRIP_ID, WEIGHT_POSTED,
+  BSAI_GOA = fcase(
+    FMP == "GOA", "GOA",
+    FMP %in% c("BS", "AI", "BSAI"), "BSAI")
+)][, .(
+  FMP_WT = sum(WEIGHT_POSTED, na.rm = T)
+), by = .(TRIP_ID, BSAI_GOA)
 ][, .SD[which.max(FMP_WT)], by = .(TRIP_ID)
 ][, FMP_WT := NULL][]
+
 # Merge in FMP classifications, the BSAI_COL that identifies which FMP contains the majority of retained catch. 
 work.data <- work.data[fmp_bsai_goa, on = .(TRIP_ID)]
 
@@ -521,10 +529,18 @@ trips_melt <- trips_melt %>%
 if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected in trips_melt")}
 
 # * Full Coverage Summary ----
-full_efrt <- unique(work.data[CVG_NEW == "FULL", .(POOL="FULL", STRATA=STRATA_NEW, FMP, AREA=REPORTING_AREA_CODE, TARGET=TRIP_TARGET_CODE, AGENCY_GEAR_CODE, PERMIT, START=min(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), END=max(TRIP_TARGET_DATE, LANDING_DATE, na.rm=TRUE), MONTH), keyby=.(ADP, TRIP_ID)])
-full_efrt[, GEAR := ifelse(AGENCY_GEAR_CODE %in% c("NPT", "PTR"), "TRW", AGENCY_GEAR_CODE)]   # Create GEAR column (i.e. TRW instead of NPT or PTR)
-full_efrt[TARGET == "B", TARGET := "P"]                                           # Simplify 'bottom pollock' and 'pelagic pollock' to have only one 'pollock' target designation
-full_efrt <- unique(full_efrt)
+full_efrt <- unique(unique(work.data[
+][CVG_NEW == "FULL", .(
+  POOL = "FULL", STRATA = STRATA_NEW, FMP, AREA = REPORTING_AREA_CODE, TARGET = TRIP_TARGET_CODE, 
+  AGENCY_GEAR_CODE, PERMIT, MONTH,
+  START = min(TRIP_TARGET_DATE, LANDING_DATE, na.rm = TRUE), 
+  END = max(TRIP_TARGET_DATE, LANDING_DATE, na.rm = TRUE)
+  ), keyby=.(ADP, TRIP_ID)
+])[
+# Create GEAR column (i.e. TRW instead of NPT or PTR)
+][, GEAR := ifelse(AGENCY_GEAR_CODE %in% c("NPT", "PTR"), "TRW", AGENCY_GEAR_CODE)
+# Simplify 'bottom pollock' and 'pelagic pollock' to have only one 'pollock' target designation
+][TARGET == "B", TARGET := "P"][])
 unique(full_efrt[, .(TRIP_ID, GEAR)])[, .N, keyby = GEAR]                         # Here is a rough summary of trip counts by gear type without adjusting for EM/COD
 
 # * EM Vessel Summary ----
@@ -544,13 +560,42 @@ fg_em <- unique(fg_em)
 # Counts of vessels listed in EM
 fg_em[, .N, by = FLAG]  
 
+
+#* Effort prediction prep ----
+
+effort_strata <- unique(work.data[
+# select necessary columns
+][CVG_NEW == "PARTIAL", .(ADP, STRATA = STRATA_NEW, TRIP_TARGET_DATE, TRIP_ID)
+# ensure one trip target date per trip, making it the minimum trip target date
+][, TRIP_TARGET_DATE := min(TRIP_TARGET_DATE), by = TRIP_ID])
+# order the data
+setorder(effort_strata, ADP, STRATA, TRIP_TARGET_DATE)
+effort_strata[
+# split trips if they occurred in more than one stratum
+][ , TRIPS := 1/.N, by = TRIP_ID
+# find julian dates
+][, JULIAN_DATE := yday(TRIP_TARGET_DATE)
+# set julian date to 1 for trips that left in year adp - 1
+][, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) < ADP, 1, JULIAN_DATE)
+# set julian date to 366 for trips that left in year adp + 1
+][, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) > ADP, 366, JULIAN_DATE)][]
+# isolate the latest date for which we have data in the most recent year of valhalla
+effort_strata.max_date <- max(effort_strata[ADP == ADPyear - 1, JULIAN_DATE])
+# count trips through max_date and total trips by year and stratum
+effort_strata <- effort_strata[, .(
+  MAX_DATE_TRIPS = sum(TRIPS[JULIAN_DATE <= effort_strata.max_date]),
+  TOTAL_TRIPS = sum(TRIPS)
+  ), by = .(ADP, STRATA)
+# make total trips NA for ADPyear - 1, since the year is not over
+][ADP == ADPyear - 1, TOTAL_TRIPS := NA][]
+
 # * Final outputs ----
 out_name <- paste(ADPyear, ADP_version, "ADP_data.rdata", sep="_")
 out_save <- getPass::getPass(paste0("Would you like to save off a new version of ", out_name, "? (Enter Y or N)"))
 
 if(out_save == "Y"){                              
   save(
-    list = c("work.data", "trips_melt", "PartialCPs", "full_efrt", "max_date", "fg_em"),
+    list = c("work.data", "trips_melt", "PartialCPs", "full_efrt", "max_date", "fg_em", "effort_strata", "effort_strata.max_date"),
     file = paste0("source_data/", out_name))
 }
 
