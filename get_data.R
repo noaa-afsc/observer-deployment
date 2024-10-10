@@ -19,8 +19,6 @@ channel_afsc <- open_channel()
 
 ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
 
-#channel_akro <- eval(parse(text = Sys.getenv("channel_cas")))
-
 # Load AKRO pull ------------------------------------------------------
 # The pulls from AKRO were all moved to the sql_pull_akro.R
 gdrive_download(
@@ -111,10 +109,24 @@ FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT as vessel_id, length a
                     FROM norpac.atl_lov_vessel")
 
 # * Valhalla ----
-# Pull data from prior years. This pull may never finish when working remotely via VPN. 
-work.data <- setDT(dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla where ADP >= ", ADPyear - 4)))
+#' Pull data from prior years. This pull may never finish when working remotely via VPN. Pulling all years is necessary
+#' so that the effort prediction model in `effort_prediction.R` is informed by the full dataset.
 
-# Load data from current year
+#' Download full loki.valhalla data set. If the locally saved version is behind, re-pull Vahalla
+
+gdrive_download(local_path = "source_data/loki.valhalla.rdata", gdrive_dribble = ADP_dribble)
+(load("source_data/loki.valhalla.rdata"))
+
+# Check to make sure the Gdrive has the latest version of Valhalla. It should have a run date of ADPyear - 1
+if( year(max(work.data$RUN_DATE, na.rm = T)) != (ADPyear - 1) ) {
+  message("Local copy has not been updated with more recent data. Performing SQL query to loki.valhalla.")
+  work.data <- setDT(dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla")))
+  save(work.data, file = "source_data/loki.valhalla.rdata")
+  gdrive_upload(local_path = "source_data/loki.valhalla.rdata", gdrive_dribble = ADP_dribble)
+}
+gc()
+
+# Load data from current year. The AKRO Region will re-run Valhalla for the current year to date (ADPyear - 1).
 gdrive_download("source_data/2024-10-01valhalla.Rdata", ADP_dribble)
 load("source_data/2024-10-01valhalla.Rdata")
 
