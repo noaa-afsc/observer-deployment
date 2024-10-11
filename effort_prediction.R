@@ -60,69 +60,32 @@ canditate_models <- c("effort_mod3", "effort_mod4", "effort_mod5", "effort_mod_6
 # TODO - For the sake of testing, I am choosing model 3.
 # choose a winning model
 #TODO - here the winner has been selected based on AIC I presume, but this is before any diagnostics.
-effort_mod <- effort_mod3  #TODO - this effort_mod is never really used!
-#rm(effort_mod1, effort_mod2, effort_mod3)
+effort_mod <- effort_mod3  
 
-#TODO - why a separate statement for each year, and why use the exact model statement?
-#Apparently this is mimicking the true process of using all data up to the one you are in to predict the year you are in.
-#However, a flaw with this is that the formula is manual.  Can we leverage the selected model?
-
-# predict ADPyear - 6 effort
-effort_strata[ADP == ADPyear - 6, 
-              TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, 
-                                             data = effort_strata[ADP < ADPyear - 6]), 
-                                          effort_strata[ADP == ADPyear - 6])]
-
-# predict ADPyear - 5 effort
-effort_strata[ADP == ADPyear - 5, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 5]), effort_strata[ADP == ADPyear - 5])]
-
-# predict ADPyear - 4 effort
-effort_strata[ADP == ADPyear - 4, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 4]), effort_strata[ADP == ADPyear - 4])]
-
-# predict ADPyear - 3 effort
-effort_strata[ADP == ADPyear - 3, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 3]), effort_strata[ADP == ADPyear - 3])]
-
-# predict ADPyear - 2 effort
-effort_strata[ADP == ADPyear - 2, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 2]), effort_strata[ADP == ADPyear - 2])]
-
-# predict ADPyear - 1 effort
-effort_strata[ADP == ADPyear - 1, TOTAL_TRIPS_PRED := predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1]), effort_strata[ADP == ADPyear - 1])]
-
-# TODO - Testing alternative format for above code
 library(dplyr)
-effort_strata_cf <- effort_strata %>% select(-TOTAL_TRIPS_PRED, -RESIDUALS)
 
-maxback <- 6
+maxback <- 6 #TODO - user defined (here by precident, but add a max possilbe with error)
 
 for(i in 1:maxback){  
-preds <- effort_strata_cf %>% filter(ADP == ADPyear - i)
+preds <- effort_strata %>% filter(ADP == ADPyear - i)
 
-#TODO - replace the lm statement below with the model form selected by the user.
 preds$TOTAL_TRIPS_PRED <- predict(lm(effort_mod$call$formula, 
-                                     data = effort_strata_cf[effort_strata_cf$ADP < ADPyear - i,]), preds)
+                                     data = effort_strata[effort_strata$ADP < ADPyear - i,]), preds)
 if(i == 1)
   preds_out <- preds
 else
   preds_out <- rbind(preds, preds_out)
 }
 
-effort_strata_cf <- merge(effort_strata_cf, preds_out, all.x = TRUE)
+effort_strata <- merge(effort_strata, preds_out, all.x = TRUE)
 rm(preds_out)
 
-effort_strata_cf$RESIDUALS <- effort_strata_cf$TOTAL_TRIPS - effort_strata_cf$TOTAL_TRIPS_PRED
-
-#Check for same as original
-all.equal(effort_strata_cf, effort_strata)  #All same but effort_strata has a key due to it being a DT.
-#[1] "Datasets has different keys. 'target': ADP, STRATA, MAX_DATE_TRIPS, TOTAL_TRIPS. 'current' has no key."
-sum(effort_strata_cf$RESIDUALS, na.rm = TRUE) - sum(effort_strata$RESIDUALS, na.rm = TRUE)
+#effort_strata$RESIDUALS <- effort_strata$TOTAL_TRIPS - effort_strata$TOTAL_TRIPS_PRED
 
 # End testing ----------------------------------------------------------------------------------------------------------
 
-
-
-
 # calculate residuals
-effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
+effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED] #TODO - useful but maybe calculate MSE?
 
 # plot retrospective predictions against actuals for ADPyear - 1
 p1 <- ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
@@ -139,6 +102,25 @@ p2 <- ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = RESI
       geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "red") +
       theme_bw() +
       labs(x = "Residuals")
+
+# The amended plot p2 below shows the desired mean of zero and normal distribution of residuals based on 
+# the distribution of residuals you got.  Compare this against the mean in blue we got and the density we got in blue.
+# TODO - the text below in the stat_function is cumbersome.
+
+ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = RESIDUALS)) +
+  geom_histogram(aes(y = after_stat(density)), fill = "blue", color = "white", alpha = .5) +
+  stat_function(
+    fun = dnorm, 
+    args = list(mean = 0, 
+                sd = sd(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6]$RESIDUALS)), 
+    lwd = 2, 
+    col = 'black') +
+  geom_density(bins = 20, color = "blue", lwd = 2) +
+  geom_vline(xintercept = 0, color = "black", lwd = 2) +
+  geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "blue", lwd = 2) +
+  theme_bw() +
+  labs(x = "Residuals")
+
 
 # png("Appendix_C/figures/EffortPredictionResiduals1.png", width = 7, height = 10, units = 'in', res=300)
 # grid.arrange(p1, p2)
