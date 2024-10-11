@@ -19,6 +19,10 @@ channel_afsc <- open_channel()
 
 ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
 
+#' *START TIME ============*
+time_start <- Sys.time()
+#' *=======================*
+
 # Load AKRO pull ------------------------------------------------------
 # The pulls from AKRO were all moved to the sql_pull_akro.R
 gdrive_download(
@@ -204,40 +208,30 @@ work.data <- mutate(work.data, PROCESSING_SECTOR = ifelse(PROCESSING_SECTOR %in%
 distinct(work.data, COVERAGE_TYPE, STRATA) %>% 
 arrange(COVERAGE_TYPE, STRATA)
 
-# Create empty CVG_NEW column
-work.data <- mutate(work.data, CVG_NEW = NA)
-
-# Mandatory full coverage
-work.data <- mutate(work.data, CVG_NEW = ifelse(COVERAGE_TYPE == "FULL" & STRATA %in% c("FULL", "EM_TRW_EFP", "VOLUNTARY", "EM_TRW_BSAI"), "FULL", CVG_NEW))
-
-# PCTC
-work.data <- mutate(work.data, CVG_NEW = ifelse(VESSEL_ID %in% pctc$VESSEL_ID &
-                                                FMP %in% c("BS", "AI", "BSAI") &
-                                                AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & 
-                                                TRIP_TARGET_CODE == "C" &
-                                                # Only applies to A & B season
-                                                yday(as.Date(paste0(ADP,"-12-31"))) - yday(as.Date(TRIP_TARGET_DATE)) > 204,
-                                                "FULL", CVG_NEW))
-
-# Voluntary full coverage: opted in for ADPyear
-work.data <- mutate(work.data, CVG_NEW = ifelse(VESSEL_ID %in% BSAIVoluntary$VESSEL_ID &
-                                                FMP %in% c("BS", "AI", "BSAI") &
-                                                AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & 
-                                                PROCESSING_SECTOR == "S",
-                                                "FULL", CVG_NEW))
-
-# Voluntary full coverage: opted in for past years, but not for ADPyear  
-work.data <- mutate(work.data, CVG_NEW = ifelse(is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA == "FULL", "PARTIAL", CVG_NEW))
-
-# Cooperative full coverage
-work.data <- mutate(work.data, CVG_NEW = ifelse(AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") &
-                                                MANAGEMENT_PROGRAM_CODE %in% c("RPP", "AFA", "A80"),
-                                                "FULL", CVG_NEW))
-
-# Partial CPs
-work.data <- mutate(work.data, CVG_NEW = ifelse(VESSEL_ID %in% PartialCPs$VESSEL_ID &
-                                                PROCESSING_SECTOR == "CP_M", 
-                                                "PARTIAL", CVG_NEW))
+work.data[
+  # Create empty CVG_NEW column
+][, CVG_NEW := NA
+  # Mandatory full coverage
+][COVERAGE_TYPE == "FULL" & STRATA %in% c("FULL", "EM_TRW_EFP", "VOLUNTARY", "EM_TRW_BSAI"), CVG_NEW := "FULL"
+  # PCTC
+][VESSEL_ID %in% pctc$VESSEL_ID & 
+    FMP %in% c("BS", "AI", "BSAI") & 
+    AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & TRIP_TARGET_CODE == "C" &
+    # Only applies to A & B season
+    yday(make_date(ADP, 12, 31)) - yday(TRIP_TARGET_DATE) > 204,
+  CVG_NEW := "FULL"
+  # Voluntary full coverage: opted in for ADPyear
+][VESSEL_ID %in% BSAIVoluntary$VESSEL_ID &
+    FMP %in% c("BS", "AI", "BSAI") &
+    AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & 
+    PROCESSING_SECTOR == "S", 
+  CVG_NEW := "FULL"
+  # Voluntary full coverage: opted in for past years, but not for ADPyear  
+][is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA == "FULL", CVG_NEW := "PARTIAL"
+  # Cooperative full coverage
+][AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & MANAGEMENT_PROGRAM_CODE %in% c("RPP", "AFA", "A80"), CVG_NEW :=  "FULL"
+  # Partial CPs
+][VESSEL_ID %in% PartialCPs$VESSEL_ID & PROCESSING_SECTOR == "CP_M", CVG_NEW := "PARTIAL"][]
 
 # View remaining coverage type / strata combinations
 distinct(work.data, COVERAGE_TYPE, CVG_NEW, STRATA) %>% 
@@ -588,6 +582,14 @@ effort_strata <- effort_strata[, .(
   ), by = .(ADP, STRATA)
 # make total trips NA for ADPyear - 1, since the year is not over
 ][ADP == ADPyear - 1, TOTAL_TRIPS := NA][]
+
+
+#' *END TIME ============*
+time_end <- Sys.time()
+as.numeric(time_end - time_start, units = "secs")
+#' *=======================*
+
+
 
 # Final outputs ----
 out_name <- paste(ADPyear, ADP_version, "ADP_data.rdata", sep="_")
