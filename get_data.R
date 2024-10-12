@@ -510,6 +510,7 @@ trip_wgts_strata[is.na(trip_wgts_strata)] <- 0
 trip_wgts_strata <- rename(trip_wgts_strata, STRATA_GEAR = STRATA_NEW)
 
 # * Melt trips data ----
+
 # data.table::melt and reshape2::melt() work the same here
 # Note this will only add a column if there is one stratification scheme
 # First create a vector of all strata_schemes - 
@@ -533,8 +534,8 @@ trips_melt <- trips_melt %>%
          Metric = as.character(Metric))
 
 # * Check for NAs in trips_melt ----
-if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected in trips_melt")}
 
+if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected in trips_melt")}
 
 # Summaries -------------------------------------------------------------------------------------------------------
 
@@ -568,7 +569,7 @@ fg_em <- unique(fg_em)
 # Counts of vessels listed in EM
 fg_em[, .N, by = FLAG]  
 
-#* Effort prediction ----
+# * Effort prediction ----
 
 effort_strata <- setorder(unique(
   work.data[
@@ -597,12 +598,13 @@ effort_strata <- effort_strata[, .(
 ][ADP == ADPyear - 1, TOTAL_TRIPS := NA][]
 
 # Final outputs ----
+
 out_name <- paste(ADPyear, ADP_version, "ADP_data.rdata", sep="_")
 out_save <- getPass::getPass(paste0("Would you like to save off a new version of ", out_name, "? (Enter Y or N)"))
 
 if(out_save == "Y"){  
   #' For posterity, we will save the full `work.data` object. 
-  save(work.data, file = "source_data/work.data.rdata")
+  save(work.data, file = "source_data/work.data.rdata")o
   #' Upload to shared Gdrive source_data folder
   gdrive_upload(local_path = "source_data/work.data.rdata", gdrive_dribble = ADP_dribble)
   
