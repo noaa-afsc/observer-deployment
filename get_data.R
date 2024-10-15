@@ -43,54 +43,43 @@ PartialCPs <- data.frame(VESSEL_ID = c(662, 4581, 6039))
 
 # * Fixed-gear EM research ---- 
 
-em_research <- 
-  dbGetQuery(channel_afsc, 
-      if(ADP_version == "Draft" | EM_final == "N"){
-          paste("select distinct adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
-                from loki.em_vessels_by_adp
-                where sample_plan_seq_desc = 'Electronic Monitoring -  research not logged '
-                and adp >=", ADPyear - 1,
-                "order by adp, vessel_id")} else{
-          paste("select distinct adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
-                from loki.em_vessels_by_adp
-                where sample_plan_seq_desc = 'Electronic Monitoring -  research not logged '
-                and adp =", ADPyear,
-                "order by adp, vessel_id")})
+em_research <- dbGetQuery(channel_afsc, paste(
+  "
+    SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
+    FROM loki.em_vessels_by_adp
+    WHERE sample_plan_seq_desc = 'Electronic Monitoring -  research not logged '
+      AND adp >=", if(ADP_version == "Draft" | EM_final == "N") (ADPyear - 1) else (ADPyear), "
+    ORDER BY adp, vessel_id
+  "
+))
 
 # * Fixed-gear EM approvals ---- 
 
-em_base <-
-  dbGetQuery(channel_afsc, 
-             if(ADP_version == "Draft" | EM_final == "N"){
-               # If its the draft, or if approvals for the final have yet to be made, use the prior year's approved vessels
-               paste("SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
-                      FROM loki.em_vessels_by_adp
-                      WHERE adp >= ", ADPyear - 1,"
-                      AND em_request_status = 'A'
-                      AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'
-                      order by adp, vessel_id")
-             } else{ # Vessels have until November 1st to request. Approvals are typically made shortly thereafter.
-               paste("SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
-                      FROM loki.em_vessels_by_adp
-                      WHERE adp = ", ADPyear,"
-                      AND em_request_status = 'A'
-                      AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'
-                      order by vessel_id")})
-
+em_base <- dbGetQuery(channel_afsc, paste(
+  "
+    SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
+    FROM loki.em_vessels_by_adp
+    WHERE adp >= ", if(ADP_version == "Draft" | EM_final == "N") (ADPyear - 1) else (ADPyear), "
+      AND em_request_status = 'A'
+      AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'
+    ORDER BY adp, vessel_id
+  "
+))
 # Remove EM research vessels from em_base
-em_base <- em_base %>% 
-           anti_join(select(em_research, ADP, VESSEL_ID), by = c("ADP", "VESSEL_ID"))
+em_base <- em_base %>% anti_join(select(em_research, ADP, VESSEL_ID), by = c("ADP", "VESSEL_ID"))
 
 # * Fixed-gear EM requests ---- 
 
-em_requests <-
-  dbGetQuery(channel_afsc, 
-             # Vessels have until November 1st to request. Approvals are typically made shortly thereafter.
-             paste("SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
-                   FROM loki.em_vessels_by_adp
-                   WHERE adp = ", ADPyear,"
-                   AND em_request_status = 'NEW'
-                   AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'"))
+# Vessels have until November 1st to request. Approvals are typically made shortly thereafter.
+em_requests <- dbGetQuery(channel_afsc, paste(
+  "
+    SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
+    FROM loki.em_vessels_by_adp
+    WHERE adp = ", ADPyear,"
+      AND em_request_status = 'NEW'
+      AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'
+  "
+))
 
 #' @UDPATE *This currently reflects what was used in the 2024 ADP. Update for 2025 or remove!*
 # Hardcode EM removals, opt-outs, and approvals
@@ -110,10 +99,10 @@ trawl_em <- read.csv("source_data/efp_list_2023-09-05.csv")
 
 # * Vessel lengths ----
 
-AKROVL <- dbGetQuery(channel_afsc, "select distinct ID as vessel_id, length_overall as akrovl
+AKROVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT ID AS vessel_id, length_overall AS o akrovl
                      FROM norpac_views.akr_v_vessel_mv")
 
-FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT as vessel_id, length as fmavl 
+FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT AS vessel_id, length AS fmavl 
                     FROM norpac.atl_lov_vessel")
 
 # * Valhalla ----
