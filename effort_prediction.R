@@ -8,7 +8,7 @@ if(!require("FMAtools")) install_github("Alaska-Fisheries-Monitoring-Analytics/F
 # avoid scientific notation
 options(scipen = 9999)
 
-# TODO - make into API calls
+# TODO - make into an API call
 #user inputs
 ADPyear  <- 2025
 
@@ -22,6 +22,7 @@ ADPyear  <- 2025
 # https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
 
 #New
+#TODO - make this an api call
 ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
 
 gdrive_download(# Will only execute if you are not already up to date.
@@ -46,21 +47,22 @@ effort_mod6 <- lm(TOTAL_TRIPS ~ STRATA * MAX_DATE_TRIPS * poly(ADP,2), data = ef
 effort_mod7 <- lm(TOTAL_TRIPS ~ STRATA * MAX_DATE_TRIPS * poly(ADP,3), data = effort_strata[ADP < ADPyear - 1])
 
 # identify candidate models
-AIC(effort_mod1, effort_mod2, effort_mod3, effort_mod4, effort_mod5, effort_mod6, effort_mod7)
+dplyr::arrange(AIC(effort_mod1, effort_mod2, effort_mod3, effort_mod4, effort_mod5, effort_mod6, effort_mod7), AIC) 
+
 # Models 1 & 2 are overly simplistic, and model 7 is wack complicated with 65 parameters on only 96 rows of data
 # Model 6 may have the same problem with 49 parameters (but maybe worth checking out)
 # Models 4 & 5 are very similar (AIC < 2)
 
-BIC(effort_mod1, effort_mod2, effort_mod3, effort_mod4, effort_mod5, effort_mod6, effort_mod7)
+dplyr::arrange(BIC(effort_mod1, effort_mod2, effort_mod3, effort_mod4, effort_mod5, effort_mod6, effort_mod7), BIC)
 #Models 4 & 5 have lowest BIC as well.  So if we believe it, one of these is the 'true' model.
 
+#TODO - not used yet
 canditate_models <- c("effort_mod3", "effort_mod4", "effort_mod5", "effort_mod_6")
 # Plot the diagnostics for each candidate model.  Zeroing in on 4 & 5
 
-# TODO - For the sake of testing, I am choosing model 3.
 # choose a winning model
 #TODO - here the winner has been selected based on AIC I presume, but this is before any diagnostics.
-effort_mod <- effort_mod3  
+effort_mod <- effort_mod4  
 
 library(dplyr)
 
@@ -108,26 +110,31 @@ p2 <- ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = RESI
 # TODO - the text below in the stat_function is cumbersome.
 
 ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = RESIDUALS)) +
-  geom_histogram(aes(y = after_stat(density)), fill = "blue", color = "white", alpha = .5) +
+  geom_histogram(aes(y = after_stat(density)), fill = "blue", color = "white", alpha = .5, bins = 20) +
   stat_function(
     fun = dnorm, 
     args = list(mean = 0, 
                 sd = sd(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6]$RESIDUALS)), 
     lwd = 2, 
     col = 'black') +
-  geom_density(bins = 20, color = "blue", lwd = 2) +
+  geom_density(color = "blue", lwd = 2) +
   geom_vline(xintercept = 0, color = "black", lwd = 2) +
   geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "blue", lwd = 2) +
   theme_bw() +
   labs(x = "Residuals")
 
-
+#TODO - line 131 not working, so I'm trying to remove dplyr but no luck.
+detach("package:dplyr")
 # png("Appendix_C/figures/EffortPredictionResiduals1.png", width = 7, height = 10, units = 'in', res=300)
 # grid.arrange(p1, p2)
 # dev.off()
 
 # roll predictions forward one year
-effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], on = .(ADP, STRATA), all = TRUE)
+#TODO - I had to change the original "on" statement to by.x and by.y...
+
+ effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], 
+   effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
+   by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
 
 # recalculate residuals
 effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
@@ -213,12 +220,12 @@ alpha <- 0.95
 # estimate t-values for the prediction interval
 Qt <- qt((1 - alpha) / 2, effort_mod$df.residual, lower.tail = FALSE)
 
-#TODO - This line is throwing an error
 # estimate the prediction intervals for year-level estimates
 effort_year[, ':=' (se = sqrt(var), lwr = TOTAL_TRIPS - (Qt * sqrt(var)), upr = TOTAL_TRIPS + (Qt * sqrt(var)), var = NULL)]
 
 # estimate the prediction intervals for stratum-level estimates
-pred <- data.frame(predict(lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1]), effort_strata[ADP == ADPyear - 1], interval = "prediction"))
+pred <- data.frame(predict(lm(effort_mod$call$formula, data = effort_strata[ADP < ADPyear - 1]), effort_strata[ADP == ADPyear - 1], interval = "prediction"))
+
 effort_strata[ADP >= ADPyear - 1, ":=" (se = (rep(pred$upr, 2) - TOTAL_TRIPS) / Qt, lwr = rep(pred$lwr, 2), upr = rep(pred$upr, 2))]
 
 # plot trips through December against trips through October by stratum through ADPyear - 1
@@ -252,7 +259,6 @@ p6 <- ggplot(effort_strata, aes(x = ADP, y = TOTAL_TRIPS)) +
 p7 <- ggplot(effort_year, aes(x = ADP, y = TOTAL_TRIPS)) +
       geom_point(aes(color = PREDICTION)) +
       scale_color_manual(values = c("black", "red")) +
-  #TODO - the below throws and error bc there is no lwr or upr.
       geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.2, color = "red") + 
       geom_line() + 
       geom_line(data = effort_year[ADP >= ADPyear - 1], color = "red") +
