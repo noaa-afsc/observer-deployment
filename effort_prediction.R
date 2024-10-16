@@ -3,7 +3,7 @@ if(!require("data.table"))   install.packages("data.table", repos='http://cran.u
 if(!require("ggplot2"))   install.packages("ggplot2", repos='http://cran.us.r-project.org')
 if(!require("gridExtra"))   install.packages("gridExtra", repos='http://cran.us.r-project.org')
 if(!require("scales"))   install.packages("scales", repos='http://cran.us.r-project.org')
-if(!require("FMAtools")) install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
+if(!require("FMAtools")) devtools::install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
 
 # avoid scientific notation
 options(scipen = 9999)
