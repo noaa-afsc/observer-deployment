@@ -1,12 +1,14 @@
 # User inputs -------------------------------------------------------------
+
 ADPyear     <- 2025     # Enter numeric year you are doing the ADP for
 ADP_version <- "Final"  # Enter "Draft" or "Final"
 EM_final    <- "N"      # Is the final EM list approved? Y/N (caps)
 options(scipen = 9999)  # Avoid scientific notation
 
 # Get packages ------------------------------------------------------------
+
 if(!require("devtools"))  install.packages("devtools")
-if(!require("FMAtools")) install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
+if(!require("FMAtools")) devtools::install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
 if(!require("odbc")) install.packages("odbc", repos='http://cran.us.r-project.org')
 #if(!require("ROracle")) install.packages("ROracle", repos='http://cran.us.r-project.org')
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
@@ -89,7 +91,7 @@ em_base <- em_base %>%
            # opt-outs
            filter(!(VESSEL_ID %in% c(792, 32413, 3297, 3102))) %>% 
            # approvals
-           plyr::rbind.fill(data.table(VESSEL_ID = c(2084, 3717, 4387), VESSEL_NAME = c("COMMANDER", "CARLYNN", "TANYA M")))
+           bind_rows(data.table(VESSEL_ID = c("2084", "3717", "4387"), VESSEL_NAME = c("COMMANDER", "CARLYNN", "TANYA M")))
   
 # * Trawl EM ----
 
@@ -99,7 +101,7 @@ trawl_em <- read.csv("source_data/efp_list_2023-09-05.csv")
 
 # * Vessel lengths ----
 
-AKROVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT ID AS vessel_id, length_overall AS o akrovl
+AKROVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT ID AS vessel_id, length_overall AS akrovl
                      FROM norpac_views.akr_v_vessel_mv")
 
 FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT AS vessel_id, length AS fmavl 
@@ -110,7 +112,7 @@ FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT AS vessel_id, length A
 #' Pull data from prior years. This pull may never finish when working remotely via VPN. Pulling all years is necessary
 #' so that the effort prediction model in `effort_prediction.R` is informed by the full dataset.
 
-#' Download full loki.valhalla data set. If the locally saved version is behind, re-pull Vahalla
+#' Download full loki.valhalla data set (2013 to ADPyear - 2). If the locally saved version is behind, re-pull Vahalla.
 
 gdrive_download(local_path = "source_data/loki.valhalla.rdata", gdrive_dribble = ADP_dribble)
 (load("source_data/loki.valhalla.rdata"))
@@ -128,12 +130,9 @@ gc()
 gdrive_download("source_data/2024-10-01valhalla.Rdata", ADP_dribble)
 load("source_data/2024-10-01valhalla.Rdata")
 
-# Append data from current year to data from prior year
-
-# First, ensure data types match between the old and new datasets
+# Append data from current year to data from prior year. Ensure data types match between the old and new datasets.
 date_cols <- c("TRIP_TARGET_DATE", "LANDING_DATE")
 work.data[, (date_cols) := lapply(.SD, as.Date), .SDcols = date_cols]
-
 work.data <- rbind(work.data, valhalla, fill = T)
 
 work.data[
@@ -194,7 +193,6 @@ if(nrow(select(work.data, TRIP_ID, ADP) %>%
 
 FMAVL <- FMAVL %>% filter(VESSEL_ID %in% unique(work.data$VESSEL_ID)) 
 AKROVL <- AKROVL %>% filter(VESSEL_ID %in% unique(work.data$VESSEL_ID)) 
-
 VL <- setDT(merge(FMAVL, AKROVL, all = TRUE))
 
 # Update vessel length, giving precedence to FMA lengths
