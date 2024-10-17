@@ -34,6 +34,103 @@ load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
 
 rm(ADP_dribble)
 
+#'`-------------------------- CHRISTIAN TESTING -------------------------------`
+# Visualize data
+ggplot(data = effort_strata[ADP < ADPyear - 1]) +
+  geom_col(aes(x = ADP, y = TOTAL_TRIPS)) + facet_wrap(vars(STRATA), scales = "free")
+
+# Model using GLM (# of trips is count data)
+# When using poisson GLM, need to check for overdispersion.
+# Quick and dirty way of checking is to divide Residual Deviance with Residual Degrees of Freedom (should = ~1)
+#   if it's >> 1, use quasipoisson or negative binomial distribution
+effort_glm1 <- glm(TOTAL_TRIPS ~ ADP, data = effort_strata[ADP < ADPyear - 1],
+                   family = "quasipoisson")
+summary(effort_glm1)
+
+effort_glm2 <- glm(TOTAL_TRIPS ~ ADP * STRATA, data = effort_strata[ADP < ADPyear - 1],
+                   family = "quasipoisson")
+summary(effort_glm2)
+
+effort_glm3 <- glm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1],
+                   family = "quasipoisson")
+summary(effort_glm3)
+
+effort_glm4 <- glm(TOTAL_TRIPS ~ poly(ADP, 2) * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1], 
+                   family = "quasipoisson")
+summary(effort_glm4)
+
+effort_glm5 <- glm(TOTAL_TRIPS ~ poly(ADP, 3) * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1], 
+                   family = "quasipoisson")
+summary(effort_glm5)
+
+# Compare models
+anova(effort_glm2, effort_glm1, test = "F")
+anova(effort_glm3, effort_glm2, test = "F")
+anova(effort_glm4, effort_glm3, test = "F")
+anova(effort_glm5, effort_glm4, test = "F")
+
+# "Best" model (for now just based on "a feeling")
+effort_glm <- effort_glm4
+
+# Evaluate "best" model
+# 1) Check for overdispersion - (if = 1, then we don't need to use quasipoisson distribution)
+E <- resid(effort_glm, type = "pearson")
+N <- nrow(effort_strata[ADP < ADPyear -1])
+p <- length(coef(effort_glm)) + 1
+sum(E ^ 2) / (N - p) # Check for overdispersion (if > 1, then overdispersed)
+# 2) Check residuals
+Fit <- fitted(effort_glm)
+eta <- predict(effort_glm, type = "link")
+plot(x = Fit, y = E, xlab = "Fitted values", ylab = "Pearson residuals")
+abline(h = 0, v = 0, lty = 2)
+plot(x = eta, y = E, xlab = "Eta", ylab = "Pearson residuals")
+abline(h = 0, v = 0, lty = 2)
+
+# Plot "best" model for visual evaluation
+# General plot (doesn't include third model term)
+ggplot(effort_strata[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
+  geom_point() +
+  stat_smooth(method = "glm", formula = y ~ poly(x, 3), method.args = list(family = "quasipoisson")) +
+  facet_wrap(vars(STRATA), scales = "free") +
+  ggtitle("GLM")
+
+library(dplyr)
+
+maxback <- 6 #TODO - user defined (here by precedent, but add a max possible with error)
+
+for(i in 1:maxback){
+  #i <- 1
+  preds <- effort_strata %>% filter(ADP == ADPyear - i)
+  
+  preds$TOTAL_TRIPS_PRED_GLM <- predict(effort_glm4, data = effort_strata[effort_strata$ADP < ADPyear - i], type = "response", preds)
+  if(i == 1)
+    preds_out <- preds
+  else
+    preds_out <- rbind(preds, preds_out)
+}
+
+# Visualize predictions
+ggplot(preds_out, aes(x = ADP)) +
+  geom_point(aes(y = TOTAL_TRIPS)) +
+  geom_point(aes(y = MAX_DATE_TRIPS), color = "red", alpha = 0.5) +
+  geom_line(aes(y = TOTAL_TRIPS_PRED_GLM)) +
+  facet_wrap(vars(STRATA), scales = "free")
+  
+effort_strata <- merge(effort_strata, preds_out, all.x = TRUE)
+rm(preds_out)
+
+# plot retrospective predictions against actuals for ADPyear - 1
+ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = TOTAL_TRIPS, color = STRATA)) +
+  geom_point(aes(y = TOTAL_TRIPS_PRED_GLM)) +
+  geom_abline(intercept = 0, slope = 1) +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  labs(x = "True stratum-specific trips in ADPyear - 1", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
+
+detach(package:dplyr)
+
+#'`----------------------------------------------------------------------------`
+
 # Models ---------------------------------------------------------------------------------------------------------------
 
 # model total trips against year, stratum, and trips through October
@@ -64,9 +161,16 @@ canditate_models <- c("effort_mod3", "effort_mod4", "effort_mod5", "effort_mod_6
 #TODO - here the winner has been selected based on AIC I presume, but this is before any diagnostics.
 effort_mod <- effort_mod4  
 
+# Visualize "best" model (generalized: doesn't include MAX_DATE_TRIPS term)
+ggplot(effort_strata[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
+  geom_point() +
+  stat_smooth(method = "lm", formula = y ~ poly(x, 2)) +
+  facet_wrap(vars(STRATA), scales = "free") +
+  ggtitle("LM")
+
 library(dplyr)
 
-maxback <- 6 #TODO - user defined (here by precident, but add a max possilbe with error)
+maxback <- 6 #TODO - user defined (here by precedent, but add a max possible with error)
 
 for(i in 1:maxback){  
 preds <- effort_strata %>% filter(ADP == ADPyear - i)
@@ -79,7 +183,27 @@ else
   preds_out <- rbind(preds, preds_out)
 }
 
-effort_strata <- merge(effort_strata, preds_out, all.x = TRUE)
+# Visualize predictions
+ggplot(preds_out, aes(x = ADP)) +
+  geom_point(aes(y = TOTAL_TRIPS)) +
+  geom_point(aes(y = MAX_DATE_TRIPS), color = "red", alpha = 0.5) +
+  geom_line(aes(y = TOTAL_TRIPS_PRED), color = "blue") +
+  geom_line(aes(y = TOTAL_TRIPS_PRED_GLM), color = "darkgreen", linetype = 2) +
+  facet_wrap(vars(STRATA), scales = "free") +
+  ggtitle("Blue-solid = LM, Green-dash = GLM, Red-circle = Max date")
+
+# plot retrospective predictions against actuals for ADPyear - 1
+ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = TOTAL_TRIPS, color = STRATA)) +
+  geom_point(aes(y = TOTAL_TRIPS_PRED_GLM), shape = 15) +
+  geom_point(aes(y = TOTAL_TRIPS_PRED), shape = 17, alpha = 0.5) +
+  geom_abline(intercept = 0, slope = 1) +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  labs(x = "True stratum-specific trips in ADPyear - 1", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
+
+#effort_strata <- merge(effort_strata, preds_out, all.x = TRUE)
+effort_strata <- merge(effort_strata, preds_out, all.x = TRUE,
+                       by = c("ADP", "STRATA", "MAX_DATE_TRIPS", "TOTAL_TRIPS", "TOTAL_TRIPS_PRED_GLM"))
 rm(preds_out)
 
 #effort_strata$RESIDUALS <- effort_strata$TOTAL_TRIPS - effort_strata$TOTAL_TRIPS_PRED
@@ -124,7 +248,7 @@ ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = RESIDUALS)
   labs(x = "Residuals")
 
 #TODO - line 131 not working, so I'm trying to remove dplyr but no luck.
-detach("package:dplyr")
+detach(package:dplyr)
 # png("Appendix_C/figures/EffortPredictionResiduals1.png", width = 7, height = 10, units = 'in', res=300)
 # grid.arrange(p1, p2)
 # dev.off()
@@ -223,7 +347,7 @@ Qt <- qt((1 - alpha) / 2, effort_mod$df.residual, lower.tail = FALSE)
 # estimate the prediction intervals for year-level estimates
 effort_year[, ':=' (se = sqrt(var), lwr = TOTAL_TRIPS - (Qt * sqrt(var)), upr = TOTAL_TRIPS + (Qt * sqrt(var)), var = NULL)]
 
-# estimate the prediction intervals for stratum-level estimates
+#' estimate the prediction intervals for stratum-level estimates `CG: Right here it looks like we create a new `*pred*`object and use that to create the values that are plotted. So what was the point of the variance/covariance matrix above?`
 pred <- data.frame(predict(lm(effort_mod$call$formula, data = effort_strata[ADP < ADPyear - 1]), effort_strata[ADP == ADPyear - 1], interval = "prediction"))
 
 effort_strata[ADP >= ADPyear - 1, ":=" (se = (rep(pred$upr, 2) - TOTAL_TRIPS) / Qt, lwr = rep(pred$lwr, 2), upr = rep(pred$upr, 2))]
