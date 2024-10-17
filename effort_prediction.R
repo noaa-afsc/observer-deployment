@@ -192,6 +192,11 @@ ggplot(preds_out, aes(x = ADP)) +
   facet_wrap(vars(STRATA), scales = "free") +
   ggtitle("Blue-solid = LM, Green-dash = GLM, Red-circle = Max date")
 
+#effort_strata <- merge(effort_strata, preds_out, all.x = TRUE)
+effort_strata <- merge(effort_strata, preds_out, all.x = TRUE,
+                       by = c("ADP", "STRATA", "MAX_DATE_TRIPS", "TOTAL_TRIPS", "TOTAL_TRIPS_PRED_GLM"))
+rm(preds_out)
+
 # plot retrospective predictions against actuals for ADPyear - 1
 ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = TOTAL_TRIPS, color = STRATA)) +
   geom_point(aes(y = TOTAL_TRIPS_PRED_GLM), shape = 15) +
@@ -201,14 +206,17 @@ ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = TOTAL_TRIP
   theme(legend.position = "bottom") +
   labs(x = "True stratum-specific trips in ADPyear - 1", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
 
-#effort_strata <- merge(effort_strata, preds_out, all.x = TRUE)
-effort_strata <- merge(effort_strata, preds_out, all.x = TRUE,
-                       by = c("ADP", "STRATA", "MAX_DATE_TRIPS", "TOTAL_TRIPS", "TOTAL_TRIPS_PRED_GLM"))
-rm(preds_out)
-
 #effort_strata$RESIDUALS <- effort_strata$TOTAL_TRIPS - effort_strata$TOTAL_TRIPS_PRED
 
 # End testing ----------------------------------------------------------------------------------------------------------
+
+#'`-------------------------- CHRISTIAN TESTING -------------------------------`
+
+# calculate residuals
+effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED_GLM] #TODO - useful but maybe calculate MSE?
+
+#'`----------------------------------------------------------------------------`
+
 
 # calculate residuals
 effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED] #TODO - useful but maybe calculate MSE?
@@ -260,6 +268,16 @@ detach(package:dplyr)
    effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
    by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
 
+#'`-------------------------- CHRISTIAN TESTING -------------------------------`
+
+effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED_GLM", "RESIDUALS")], 
+                       effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED_GLM)], 
+                       by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
+
+effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED_GLM]
+
+#'`----------------------------------------------------------------------------`
+  
 # recalculate residuals
 effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
 
