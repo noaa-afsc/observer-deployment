@@ -120,7 +120,9 @@ gdrive_download(local_path = "source_data/loki.valhalla.rdata", gdrive_dribble =
 # Check to make sure the Gdrive has the latest version of Valhalla. It should have a run date of ADPyear - 1
 if( year(max(work.data$RUN_DATE, na.rm = T)) != (ADPyear - 1) ) {
   message("Local copy has not been updated with more recent data. Performing SQL query to loki.valhalla.")
+  # Pull a full copy of Valhalla
   work.data <- setDT(dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla")))
+  # Save it and upload to the Gdrive
   save(work.data, file = "source_data/loki.valhalla.rdata")
   gdrive_upload(local_path = "source_data/loki.valhalla.rdata", gdrive_dribble = ADP_dribble)
 }
@@ -135,40 +137,41 @@ date_cols <- c("TRIP_TARGET_DATE", "LANDING_DATE")
 work.data[, (date_cols) := lapply(.SD, as.Date), .SDcols = date_cols]
 work.data <- rbind(work.data, valhalla, fill = T)
 
-work.data[
-  # Convert VESSEL_IDs using as.character to facilitate a later join with vessel lengths
-][, VESSEL_ID := as.character(VESSEL_ID)
-  # In the past, there was one record for which TENDER == "n", so convert to upper case
-][, TENDER := toupper(TENDER)]
+# Convert VESSEL_IDs using as.character to facilitate a later join with vessel lengths
+# In the past, there was one record for which TENDER == "n", so convert to upper case
+work.data |>
+  _[, VESSEL_ID := as.character(VESSEL_ID)
+  ][, TENDER := toupper(TENDER)]
 
 # Defer to database dates for all trips in valhalla with dates that don't match the database
 up_dates[, ':='(DB_TRIP_TARGET_DATE = as.Date(DB_TRIP_TARGET_DATE), DB_LANDING_DATE = as.Date(DB_LANDING_DATE))]
 
 # View the changes to be made to dates
-changes <- unique(
-  up_dates[
-  ][work.data, on =.(REPORT_ID)
+changes <- up_dates |>
+  _[work.data, on =.(REPORT_ID)
   ][TRIP_TARGET_DATE != DB_TRIP_TARGET_DATE | LANDING_DATE != DB_LANDING_DATE, .(
     ADP, TRIP_ID, REPORT_ID, TRIP_TARGET_DATE, DB_TRIP_TARGET_DATE, LANDING_DATE, DB_LANDING_DATE
-  )]
-)[, ':='(
-  TRIP_TARGET_DATE_DIFF = as.numeric(DB_TRIP_TARGET_DATE - TRIP_TARGET_DATE), 
-  LANDING_DATE_DIFF = as.numeric(DB_LANDING_DATE - LANDING_DATE)
-)
-][order(-abs(TRIP_TARGET_DATE_DIFF))]
+  )] |>
+  unique() |>
+  _[, ':='(
+    TRIP_TARGET_DATE_DIFF = as.numeric(DB_TRIP_TARGET_DATE - TRIP_TARGET_DATE), 
+    LANDING_DATE_DIFF = as.numeric(DB_LANDING_DATE - LANDING_DATE))
+  ][order(-abs(TRIP_TARGET_DATE_DIFF))]
 
 # Defer to database when dates don't match
-work.data <- up_dates[work.data, on = .(REPORT_ID)]
-work.data[
-][!is.na(DB_TRIP_TARGET_DATE) & TRIP_TARGET_DATE != DB_TRIP_TARGET_DATE, TRIP_TARGET_DATE := DB_TRIP_TARGET_DATE
-][!is.na(DB_LANDING_DATE) & LANDING_DATE != DB_LANDING_DATE, LANDING_DATE := DB_LANDING_DATE
-][, ':='(DB_TRIP_TARGET_DATE = NULL, DB_LANDING_DATE = NULL)]
+work.data <- up_dates |>
+  _[work.data, on = .(REPORT_ID)
+  ][!is.na(DB_TRIP_TARGET_DATE) & TRIP_TARGET_DATE != DB_TRIP_TARGET_DATE, TRIP_TARGET_DATE := DB_TRIP_TARGET_DATE
+  ][!is.na(DB_LANDING_DATE) & LANDING_DATE != DB_LANDING_DATE, LANDING_DATE := DB_LANDING_DATE
+  ][, ':='(DB_TRIP_TARGET_DATE = NULL, DB_LANDING_DATE = NULL)]
 
 # View the changes to be made to gear
 work.data[AGENCY_GEAR_CODE != DB_AGENCY_GEAR_CODE, .(REPORT_IDS = uniqueN(REPORT_ID)), by = .(AGENCY_GEAR_CODE, DB_AGENCY_GEAR_CODE)]
 
 # Defer to database when gear doesn't match
-work.data[AGENCY_GEAR_CODE != DB_AGENCY_GEAR_CODE, AGENCY_GEAR_CODE := DB_AGENCY_GEAR_CODE][, DB_AGENCY_GEAR_CODE := NULL]
+work.data |>
+  _[AGENCY_GEAR_CODE != DB_AGENCY_GEAR_CODE, AGENCY_GEAR_CODE := DB_AGENCY_GEAR_CODE
+  ][, DB_AGENCY_GEAR_CODE := NULL]
 
 # Maximum date in valhalla - This will be saved as an output and used to ensure 
 # 3 full years of data are packaged for trips_melt, efrt, and full coverage summaries
@@ -196,10 +199,10 @@ AKROVL <- AKROVL %>% filter(VESSEL_ID %in% unique(work.data$VESSEL_ID))
 VL <- setDT(merge(FMAVL, AKROVL, all = TRUE))
 
 # Update vessel length, giving precedence to FMA lengths
-work.data <- merge(work.data, VL, all.x = TRUE)[
-][!is.na(FMAVL), LENGTH_OVERALL := FMAVL
-][is.na(LENGTH_OVERALL), LENGTH_OVERALL := AKROVL
-][, c("FMAVL", "AKROVL") := NULL]
+work.data <- merge(work.data, VL, all.x = TRUE) |>
+  _[!is.na(FMAVL), LENGTH_OVERALL := FMAVL
+  ][is.na(LENGTH_OVERALL), LENGTH_OVERALL := AKROVL
+  ][, c("FMAVL", "AKROVL") := NULL]
 
 # * Combine catcher-processors and motherships into one processing sector ----
 
@@ -211,30 +214,29 @@ work.data[PROCESSING_SECTOR %in% c("CP", "M"), PROCESSING_SECTOR := "CP_M"]
 distinct(work.data, COVERAGE_TYPE, STRATA) %>% 
   arrange(COVERAGE_TYPE, STRATA)
 
-work.data[
-  # Create empty CVG_NEW column
-][, CVG_NEW := NA_character_
+# When chaining multiple set operations together, it is best to use |> pipe notation.
+work.data |>
   # Mandatory full coverage
-][COVERAGE_TYPE == "FULL" & STRATA %in% c("FULL", "EM_TRW_EFP", "VOLUNTARY", "EM_TRW_BSAI"), CVG_NEW := "FULL"
+  _[COVERAGE_TYPE == "FULL" & STRATA %in% c("FULL", "EM_TRW_EFP", "VOLUNTARY", "EM_TRW_BSAI"), CVG_NEW := "FULL"
   # PCTC
-][VESSEL_ID %in% pctc$VESSEL_ID & 
-    FMP %in% c("BS", "AI", "BSAI") & 
-    AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & TRIP_TARGET_CODE == "C" &
-    # Only applies to A & B season
-    yday(make_date(ADP, 12, 31)) - yday(TRIP_TARGET_DATE) > 204,
-  CVG_NEW := "FULL"
+  ][VESSEL_ID %in% pctc$VESSEL_ID & 
+      FMP %in% c("BS", "AI", "BSAI") & 
+      AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & TRIP_TARGET_CODE == "C" &
+      # Only applies to A & B season
+      yday(make_date(ADP, 12, 31)) - yday(TRIP_TARGET_DATE) > 204,
+    CVG_NEW := "FULL"
   # Voluntary full coverage: opted in for ADPyear
-][VESSEL_ID %in% BSAIVoluntary$VESSEL_ID &
-    FMP %in% c("BS", "AI", "BSAI") &
-    AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & 
-    PROCESSING_SECTOR == "S", 
-  CVG_NEW := "FULL"
+  ][VESSEL_ID %in% BSAIVoluntary$VESSEL_ID &
+      FMP %in% c("BS", "AI", "BSAI") &
+      AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & 
+      PROCESSING_SECTOR == "S", 
+    CVG_NEW := "FULL"
   # Voluntary full coverage: opted in for past years, but not for ADPyear  
-][is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA == "FULL", CVG_NEW := "PARTIAL"
+  ][is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA == "FULL", CVG_NEW := "PARTIAL"
   # Cooperative full coverage
-][AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & MANAGEMENT_PROGRAM_CODE %in% c("RPP", "AFA", "A80"), CVG_NEW :=  "FULL"
+  ][AGENCY_GEAR_CODE %in% c("NPT", "PTR", "TRW") & MANAGEMENT_PROGRAM_CODE %in% c("RPP", "AFA", "A80"), CVG_NEW :=  "FULL"
   # Partial CPs
-][VESSEL_ID %in% PartialCPs$VESSEL_ID & PROCESSING_SECTOR == "CP_M", CVG_NEW := "PARTIAL"][]
+  ][VESSEL_ID %in% PartialCPs$VESSEL_ID & PROCESSING_SECTOR == "CP_M", CVG_NEW := "PARTIAL"]
 
 # View remaining coverage type / strata combinations
 distinct(work.data, COVERAGE_TYPE, CVG_NEW, STRATA) %>% 
@@ -243,18 +245,16 @@ distinct(work.data, COVERAGE_TYPE, CVG_NEW, STRATA) %>%
 # Partial coverage strata
 work.data[
   is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA %in% c(
-    "EM", "EM Voluntary", "EM_FIXED_BSAI", "EM_FIXED_GOA", "EM_HAL", "EM_POT", "EM_TRW_EFP", "EM_TRW_GOA", "EM_TenP",
-    "HAL", "OB_FIXED_BSAI", "OB_FIXED_GOA", "OB_TRW_BSAI", "OB_TRW_GOA", "POT", "T", "TRIP", "TRW", "TenH", "TenP",
-    "TenTR", "VESSEL", "ZERO", "ZERO_EM_RESEARCH", "t"
-  ),
-  CVG_NEW := "PARTIAL"
-]
+  "EM", "EM Voluntary", "EM_FIXED_BSAI", "EM_FIXED_GOA", "EM_HAL", "EM_POT", "EM_TRW_EFP", "EM_TRW_GOA", "EM_TenP",
+  "HAL", "OB_FIXED_BSAI", "OB_FIXED_GOA", "OB_TRW_BSAI", "OB_TRW_GOA", "POT", "T", "TRIP", "TRW", "TenH", "TenP",
+  "TenTR", "VESSEL", "ZERO", "ZERO_EM_RESEARCH", "t"
+), CVG_NEW := "PARTIAL"]
 
 # Split trips that fished both full and partial coverage
-work.data[
-][, N := uniqueN(CVG_NEW), by = .(TRIP_ID)
-][N > 1, TRIP_ID := ifelse(CVG_NEW != "FULL", paste(TRIP_ID, "1"), paste(TRIP_ID, "2"))
-][, N := NULL]
+work.data |>
+  _[, N := uniqueN(CVG_NEW), by = .(TRIP_ID)
+  ][N > 1, TRIP_ID := ifelse(CVG_NEW != "FULL", paste(TRIP_ID, "1"), paste(TRIP_ID, "2"))
+  ][, N := NULL]
 
 # Check for remaining NAs in CVG_NEW
 filter(work.data, is.na(CVG_NEW)) %>% 
@@ -265,45 +265,45 @@ gc()
 # * STRATA_NEW ----
 
 # For each trip, identify which FMP had most retained catch, splitting FMP by BSAI and GOA
-fmp_bsai_goa <- work.data[
-][SOURCE_TABLE == "Y", .(
-  TRIP_ID, WEIGHT_POSTED,
-  BSAI_GOA = fcase(
-    FMP == "GOA", "GOA",
-    FMP %in% c("BS", "AI", "BSAI"), "BSAI")
-)][, .(
-  FMP_WT = sum(WEIGHT_POSTED, na.rm = T)
-), by = .(TRIP_ID, BSAI_GOA)
-][, .SD[which.max(FMP_WT)], by = .(TRIP_ID)
-][, FMP_WT := NULL][]
+fmp_bsai_goa <- copy(work.data) |>
+  _[SOURCE_TABLE == "Y", .(
+    TRIP_ID, WEIGHT_POSTED,
+    BSAI_GOA = fcase(
+      FMP == "GOA", "GOA",
+      FMP %in% c("BS", "AI", "BSAI"), "BSAI")
+  )][, .(
+    FMP_WT = sum(WEIGHT_POSTED, na.rm = T)
+  ), by = .(TRIP_ID, BSAI_GOA)
+  ][, .SD[which.max(FMP_WT)], by = .(TRIP_ID)
+  ][, FMP_WT := NULL][]
 
 # Merge in FMP classifications, the BSAI_COL that identifies which FMP contains the majority of retained catch. 
 work.data <- work.data[fmp_bsai_goa, on = .(TRIP_ID)]
 # Initialize STRATA_NEW
-work.data[
+work.data |>
   # Base STRATA_NEW on AGENCY_GEAR_CODE
-][, STRATA_NEW := recode(AGENCY_GEAR_CODE, "PTR" = "TRW", "NPT" = "TRW", "JIG" = "ZERO")
-  # Full coverage
-][CVG_NEW == "FULL", STRATA_NEW := "FULL"
-  # Zero coverage
-][CVG_NEW == "PARTIAL" & STRATA == "ZERO", STRATA_NEW := "ZERO"
-  # Fixed-gear EM. Base STRATUM_NEW on gear type and BSAI_GOA
-][VESSEL_ID %in% em_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), STRATA_NEW := paste("EM_FIXED", BSAI_GOA, sep = "-")
-  # Fixed-gear EM research
-][VESSEL_ID %in% em_research$VESSEL_ID, STRATA_NEW := "ZERO"
-  # Trawl EM
-][, TRAWL_EM_FLAG := VESSEL_ID %in% trawl_em$PERMIT & all(AGENCY_GEAR_CODE == "PTR") & all(TRIP_TARGET_CODE %in% c("B", "P"))
-  , by = .(TRIP_ID)          
-][TRAWL_EM_FLAG == T, STRATA_NEW := paste("EM_TRW", BSAI_GOA, sep = "_")       #' CHANGED FMP TO BSAI_GOA TO GET RID OF EM_TRW_BS record
-][STRATA_NEW == "EM_TRW-GOA", CVG_NEW := "PARTIAL"
-][, TRAWL_EM_FLAG := NULL]
-
-# Separate Monitoring Method and Stratum from FMP using a hyphen
-work.data[STRATA_NEW %like% "EM_TRW_", STRATA_NEW := sub("EM_TRW_", "EM_TRW-", STRATA_NEW)]
-
-# At-sea Observer Strata. Base STRATUM_NEW on gear type and BSAI_GOA
-work.data[STRATA_NEW == "TRW", STRATA_NEW := paste0("OB_", STRATA_NEW, "-", BSAI_GOA)]
-work.data[STRATA_NEW %in% c("HAL", "POT"), STRATA_NEW := paste0("OB_FIXED-", BSAI_GOA)]
+  _[, STRATA_NEW := recode(AGENCY_GEAR_CODE, "PTR" = "TRW", "NPT" = "TRW", "JIG" = "ZERO")
+    # Full coverage
+  ][CVG_NEW == "FULL", STRATA_NEW := "FULL"
+    # Zero coverage
+  ][CVG_NEW == "PARTIAL" & STRATA == "ZERO", STRATA_NEW := "ZERO"
+    # Fixed-gear EM. Base STRATUM_NEW on gear type and BSAI_GOA
+  ][VESSEL_ID %in% em_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), STRATA_NEW := paste("EM_FIXED", BSAI_GOA, sep = "-")
+    # Fixed-gear EM research
+  ][VESSEL_ID %in% em_research$VESSEL_ID, STRATA_NEW := "ZERO"
+    # Trawl EM
+  ][, TRAWL_EM_FLAG := VESSEL_ID %in% trawl_em$PERMIT & all(AGENCY_GEAR_CODE == "PTR") & all(TRIP_TARGET_CODE %in% c("B", "P"))
+    , by = .(TRIP_ID)          
+  ][TRAWL_EM_FLAG == T, STRATA_NEW := paste("EM_TRW", BSAI_GOA, sep = "_")       #' CHANGED FMP TO BSAI_GOA TO GET RID OF EM_TRW_BS record
+  ][STRATA_NEW == "EM_TRW-GOA", CVG_NEW := "PARTIAL"
+  ][, TRAWL_EM_FLAG := NULL]
+# Refine STRATA_NEW, fixing labels and defining strata for observer strata
+work.data |>
+  # Separate Monitoring Method and Stratum from FMP using a hyphen
+  _[STRATA_NEW %like% "EM_TRW_", STRATA_NEW := sub("EM_TRW_", "EM_TRW-", STRATA_NEW)
+    # At-sea Observer Strata. Base STRATUM_NEW on gear type and BSAI_GOA
+  ][STRATA_NEW == "TRW", STRATA_NEW := paste0("OB_", STRATA_NEW, "-", BSAI_GOA)
+  ][STRATA_NEW %in% c("HAL", "POT"), STRATA_NEW := paste0("OB_FIXED-", BSAI_GOA)]
 
 # View all strata conversions
 distinct(work.data, CVG_NEW, STRATA, STRATA_NEW) %>% 
@@ -327,18 +327,16 @@ over_forties <- filter(work.data, LENGTH_OVERALL > 39 & AGENCY_GEAR_CODE != "JIG
 over_forties
 
 # Flip STRATA_NEW to gear-based strata for vessels that are > 40
-work.data[
-  TRIP_ID %in% over_forties$TRIP_ID & !(VESSEL_ID %in% em_base$VESSEL_ID), 
-  STRATA_NEW := paste0("OB_FIXED-", BSAI_GOA)
-][
-  TRIP_ID %in% over_forties$TRIP_ID & VESSEL_ID %in% em_base$VESSEL_ID,
-  STRATA_NEW := .SD[any(AGENCY_GEAR_CODE %in% c("HAL", "POT")), paste0("EM_FIXED-", BSAI_GOA)],
-  by = .(TRIP_ID)
-]
+work.data |>
+  _[TRIP_ID %in% over_forties$TRIP_ID & !(VESSEL_ID %in% em_base$VESSEL_ID), 
+    STRATA_NEW := paste0("OB_FIXED-", BSAI_GOA)
+  ][TRIP_ID %in% over_forties$TRIP_ID & VESSEL_ID %in% em_base$VESSEL_ID,
+    STRATA_NEW := .SD[any(AGENCY_GEAR_CODE %in% c("HAL", "POT")), paste0("EM_FIXED-", BSAI_GOA)],
+    by = .(TRIP_ID)]
 
 # If jig gear was used and there is any other stratum assigned aside from ZERO, use that stratum
 work.data[, STRATA_NEW := if( 
-  any(AGENCY_GEAR_CODE == "JIG") & length(unique(STRATA_NEW)) > 1) STRATA_NEW[STRATA_NEW != "ZERO"][1] , 
+  any(AGENCY_GEAR_CODE == "JIG") & length(unique(STRATA_NEW)) > 1) STRATA_NEW[STRATA_NEW != "ZERO"][1], 
   by = .(TRIP_ID)]
 
 # View over_forties strata conversions to see if they make sense
@@ -355,7 +353,7 @@ work.data %>%
 # View all strata conversions to see if they make sense
 distinct(work.data, STRATA, AGENCY_GEAR_CODE, STRATA_NEW) %>% 
   arrange(STRATA_NEW, STRATA, AGENCY_GEAR_CODE) %>% 
-  print(n = Inf)
+  print(nrow = Inf)
 
 # View distinct coverage types and strata
 distinct(work.data, CVG_NEW, STRATA_NEW) %>% 
@@ -364,10 +362,11 @@ distinct(work.data, CVG_NEW, STRATA_NEW) %>%
 # * PORT_NEW ----
 
 # Some trips have more than one port listed. Default to the port with the most landed fish.
-work.data[, PORT_NEW := work.data[
-][, sum(WEIGHT_POSTED, na.rm = T), by = .(TRIP_ID, PORT_CODE)
-][, PORT_CODE[which.max(V1)],  by = .(TRIP_ID)
-][work.data, V1, on = .(TRIP_ID)]]
+work.data |>
+  _[, PORT_NEW := work.data[
+  ][, sum(WEIGHT_POSTED, na.rm = T), by = .(TRIP_ID, PORT_CODE)
+  ][, PORT_CODE[which.max(V1)],  by = .(TRIP_ID)
+  ][work.data, V1, on = .(TRIP_ID)]]
 
 # * Check for more than one STRATA or STRATA_NEW within TRIP_IDs ----
 
@@ -385,10 +384,11 @@ if(nrow(dups) != 0){
 # For remaining combo strata trips, default to stratum with the most landed weight
 if( nrow(work.data[, .(STRATA_N = uniqueN(STRATA_NEW)), keyby = .(TRIP_ID)][STRATA_N > 1]) > 0 ) {
   warning("Some trips still have multiple STRATA_NEW. Defaulting to STRATA_NEW with highest landed weight.")
-  work.data[, STRATA_NEW := work.data[
-  ][, sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T), by = .(TRIP_ID, STRATA_NEW)
-  ][, STRATA_NEW[which.max(V1)], by = .(TRIP_ID)
-  ][work.data, V1, on = .(TRIP_ID)]]
+  work.data |>
+    _[, STRATA_NEW := work.data[
+    ][, sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T), by = .(TRIP_ID, STRATA_NEW)
+    ][, STRATA_NEW[which.max(V1)], by = .(TRIP_ID)
+    ][work.data, V1, on = .(TRIP_ID)]]
 }
 
 # Check for any remaining combo strata trips 
@@ -528,18 +528,22 @@ if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected 
 
 # * Full Coverage Summary ----
 
-full_efrt <- unique(unique(work.data[
-][CVG_NEW == "FULL", .(
-  POOL = "FULL", STRATA = STRATA_NEW, FMP, AREA = REPORTING_AREA_CODE, TARGET = TRIP_TARGET_CODE, 
-  AGENCY_GEAR_CODE, PERMIT, MONTH,
-  START = min(TRIP_TARGET_DATE, LANDING_DATE, na.rm = TRUE), 
-  END = max(TRIP_TARGET_DATE, LANDING_DATE, na.rm = TRUE)
-), keyby=.(ADP, TRIP_ID)
-])[
+full_efrt <- work.data[
+  CVG_NEW == "FULL", 
+  .(
+    POOL = "FULL", STRATA = STRATA_NEW, FMP, AREA = REPORTING_AREA_CODE, TARGET = TRIP_TARGET_CODE, 
+    AGENCY_GEAR_CODE, PERMIT, MONTH,
+    START = min(TRIP_TARGET_DATE, LANDING_DATE, na.rm = TRUE), 
+    END = max(TRIP_TARGET_DATE, LANDING_DATE, na.rm = TRUE)
+  ),
+  keyby = .(ADP, TRIP_ID)] |>
+  unique() |>
   # Create GEAR column (i.e. TRW instead of NPT or PTR)
-][, GEAR := ifelse(AGENCY_GEAR_CODE %in% c("NPT", "PTR"), "TRW", AGENCY_GEAR_CODE)
-  # Simplify 'bottom pollock' and 'pelagic pollock' to have only one 'pollock' target designation
-][TARGET == "B", TARGET := "P"][])
+  _[, GEAR := ifelse(AGENCY_GEAR_CODE %in% c("NPT", "PTR"), "TRW", AGENCY_GEAR_CODE)
+    # Simplify 'bottom pollock' and 'pelagic pollock' to have only one 'pollock' target designation
+  ][TARGET == "B", TARGET := "P"][] |>
+  unique()
+
 unique(full_efrt[, .(TRIP_ID, GEAR)])[, .N, keyby = GEAR]                         # Here is a rough summary of trip counts by gear type without adjusting for EM/COD
 
 # * EM Vessel Summary ----
@@ -548,8 +552,8 @@ fg_em <- setDT(copy(em_base))[, .(VESSEL_NAME, PERMIT = VESSEL_ID)]
 # Add back EM research vessels
 fg_em <- rbind(fg_em, data.table(VESSEL_NAME = em_research$VESSEL_NAME, PERMIT = em_research$VESSEL_ID))
 fg_em[, FLAG := ifelse(PERMIT %in% em_research$VESSEL_ID, "RESEARCH", "NONE")]
-# Add back EM requesting vessels
-fg_em <- rbind(fg_em, setDT(copy(em_requests))[, .(VESSEL_NAME, PERMIT=VESSEL_ID)], fill = TRUE)
+# Add back EM requesting vessels, then make unique list
+fg_em <- rbind(fg_em, setDT(copy(em_requests))[, .(VESSEL_NAME, PERMIT = VESSEL_ID)], fill = TRUE)
 fg_em[, FLAG := ifelse(PERMIT %in% em_requests$VESSEL_ID, "REQUEST", FLAG)]
 # Make vessel list unique
 fg_em <- unique(fg_em)
@@ -558,21 +562,20 @@ fg_em[, .N, by = FLAG]
 
 # * Effort prediction ----
 
-effort_strata <- setorder(unique(
-  work.data[
-    # select necessary columns
-  ][CVG_NEW == "PARTIAL", .(ADP, STRATA = STRATA_NEW, TRIP_TARGET_DATE, TRIP_ID)
+effort_strata <- work.data |>
+  # select necessary columns
+  _[CVG_NEW == "PARTIAL", .(ADP, STRATA = STRATA_NEW, TRIP_TARGET_DATE, TRIP_ID)
     # ensure one trip target date per trip, making it the minimum trip target date
-  ][, TRIP_TARGET_DATE := min(TRIP_TARGET_DATE), by = TRIP_ID]
-), ADP, STRATA, TRIP_TARGET_DATE)[
-  # split trips if they occurred in more than one stratum
-][ , TRIPS := 1/.N, by = TRIP_ID
-   # find julian dates
-][, JULIAN_DATE := yday(TRIP_TARGET_DATE)
-  # set julian date to 1 for trips that left in year adp - 1
-][, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) < ADP, 1, JULIAN_DATE)
-  # set julian date to 366 for trips that left in year adp + 1
-][, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) > ADP, 366, JULIAN_DATE)][]
+  ][, TRIP_TARGET_DATE := min(TRIP_TARGET_DATE), by = TRIP_ID] |>
+  unique() |>
+  setorder(ADP, STRATA, TRIP_TARGET_DATE) |>
+  _[ , TRIPS := 1/.N, by = TRIP_ID
+     # find julian dates
+  ][, JULIAN_DATE := yday(TRIP_TARGET_DATE)
+    # set julian date to 1 for trips that left in year adp - 1
+  ][, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) < ADP, 1, JULIAN_DATE)
+    # set julian date to 366 for trips that left in year adp + 1
+  ][, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) > ADP, 366, JULIAN_DATE)][] 
 
 # isolate the latest date for which we have data in the most recent year of valhalla
 effort_strata.max_date <- max(effort_strata[ADP == ADPyear - 1, JULIAN_DATE])
@@ -587,11 +590,11 @@ effort_strata <- effort_strata[, .(
 # Final outputs ----
 
 out_name <- paste(ADPyear, ADP_version, "ADP_data.rdata", sep="_")
-out_save <- getPass::getPass(paste0("Would you like to save off a new version of ", out_name, "? (Enter Y or N)"))
+out_save <- readline(prompt = message(paste0("Would you like to save off a new version of ", out_name, "? (Enter Y or N) ")))
 
 if(out_save == "Y"){  
-  #' For posterity, we will save the full `work.data` object. 
-  save(work.data, file = "source_data/work.data.rdata")o
+  #' For posterity, we will save the full `work.data` object.
+  save(work.data, file = "source_data/work.data.rdata")
   #' Upload to shared Gdrive source_data folder
   gdrive_upload(local_path = "source_data/work.data.rdata", gdrive_dribble = ADP_dribble)
   
@@ -605,4 +608,3 @@ if(out_save == "Y"){
   #' Upload to shared Gdrive source_data folder
   gdrive_upload(local_path = paste0("source_data/", out_name), gdrive_dribble = ADP_dribble)
 }
-
