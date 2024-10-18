@@ -84,7 +84,7 @@ Fit <- fitted(effort_glm)
 eta <- predict(effort_glm, type = "link")
 plot(x = Fit, y = E, xlab = "Fitted values", ylab = "Pearson residuals")
 abline(h = 0, v = 0, lty = 2)
-plot(x = eta, y = E, xlab = "Eta", ylab = "Pearson residuals")
+plot(x = eta, y = E, xlab = "Eta", ylab = "Pearson residuals") # This one we can get simply by: plot(effort_glm)
 abline(h = 0, v = 0, lty = 2)
 
 # Plot "best" model for visual evaluation
@@ -94,8 +94,7 @@ abline(h = 0, v = 0, lty = 2)
 ggplot(effort_strata[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
   geom_point() +
   stat_smooth(method = "glm", formula = y ~ poly(x, 3), method.args = list(family = "quasipoisson")) +
-  facet_wrap(vars(STRATA), scales = "free") +
-  ggtitle("GLM")
+  facet_wrap(vars(STRATA), scales = "free")
 
 library(dplyr)
 
@@ -150,8 +149,6 @@ ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - maxback], aes(x = RESI
   theme_bw() +
   labs(x = "Residuals")
 
-#TODO - line 131 not working, so I'm trying to remove dplyr but no luck.
-
 detach("package:dplyr")
 
 # png("Appendix_C/figures/EffortPredictionResiduals1.png", width = 7, height = 10, units = 'in', res=300)
@@ -164,18 +161,8 @@ detach("package:dplyr")
  effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], 
    effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
    by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
-
-#'`-------------------------- CHRISTIAN TESTING -------------------------------`
-
-effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED_GLM", "RESIDUALS")], 
-                       effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED_GLM)], 
-                       by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
-
-effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
-
-#'`----------------------------------------------------------------------------`
  
-#Gotta recalculate residuals.
+# Gotta recalculate residuals.
 effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
 
 # plot retrospecitve predictions against actuals for ADPyear
