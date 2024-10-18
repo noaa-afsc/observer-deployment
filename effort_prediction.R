@@ -69,7 +69,7 @@ anova(effort_glm3, effort_glm2, test = "F")
 anova(effort_glm4, effort_glm3, test = "F")
 anova(effort_glm5, effort_glm4, test = "F")
 
-# "Best" model (for now just based on "a feeling")
+# TODO - improve - "Best" model (for now just based on "a feeling")
 effort_glm <- effort_glm4
 
 # Evaluate "best" model
@@ -90,6 +90,8 @@ abline(h = 0, v = 0, lty = 2)
 
 # Plot "best" model for visual evaluation
 # General plot (doesn't include third model term)
+
+#TODO - generalize - below is hard code of "effort_glm"
 ggplot(effort_strata[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
   geom_point() +
   stat_smooth(method = "glm", formula = y ~ poly(x, 3), method.args = list(family = "quasipoisson")) +
@@ -98,11 +100,11 @@ ggplot(effort_strata[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
 
 library(dplyr)
 
-maxback <- 6 #TODO - user defined (here by precedent, but add a max possible with error)
+maxback <- 6 #TODO - user defined (here by precedent, but add a max possible with an error if it exceeds number of ADP by three or four...)
 
 for(i in 1:maxback){
   preds <- effort_strata %>% filter(ADP == ADPyear - i)
-  preds$TOTAL_TRIPS_PRED_GLM3 <- predict(effort_glm, type = "response", preds)
+  preds$TOTAL_TRIPS_PRED_GLM <- predict(effort_glm, type = "response", preds)
   if(i == 1)
     preds_out <- preds
   else
