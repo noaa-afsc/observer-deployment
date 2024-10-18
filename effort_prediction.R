@@ -79,6 +79,8 @@ N <- nrow(effort_strata[ADP < ADPyear -1])
 p <- length(coef(effort_glm)) + 1
 sum(E ^ 2) / (N - p) # Check for overdispersion (if > 1, then overdispersed)
 # 2) Check residuals
+
+#TODO - better way to get these?
 Fit <- fitted(effort_glm)
 eta <- predict(effort_glm, type = "link")
 plot(x = Fit, y = E, xlab = "Fitted values", ylab = "Pearson residuals")
@@ -99,10 +101,8 @@ library(dplyr)
 maxback <- 6 #TODO - user defined (here by precedent, but add a max possible with error)
 
 for(i in 1:maxback){
-  #i <- 1
   preds <- effort_strata %>% filter(ADP == ADPyear - i)
-  
-  preds$TOTAL_TRIPS_PRED_GLM <- predict(effort_glm4, data = effort_strata[effort_strata$ADP < ADPyear - i], type = "response", preds)
+  preds$TOTAL_TRIPS_PRED_GLM3 <- predict(effort_glm, type = "response", preds)
   if(i == 1)
     preds_out <- preds
   else
