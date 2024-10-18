@@ -84,7 +84,7 @@ Fit <- fitted(effort_glm)
 eta <- predict(effort_glm, type = "link")
 plot(x = Fit, y = E, xlab = "Fitted values", ylab = "Pearson residuals")
 abline(h = 0, v = 0, lty = 2)
-plot(x = eta, y = E, xlab = "Eta", ylab = "Pearson residuals") # This one we can get simply by: plot(effort_glm)
+plot(x = eta, y = E, xlab = "Eta", ylab = "Pearson residuals") # This one we can get simply by: plot(effort_glm) - 1st plot 
 abline(h = 0, v = 0, lty = 2)
 
 # Plot "best" model for visual evaluation
