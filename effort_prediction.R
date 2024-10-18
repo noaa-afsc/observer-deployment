@@ -98,6 +98,9 @@ ggplot(effort_strata[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
 
 library(dplyr)
 
+# TODO Currently this is not calculating for each year separately
+# 1) Used to assess how good our predictions are
+# 2) Creates predicted data for next year
 maxback <- 6 #TODO - user defined (here by precedent, but add a max possible with an error if it exceeds number of ADP by three or four...)
 
 for(i in 1:maxback){
@@ -108,6 +111,19 @@ for(i in 1:maxback){
   else
     preds_out <- rbind(preds, preds_out)
 }
+
+#'`Below is attempt to "fix" what this data is doing`
+#for(i in 1:maxback){
+#  i <- 1
+#  preds <- effort_strata %>% filter(ADP == ADPyear - i)
+#  preds$TOTAL_TRIPS_PRED <- predict(glm(formula = effort_glm$formula, data = effort_strata[ADP < ADPyear - i],
+#                                        family = effort_glm$family$family), type = "response", preds)
+#  if(i == 1)
+#    preds_out <- preds
+#  else
+#    preds_out <- rbind(preds, preds_out)
+#}
+#'`-----------------------------------------------------`
 
 # Visualize predictions
 ggplot(preds_out, aes(x = ADP)) +
@@ -163,21 +179,15 @@ ndata <- bind_cols(effort_strata[ADP <= ADPyear - 1],
                                               se.fit = TRUE)[1:2]),
                             c("fit_link", "se_link")))
 
-# Create the interval and back transform
-ndata <- ndata %>%
-  mutate(fit_resp = ilink(fit_link),
-         upr = ilink(fit_link + (2 * se_link)),
-         lwr = ilink(fit_link - (2 * se_link))) %>%
-  # Assign 2024 total trips as predicted trips
-  mutate(TOTAL_TRIPS = case_when(is.na(TOTAL_TRIPS) ~ fit_resp,
-                                 TRUE ~ TOTAL_TRIPS))
+# TODO Add 2025 projection
 
-#'` This is the same as above, but uses maths from predFit to calculate CI`
-ndata.test <- ndata %>%
+# Based off of code used to calculate these in function investr::predFit
+# https://rdrr.io/cran/investr/src/R/predFit.R
+ndata <- ndata %>%
   mutate(fit_resp = ilink(fit_link),
          upr = ilink(fit_link + se_link * stats::qnorm((0.95 + 1) / 2)),
          lwr = ilink(fit_link - se_link * stats::qnorm((0.95 + 1) / 2))) %>%
-  # Assign 2024 total trips as predicted trips
+  # Assign 2024+ predicted trips as total trips
   mutate(TOTAL_TRIPS = case_when(is.na(TOTAL_TRIPS) ~ fit_resp,
                                  TRUE ~ TOTAL_TRIPS))
 
@@ -187,10 +197,32 @@ ggplot(ndata[ADP >= ADPyear - 6], aes(x = ADP)) +
   geom_line(aes(y = TOTAL_TRIPS)) +
   geom_point(data = ndata[ADP == ADPyear - 1], aes(y = TOTAL_TRIPS), color = "red") +
   geom_errorbar(data = ndata[ADP == ADPyear - 1], aes(ymin = lwr, ymax = upr), color = "red", width = 0.2) +
-  facet_wrap(vars(STRATA))
+  geom_errorbar(data = ndata[ADP == ADPyear - 2], aes(ymin = lwr, ymax = upr), color = "red", width = 0.2) +
+  facet_wrap(vars(STRATA), scales = "free")
+
+# Prediction intervals
+# https://cran.r-project.org/web/packages/ciTools/vignettes/ciTools-glm-vignette.html
+if(!require("ciTools"))   install.packages("ciTools", repos='http://cran.us.r-project.org')
+
+pred_ints <- add_pi(df = as.data.frame(effort_strata[ADP < ADPyear - 1]), fit = effort_glm, names = c("lpb", "upb"), nSims = 10000, alpha = 0.05) %>%
+  add_ci(fit = effort_glm, names = c("lcb", "ucb"), alpha = 0.05)
+
+ggplot(pred_ints, aes(x = ADP, y = TOTAL_TRIPS)) +
+  geom_point() +
+  geom_ribbon(aes(ymin = lpb, ymax = upb), alpha = 0.5) +
+  geom_ribbon(aes(ymin = lcb, ymax = ucb), alpha = 0.5, color = "blue") +
+  facet_wrap(vars(STRATA), scales = "free")
+
+ggplot(pred_ints, aes(x = ADP, y = TOTAL_TRIPS)) +
+  geom_point() +
+  geom_ribbon(aes(ymin = lpb, ymax = upb), alpha = 0.5) +
+  geom_ribbon(aes(ymin = lcb, ymax = ucb), alpha = 0.5, color = "blue") +
+  geom_point(data = ndata[ADP == ADPyear - 1], aes(y = TOTAL_TRIPS), color = "red") +
+  geom_errorbar(data = ndata[ADP == ADPyear - 1], aes(ymin = lwr, ymax = upr), color = "red", width = 0.2) +
+  geom_errorbar(data = ndata[ADP == ADPyear - 2], aes(ymin = lwr, ymax = upr), color = "red", width = 0.2) +
+  facet_wrap(vars(STRATA), scales = "free")
 
 #'`----------------------------------------------------------------------------`
-
 
 detach("package:dplyr")
 
