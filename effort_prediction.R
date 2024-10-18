@@ -34,7 +34,6 @@ load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
 
 rm(ADP_dribble)
 
-#'`-------------------------- CHRISTIAN TESTING -------------------------------`
 # Visualize data
 ggplot(data = effort_strata[ADP < ADPyear - 1]) +
   geom_col(aes(x = ADP, y = TOTAL_TRIPS)) + facet_wrap(vars(STRATA), scales = "free")
@@ -104,7 +103,7 @@ maxback <- 6 #TODO - user defined (here by precedent, but add a max possible wit
 
 for(i in 1:maxback){
   preds <- effort_strata %>% filter(ADP == ADPyear - i)
-  preds$TOTAL_TRIPS_PRED_GLM <- predict(effort_glm, type = "response", preds)
+  preds$TOTAL_TRIPS_PRED <- predict(effort_glm, type = "response", preds)
   if(i == 1)
     preds_out <- preds
   else
@@ -115,135 +114,29 @@ for(i in 1:maxback){
 ggplot(preds_out, aes(x = ADP)) +
   geom_point(aes(y = TOTAL_TRIPS)) +
   geom_point(aes(y = MAX_DATE_TRIPS), color = "red", alpha = 0.5) +
-  geom_line(aes(y = TOTAL_TRIPS_PRED_GLM)) +
+  geom_line(aes(y = TOTAL_TRIPS_PRED)) +
   facet_wrap(vars(STRATA), scales = "free")
   
 effort_strata <- merge(effort_strata, preds_out, all.x = TRUE)
-rm(preds_out)
 
-# plot retrospective predictions against actuals for ADPyear - 1
-ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = TOTAL_TRIPS, color = STRATA)) +
-  geom_point(aes(y = TOTAL_TRIPS_PRED_GLM)) +
-  geom_abline(intercept = 0, slope = 1) +
-  theme_bw() +
-  theme(legend.position = "bottom") +
-  labs(x = "True stratum-specific trips in ADPyear - 1", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
-
-detach(package:dplyr)
-
-#'`----------------------------------------------------------------------------`
-
-# Models ---------------------------------------------------------------------------------------------------------------
-
-# model total trips against year, stratum, and trips through October
-effort_mod1 <- lm(TOTAL_TRIPS ~ ADP, data = effort_strata[ADP < ADPyear - 1])
-effort_mod2 <- lm(TOTAL_TRIPS ~ ADP * STRATA, data = effort_strata[ADP < ADPyear - 1])
-effort_mod3 <- lm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1])
-#TODO I couldn't help myself
-effort_mod4 <- lm(TOTAL_TRIPS ~ STRATA * MAX_DATE_TRIPS + poly(ADP,2), data = effort_strata[ADP < ADPyear - 1])
-effort_mod5 <- lm(TOTAL_TRIPS ~ STRATA * MAX_DATE_TRIPS + poly(ADP,3), data = effort_strata[ADP < ADPyear - 1])
-effort_mod6 <- lm(TOTAL_TRIPS ~ STRATA * MAX_DATE_TRIPS * poly(ADP,2), data = effort_strata[ADP < ADPyear - 1])
-effort_mod7 <- lm(TOTAL_TRIPS ~ STRATA * MAX_DATE_TRIPS * poly(ADP,3), data = effort_strata[ADP < ADPyear - 1])
-
-# identify candidate models
-dplyr::arrange(AIC(effort_mod1, effort_mod2, effort_mod3, effort_mod4, effort_mod5, effort_mod6, effort_mod7), AIC) 
-
-# Models 1 & 2 are overly simplistic, and model 7 is wack complicated with 65 parameters on only 96 rows of data
-# Model 6 may have the same problem with 49 parameters (but maybe worth checking out)
-# Models 4 & 5 are very similar (AIC < 2)
-
-dplyr::arrange(BIC(effort_mod1, effort_mod2, effort_mod3, effort_mod4, effort_mod5, effort_mod6, effort_mod7), BIC)
-#Models 4 & 5 have lowest BIC as well.  So if we believe it, one of these is the 'true' model.
-
-#TODO - not used yet
-canditate_models <- c("effort_mod3", "effort_mod4", "effort_mod5", "effort_mod_6")
-# Plot the diagnostics for each candidate model.  Zeroing in on 4 & 5
-
-# choose a winning model
-#TODO - here the winner has been selected based on AIC I presume, but this is before any diagnostics.
-effort_mod <- effort_mod4  
-
-# Visualize "best" model (generalized: doesn't include MAX_DATE_TRIPS term)
-ggplot(effort_strata[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
-  geom_point() +
-  stat_smooth(method = "lm", formula = y ~ poly(x, 2)) +
-  facet_wrap(vars(STRATA), scales = "free") +
-  ggtitle("LM")
-
-library(dplyr)
-
-maxback <- 6 #TODO - user defined (here by precedent, but add a max possible with error)
-
-for(i in 1:maxback){  
-preds <- effort_strata %>% filter(ADP == ADPyear - i)
-
-preds$TOTAL_TRIPS_PRED <- predict(lm(effort_mod$call$formula, 
-                                     data = effort_strata[effort_strata$ADP < ADPyear - i,]), preds)
-if(i == 1)
-  preds_out <- preds
-else
-  preds_out <- rbind(preds, preds_out)
-}
-
-# Visualize predictions
-ggplot(preds_out, aes(x = ADP)) +
-  geom_point(aes(y = TOTAL_TRIPS)) +
-  geom_point(aes(y = MAX_DATE_TRIPS), color = "red", alpha = 0.5) +
-  geom_line(aes(y = TOTAL_TRIPS_PRED), color = "blue") +
-  geom_line(aes(y = TOTAL_TRIPS_PRED_GLM), color = "darkgreen", linetype = 2) +
-  facet_wrap(vars(STRATA), scales = "free") +
-  ggtitle("Blue-solid = LM, Green-dash = GLM, Red-circle = Max date")
-
-#effort_strata <- merge(effort_strata, preds_out, all.x = TRUE)
-effort_strata <- merge(effort_strata, preds_out, all.x = TRUE,
-                       by = c("ADP", "STRATA", "MAX_DATE_TRIPS", "TOTAL_TRIPS", "TOTAL_TRIPS_PRED_GLM"))
-rm(preds_out)
-
-# plot retrospective predictions against actuals for ADPyear - 1
-ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = TOTAL_TRIPS, color = STRATA)) +
-  geom_point(aes(y = TOTAL_TRIPS_PRED_GLM), shape = 15) +
-  geom_point(aes(y = TOTAL_TRIPS_PRED), shape = 17, alpha = 0.5) +
-  geom_abline(intercept = 0, slope = 1) +
-  theme_bw() +
-  theme(legend.position = "bottom") +
-  labs(x = "True stratum-specific trips in ADPyear - 1", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
-
-#effort_strata$RESIDUALS <- effort_strata$TOTAL_TRIPS - effort_strata$TOTAL_TRIPS_PRED
-
-# End testing ----------------------------------------------------------------------------------------------------------
-
-#'`-------------------------- CHRISTIAN TESTING -------------------------------`
-
-# calculate residuals
-effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED_GLM] #TODO - useful but maybe calculate MSE?
-
-#'`----------------------------------------------------------------------------`
-
+rm(preds, preds_out)
 
 # calculate residuals
 effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED] #TODO - useful but maybe calculate MSE?
 
 # plot retrospective predictions against actuals for ADPyear - 1
-p1 <- ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
-      geom_point() +
-      geom_abline(intercept = 0, slope = 1) +
-      theme_bw() +
-      theme(legend.position = "bottom") +
-      labs(x = "True stratum-specific trips in ADPyear - 1", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
+#TODO - why not plot where RESIDUALS is not NA?
+ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - maxback], aes(x = TOTAL_TRIPS, color = STRATA)) +
+  geom_point(aes(y = TOTAL_TRIPS_PRED)) +
+  geom_abline(intercept = 0, slope = 1) +
+  theme_bw() +
+  theme(legend.position = "bottom") +
+  labs(x = "True stratum-specific trips in ADPyear - 1", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
 
-# plot retrospective residuals for ADPyear - 1
-p2 <- ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = RESIDUALS)) +
-      geom_histogram(bins = 20) +
-      geom_vline(xintercept = 0, color = "red") +
-      geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "red") +
-      theme_bw() +
-      labs(x = "Residuals")
-
-# The amended plot p2 below shows the desired mean of zero and normal distribution of residuals based on 
+# plot retrospective residual histograms for ADPyear - 1 (old p2).  This plot shows the desired mean of zero and normal distribution of residuals based on 
 # the distribution of residuals you got.  Compare this against the mean in blue we got and the density we got in blue.
 # TODO - the text below in the stat_function is cumbersome.
-
-ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = RESIDUALS)) +
+ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - maxback], aes(x = RESIDUALS)) +
   geom_histogram(aes(y = after_stat(density)), fill = "blue", color = "white", alpha = .5, bins = 20) +
   stat_function(
     fun = dnorm, 
@@ -258,14 +151,16 @@ ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6], aes(x = RESIDUALS)
   labs(x = "Residuals")
 
 #TODO - line 131 not working, so I'm trying to remove dplyr but no luck.
-detach(package:dplyr)
+
+detach("package:dplyr")
+
 # png("Appendix_C/figures/EffortPredictionResiduals1.png", width = 7, height = 10, units = 'in', res=300)
 # grid.arrange(p1, p2)
 # dev.off()
 
 # roll predictions forward one year
 #TODO - I had to change the original "on" statement to by.x and by.y...
-
+# This command increases the number of observations by a year * strata.
  effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], 
    effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
    by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
@@ -276,23 +171,24 @@ effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED_GLM", "RESIDUALS")],
                        effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED_GLM)], 
                        by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
 
-effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED_GLM]
+effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
 
 #'`----------------------------------------------------------------------------`
-  
-# recalculate residuals
+ 
+#Gotta recalculate residuals.
 effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
 
 # plot retrospecitve predictions against actuals for ADPyear
-p3 <- ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
+ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
       geom_point() +
       geom_abline(intercept = 0, slope = 1) +
       theme_bw() +
       theme(legend.position = "bottom") +
       labs(x = "True stratum-specific trips in ADPyear", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
 
-# plot retrospective residuals for ADPyear 
-p4 <- ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
+# plot retrospective residuals for ADPyear
+#TODO - amend as P2
+ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
       geom_histogram(bins = 20) +
       geom_vline(xintercept = 0, color = "red") +
       geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "red") +
@@ -303,6 +199,7 @@ p4 <- ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
 # grid.arrange(p3, p4)
 # dev.off()
 
+#TODO - replace this with bootstrapped outcomes to generate prediction intervals.
 # predict total effort across strata with 95% prediction interval for ADPyear - 1  
 # https://stackoverflow.com/questions/39337862/linear-model-with-lm-how-to-get-prediction-variance-of-sum-of-predicted-value
 lm_predict <- function (lmObject, newdata, diag = TRUE) {
