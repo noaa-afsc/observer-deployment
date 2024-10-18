@@ -77,8 +77,8 @@ E <- resid(effort_glm, type = "pearson")
 N <- nrow(effort_strata[ADP < ADPyear -1])
 p <- length(coef(effort_glm)) + 1
 sum(E ^ 2) / (N - p) # Check for overdispersion (if > 1, then overdispersed)
-# 2) Check residuals
 
+# 2) Check residuals
 #TODO - better way to get these?
 Fit <- fitted(effort_glm)
 eta <- predict(effort_glm, type = "link")
@@ -149,6 +149,49 @@ ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - maxback], aes(x = RESI
   theme_bw() +
   labs(x = "Residuals")
 
+#'`-----------------TESTING----------------------------------------------------`
+
+# Manually calculate 95% Confidence Intervals
+# https://fromthebottomoftheheap.net/2018/12/10/confidence-intervals-for-glms/
+# Grab inverse function from model
+ilink <- family(effort_glm)$linkinv
+
+# Add fit and se to data
+ndata <- bind_cols(effort_strata[ADP <= ADPyear - 1],
+                   setNames(as_tibble(predict(effort_glm,
+                                              newdata = effort_strata[ADP <= ADPyear - 1],
+                                              se.fit = TRUE)[1:2]),
+                            c("fit_link", "se_link")))
+
+# Create the interval and back transform
+ndata <- ndata %>%
+  mutate(fit_resp = ilink(fit_link),
+         upr = ilink(fit_link + (2 * se_link)),
+         lwr = ilink(fit_link - (2 * se_link))) %>%
+  # Assign 2024 total trips as predicted trips
+  mutate(TOTAL_TRIPS = case_when(is.na(TOTAL_TRIPS) ~ fit_resp,
+                                 TRUE ~ TOTAL_TRIPS))
+
+#'` This is the same as above, but uses maths from predFit to calculate CI`
+ndata.test <- ndata %>%
+  mutate(fit_resp = ilink(fit_link),
+         upr = ilink(fit_link + se_link * stats::qnorm((0.95 + 1) / 2)),
+         lwr = ilink(fit_link - se_link * stats::qnorm((0.95 + 1) / 2))) %>%
+  # Assign 2024 total trips as predicted trips
+  mutate(TOTAL_TRIPS = case_when(is.na(TOTAL_TRIPS) ~ fit_resp,
+                                 TRUE ~ TOTAL_TRIPS))
+
+# Visualize
+ggplot(ndata[ADP >= ADPyear - 6], aes(x = ADP)) +
+  geom_point(aes(y = TOTAL_TRIPS)) +
+  geom_line(aes(y = TOTAL_TRIPS)) +
+  geom_point(data = ndata[ADP == ADPyear - 1], aes(y = TOTAL_TRIPS), color = "red") +
+  geom_errorbar(data = ndata[ADP == ADPyear - 1], aes(ymin = lwr, ymax = upr), color = "red", width = 0.2) +
+  facet_wrap(vars(STRATA))
+
+#'`----------------------------------------------------------------------------`
+
+
 detach("package:dplyr")
 
 # png("Appendix_C/figures/EffortPredictionResiduals1.png", width = 7, height = 10, units = 'in', res=300)
@@ -187,6 +230,7 @@ ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
 # dev.off()
 
 #TODO - replace this with bootstrapped outcomes to generate prediction intervals.
+
 # predict total effort across strata with 95% prediction interval for ADPyear - 1  
 # https://stackoverflow.com/questions/39337862/linear-model-with-lm-how-to-get-prediction-variance-of-sum-of-predicted-value
 lm_predict <- function (lmObject, newdata, diag = TRUE) {
