@@ -87,13 +87,16 @@ abline(h = 0, v = 0, lty = 2)
 plot(x = eta, y = E, xlab = "Eta", ylab = "Pearson residuals") # This one we can get simply by: plot(effort_glm) - 1st plot 
 abline(h = 0, v = 0, lty = 2)
 
+# Clean up
+rm(effort_glm1, effort_glm2, effort_glm3, effort_glm4, effort_glm5, E, N, p, Fit, eta)
+
 # Plot "best" model for visual evaluation
 # General plot (doesn't include third model term)
 
 #TODO - generalize - below is hard code of "effort_glm"
 ggplot(effort_strata[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
   geom_point() +
-  stat_smooth(method = "glm", formula = y ~ poly(x, 3), method.args = list(family = "quasipoisson")) +
+  stat_smooth(method = "glm", formula = y ~ poly(x, 2), method.args = list(family = "quasipoisson")) +
   facet_wrap(vars(STRATA), scales = "free")
 
 library(dplyr)
@@ -165,6 +168,43 @@ ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - maxback], aes(x = RESI
   theme_bw() +
   labs(x = "Residuals")
 
+detach("package:dplyr")
+
+# png("Appendix_C/figures/EffortPredictionResiduals1.png", width = 7, height = 10, units = 'in', res=300)
+# grid.arrange(p1, p2)
+# dev.off()
+
+# roll predictions forward one year
+#TODO - I had to change the original "on" statement to by.x and by.y...
+# This command increases the number of observations by a year * strata.
+ effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], 
+   effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
+   by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
+ 
+# Gotta recalculate residuals.
+effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
+
+# plot retrospecitve predictions against actuals for ADPyear
+ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
+      geom_point() +
+      geom_abline(intercept = 0, slope = 1) +
+      theme_bw() +
+      theme(legend.position = "bottom") +
+      labs(x = "True stratum-specific trips in ADPyear", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
+
+# plot retrospective residuals for ADPyear
+#TODO - amend as P2
+ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
+      geom_histogram(bins = 20) +
+      geom_vline(xintercept = 0, color = "red") +
+      geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "red") +
+      theme_bw() +
+      labs(x = "Residuals")
+
+# png("Appendix_C/figures/EffortPredictionResiduals2.png", width = 7, height = 10, units = 'in', res=300)
+# grid.arrange(p3, p4)
+# dev.off()
+
 #'`-----------------TESTING----------------------------------------------------`
 
 # Manually calculate 95% Confidence Intervals
@@ -173,13 +213,21 @@ ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - maxback], aes(x = RESI
 ilink <- family(effort_glm)$linkinv
 
 # Add fit and se to data
-ndata <- bind_cols(effort_strata[ADP <= ADPyear - 1],
+ndata <- bind_cols(effort_strata[ADP <= ADPyear],
                    setNames(as_tibble(predict(effort_glm,
-                                              newdata = effort_strata[ADP <= ADPyear - 1],
+                                              newdata = effort_strata[ADP <= ADPyear],
                                               se.fit = TRUE)[1:2]),
                             c("fit_link", "se_link")))
 
-# TODO Add 2025 projection
+# TODO Add 2025 projection (MAX_DATE_TRIPS is a covariate, but we don't know what the values are for 2025)
+# So, looks like we can't predict out - see test code below
+test <- effort_strata %>%
+  mutate(MAX_DATE_TRIPS = case_when(is.na(MAX_DATE_TRIPS) ~ 100,
+                                    TRUE ~ MAX_DATE_TRIPS))
+
+predict(effort_glm,
+        newdata = test,
+        se.fit = TRUE)
 
 # Based off of code used to calculate these in function investr::predFit
 # https://rdrr.io/cran/investr/src/R/predFit.R
@@ -223,43 +271,6 @@ ggplot(pred_ints, aes(x = ADP, y = TOTAL_TRIPS)) +
   facet_wrap(vars(STRATA), scales = "free")
 
 #'`----------------------------------------------------------------------------`
-
-detach("package:dplyr")
-
-# png("Appendix_C/figures/EffortPredictionResiduals1.png", width = 7, height = 10, units = 'in', res=300)
-# grid.arrange(p1, p2)
-# dev.off()
-
-# roll predictions forward one year
-#TODO - I had to change the original "on" statement to by.x and by.y...
-# This command increases the number of observations by a year * strata.
- effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], 
-   effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
-   by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
- 
-# Gotta recalculate residuals.
-effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
-
-# plot retrospecitve predictions against actuals for ADPyear
-ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
-      geom_point() +
-      geom_abline(intercept = 0, slope = 1) +
-      theme_bw() +
-      theme(legend.position = "bottom") +
-      labs(x = "True stratum-specific trips in ADPyear", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
-
-# plot retrospective residuals for ADPyear
-#TODO - amend as P2
-ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
-      geom_histogram(bins = 20) +
-      geom_vline(xintercept = 0, color = "red") +
-      geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "red") +
-      theme_bw() +
-      labs(x = "Residuals")
-
-# png("Appendix_C/figures/EffortPredictionResiduals2.png", width = 7, height = 10, units = 'in', res=300)
-# grid.arrange(p3, p4)
-# dev.off()
 
 # estimate probability of trawl EM boats not taking an observer (efp_prob; based on data from vessels that have been in 
 # the program prior to ADPyear). 2022-05-31 is the last day of the 2022 spring fisheries, and 2023-09-01 is the first day 
