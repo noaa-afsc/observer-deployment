@@ -99,7 +99,7 @@ library(dplyr)
 #'* ISSUES HERE *:
 # 1) Best model for this year not necessarily best model in previous years
 # 2) Polynomial terms not useful for earlier datasets - causes issues in predictions
-maxback <- 6 #TODO - user defined (here by precedent, but add a max possible with an error if it exceeds number of ADP by three or four...)
+maxback <- 5 #TODO - user defined (here by precedent, but add a max possible with an error if it exceeds number of ADP by three or four...)
 
 for(i in 1:maxback){
  preds <- effort_strata %>% filter(ADP == ADPyear - i)
@@ -113,7 +113,7 @@ for(i in 1:maxback){
 # Warnings because polynomial terms not appropriate for some past time series
 
 # Visualize predictions
-ggplot(preds_out, aes(x = ADP)) +
+ggplot(preds_out[STRATA != "ZERO"], aes(x = ADP)) +
   geom_point(aes(y = TOTAL_TRIPS)) +
   geom_point(aes(y = MAX_DATE_TRIPS), color = "red", alpha = 0.5) +
   geom_line(aes(y = TOTAL_TRIPS_PRED)) +
@@ -152,8 +152,6 @@ ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - maxback], aes(x = RESI
   theme_bw() +
   labs(x = "Residuals")
 
-detach("package:dplyr")
-
 # png("Appendix_C/figures/EffortPredictionResiduals1.png", width = 7, height = 10, units = 'in', res=300)
 # grid.arrange(p1, p2)
 # dev.off()
@@ -161,9 +159,9 @@ detach("package:dplyr")
 # roll predictions forward one year
 #TODO - I had to change the original "on" statement to by.x and by.y...
 # This command increases the number of observations by a year * strata.
- effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], 
-   effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
-   by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
+effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], 
+                       effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
+                       by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
  
 # Gotta recalculate residuals.
 effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
@@ -189,72 +187,40 @@ ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
 # grid.arrange(p3, p4)
 # dev.off()
 
-#'`-----------------TESTING----------------------------------------------------`
-
-# Manually calculate 95% Confidence Intervals
-# https://fromthebottomoftheheap.net/2018/12/10/confidence-intervals-for-glms/
-# Grab inverse function from model
-ilink <- family(effort_glm)$linkinv
-
-# Add fit and se to data
-ndata <- bind_cols(effort_strata[ADP <= ADPyear],
-                   setNames(as_tibble(predict(effort_glm,
-                                              newdata = effort_strata[ADP <= ADPyear],
-                                              se.fit = TRUE)[1:2]),
-                            c("fit_link", "se_link")))
-
-# TODO Add 2025 projection (MAX_DATE_TRIPS is a covariate, but we don't know what the values are for 2025)
-# So, looks like we can't predict out - see test code below
-test <- effort_strata %>%
-  mutate(MAX_DATE_TRIPS = case_when(is.na(MAX_DATE_TRIPS) ~ 100,
-                                    TRUE ~ MAX_DATE_TRIPS))
-
-predict(effort_glm,
-        newdata = test,
-        se.fit = TRUE)
-
-# Based off of code used to calculate these in function investr::predFit
-# https://rdrr.io/cran/investr/src/R/predFit.R
-ndata <- ndata %>%
-  mutate(fit_resp = ilink(fit_link),
-         upr = ilink(fit_link + se_link * stats::qnorm((0.95 + 1) / 2)),
-         lwr = ilink(fit_link - se_link * stats::qnorm((0.95 + 1) / 2))) %>%
-  # Assign 2024+ predicted trips as total trips
-  mutate(TOTAL_TRIPS = case_when(is.na(TOTAL_TRIPS) ~ fit_resp,
-                                 TRUE ~ TOTAL_TRIPS))
-
-# Visualize
-ggplot(ndata[ADP >= ADPyear - 6], aes(x = ADP)) +
-  geom_point(aes(y = TOTAL_TRIPS)) +
-  geom_line(aes(y = TOTAL_TRIPS)) +
-  geom_point(data = ndata[ADP == ADPyear - 1], aes(y = TOTAL_TRIPS), color = "red") +
-  geom_errorbar(data = ndata[ADP == ADPyear - 1], aes(ymin = lwr, ymax = upr), color = "red", width = 0.2) +
-  geom_errorbar(data = ndata[ADP == ADPyear - 2], aes(ymin = lwr, ymax = upr), color = "red", width = 0.2) +
-  facet_wrap(vars(STRATA), scales = "free")
-
-# Prediction intervals
+# Prediction intervals?
 # https://cran.r-project.org/web/packages/ciTools/vignettes/ciTools-glm-vignette.html
+# But, meaningless for quasipoisson
+# https://stats.stackexchange.com/questions/648734/difficulty-simulating-prediction-interval-for-quasipoisson-glm-in-r
 if(!require("ciTools"))   install.packages("ciTools", repos='http://cran.us.r-project.org')
 
-pred_ints <- add_pi(df = as.data.frame(effort_strata[ADP < ADPyear - 1]), fit = effort_glm, names = c("lpb", "upb"), nSims = 10000, alpha = 0.05) %>%
-  add_ci(fit = effort_glm, names = c("lcb", "ucb"), alpha = 0.05)
+# Can't predict prediction intervals
+#pred_ints <- add_pi(df = as.data.frame(effort_strata[ADP < ADPyear - 1]), fit = effort_glm, names = c("lpb", "upb"), nSims = 10000, alpha = 0.05) %>%
+#  add_ci(fit = effort_glm, names = c("lcb", "ucb"), alpha = 0.05)
 
-ggplot(pred_ints, aes(x = ADP, y = TOTAL_TRIPS)) +
-  geom_point() +
-  geom_ribbon(aes(ymin = lpb, ymax = upb), alpha = 0.5) +
+# Confidence intervals
+pred_ints <- add_ci(df = as.data.frame(effort_strata[ADP < ADPyear]),
+                    fit = effort_glm, names = c("lcb", "ucb"), alpha = 0.05) %>%
+  select(!c(TOTAL_TRIPS_PRED, RESIDUALS)) %>%
+  mutate(TOTAL_TRIPS = case_when(is.na(TOTAL_TRIPS) ~ pred,
+                                 TRUE ~ TOTAL_TRIPS))
+
+# Copy current year's data and predicted values
+current_yr <- pred_ints %>% filter(ADP == ADPyear - 1) %>%
+  mutate(ADP = ADPyear,
+         MAX_DATE_TRIPS = NA)
+
+# Combine data
+pred_ints <- rbind(pred_ints, current_yr)
+
+# Visualize
+ggplot(data = pred_ints, aes(x = ADP, y = TOTAL_TRIPS)) +
   geom_ribbon(aes(ymin = lcb, ymax = ucb), alpha = 0.5, color = "blue") +
-  facet_wrap(vars(STRATA), scales = "free")
-
-ggplot(pred_ints, aes(x = ADP, y = TOTAL_TRIPS)) +
   geom_point() +
-  geom_ribbon(aes(ymin = lpb, ymax = upb), alpha = 0.5) +
-  geom_ribbon(aes(ymin = lcb, ymax = ucb), alpha = 0.5, color = "blue") +
-  geom_point(data = ndata[ADP == ADPyear - 1], aes(y = TOTAL_TRIPS), color = "red") +
-  geom_errorbar(data = ndata[ADP == ADPyear - 1], aes(ymin = lwr, ymax = upr), color = "red", width = 0.2) +
-  geom_errorbar(data = ndata[ADP == ADPyear - 2], aes(ymin = lwr, ymax = upr), color = "red", width = 0.2) +
-  facet_wrap(vars(STRATA), scales = "free")
-
-#'`----------------------------------------------------------------------------`
+  geom_point(aes(y = pred), color = "cyan") +
+  geom_point(data = pred_ints %>% filter(ADP >= ADPyear - 1), aes(y = TOTAL_TRIPS), color = "red") +
+  facet_wrap(vars(STRATA), scales = "free_y") +
+  scale_x_continuous(breaks = seq(min(pred_ints$ADP), ADPyear, by = 1)) +
+  theme_bw()
 
 # estimate probability of trawl EM boats not taking an observer (efp_prob; based on data from vessels that have been in 
 # the program prior to ADPyear). 2022-05-31 is the last day of the 2022 spring fisheries, and 2023-09-01 is the first day 
@@ -274,3 +240,53 @@ efp_prob <- efp_list[unique(work.data[
 
 # save effort predictions (to_draw) and the population of trips to sample from (draw_from)
 save(list = c("effort_year", "effort_strata", "efp_prob"), file = "source_data/effort_prediction.rdata")
+
+
+
+
+
+
+
+#'`-----------------TESTING----------------------------------------------------`
+
+# Manually calculate 95% Confidence Intervals
+# https://fromthebottomoftheheap.net/2018/12/10/confidence-intervals-for-glms/
+# Grab inverse function from model
+ilink <- family(effort_glm)$linkinv
+
+# Add fit and se to data (cannot predict future year because missing data for MAX_DATE_TRIPS)
+ndata <- bind_cols(effort_strata[ADP <= ADPyear],
+                   setNames(as_tibble(predict(effort_glm,
+                                              newdata = effort_strata[ADP <= ADPyear],
+                                              se.fit = TRUE)[1:2]),
+                            c("fit_link", "se_link")))
+
+# Based off of code used to calculate these in function investr::predFit
+# https://rdrr.io/cran/investr/src/R/predFit.R
+ndata <- ndata %>%
+  mutate(fit_resp = ilink(fit_link),
+         upr = ilink(fit_link + se_link * stats::qnorm((0.95 + 1) / 2)),
+         lwr = ilink(fit_link - se_link * stats::qnorm((0.95 + 1) / 2))) %>%
+  # Assign current year predicted trips as total trips
+  mutate(TOTAL_TRIPS = case_when(is.na(TOTAL_TRIPS) ~ fit_resp,
+                                 TRUE ~ TOTAL_TRIPS)) %>%
+  select(!c(TOTAL_TRIPS_PRED, RESIDUALS, fit_link, se_link))
+
+# Copy current year's data and predicted values
+current_yr <- ndata %>% filter(ADP == ADPyear - 1) %>% mutate(ADP = ADPyear)
+
+# Combine data sets
+ndata <- ndata %>%
+  filter(ADP != 2025) %>%
+  rbind(current_yr)
+
+# Visualize
+ggplot(ndata[ADP >= ADPyear - 6], aes(x = ADP)) +
+  geom_point(aes(y = TOTAL_TRIPS)) +
+  geom_line(aes(y = TOTAL_TRIPS)) +
+  geom_line(data = ndata[ADP >= ADPyear -1], aes(y = TOTAL_TRIPS), color = "red") +
+  geom_point(data = ndata[ADP >= ADPyear - 1], aes(y = TOTAL_TRIPS), color = "red") +
+  geom_errorbar(data = ndata[ADP == ADPyear], aes(ymin = lwr, ymax = upr), color = "red", width = 0.2) +
+  geom_errorbar(data = ndata[ADP == ADPyear - 1], aes(ymin = lwr, ymax = upr), color = "red", width = 0.2) +
+  geom_errorbar(data = ndata[ADP == ADPyear - 2], aes(ymin = lwr, ymax = upr), color = "blue", width = 0.2) +
+  facet_wrap(vars(STRATA), scales = "free")
