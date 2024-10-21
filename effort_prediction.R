@@ -10,7 +10,7 @@ options(scipen = 9999)
 
 # TODO - make into an API call
 #user inputs
-ADPyear  <- 2025
+ADPyear <- 2025
 
 #New
 #TODO - make this an api call
@@ -25,31 +25,34 @@ load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
 
 rm(ADP_dribble)
 
+# Create placeholder data
+effort_strata.work <- effort_strata
+
 # Visualize data
-ggplot(data = effort_strata[ADP < ADPyear - 1]) +
+ggplot(data = effort_strata.work[ADP < ADPyear - 1]) +
   geom_col(aes(x = ADP, y = TOTAL_TRIPS)) + facet_wrap(vars(STRATA), scales = "free")
 
 # Model using GLM (# of trips is count data)
 # When using poisson GLM, need to check for overdispersion.
 # Quick and dirty way of checking is to divide Residual Deviance with Residual Degrees of Freedom (should = ~1)
 #   if it's >> 1, use quasipoisson or negative binomial distribution
-effort_glm1 <- glm(TOTAL_TRIPS ~ ADP, data = effort_strata[ADP < ADPyear - 1],
+effort_glm1 <- glm(TOTAL_TRIPS ~ ADP, data = effort_strata.work[ADP < ADPyear - 1],
                    family = "quasipoisson")
 summary(effort_glm1)
 
-effort_glm2 <- glm(TOTAL_TRIPS ~ ADP * STRATA, data = effort_strata[ADP < ADPyear - 1],
+effort_glm2 <- glm(TOTAL_TRIPS ~ ADP * STRATA, data = effort_strata.work[ADP < ADPyear - 1],
                    family = "quasipoisson")
 summary(effort_glm2)
 
-effort_glm3 <- glm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1],
+effort_glm3 <- glm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata.work[ADP < ADPyear - 1],
                    family = "quasipoisson")
 summary(effort_glm3)
 
-effort_glm4 <- glm(TOTAL_TRIPS ~ poly(ADP, 2) * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1], 
+effort_glm4 <- glm(TOTAL_TRIPS ~ poly(ADP, 2) * STRATA * MAX_DATE_TRIPS, data = effort_strata.work[ADP < ADPyear - 1], 
                    family = "quasipoisson")
 summary(effort_glm4)
 
-effort_glm5 <- glm(TOTAL_TRIPS ~ poly(ADP, 3) * STRATA * MAX_DATE_TRIPS, data = effort_strata[ADP < ADPyear - 1], 
+effort_glm5 <- glm(TOTAL_TRIPS ~ poly(ADP, 3) * STRATA * MAX_DATE_TRIPS, data = effort_strata.work[ADP < ADPyear - 1], 
                    family = "quasipoisson")
 summary(effort_glm5)
 
@@ -60,12 +63,12 @@ anova(effort_glm4, effort_glm3, test = "F")
 anova(effort_glm5, effort_glm4, test = "F")
 
 # TODO - improve - "Best" model (for now just based on "a feeling")
-effort_glm <- effort_glm5
+effort_glm <- effort_glm3
 
 # Evaluate "best" model
 # 1) Check for overdispersion - (if = 1, then we don't need to use quasipoisson distribution)
 E <- resid(effort_glm, type = "pearson")
-N <- nrow(effort_strata[ADP < ADPyear -1])
+N <- nrow(effort_strata.work[ADP < ADPyear -1])
 p <- length(coef(effort_glm)) + 1
 sum(E ^ 2) / (N - p) # Check for overdispersion (if > 1, then overdispersed)
 
@@ -79,16 +82,22 @@ plot(x = eta, y = E, xlab = "Eta", ylab = "Pearson residuals") # This one we can
 abline(h = 0, v = 0, lty = 2)
 
 # Clean up
-rm(effort_glm1, effort_glm2, effort_glm3, effort_glm4, effort_glm5, E, N, p, Fit, eta)
+rm(E, N, p, Fit, eta)
 
 # Plot "best" model for visual evaluation
-# General plot (doesn't include third model term)
+ndata <- bind_cols(effort_strata.work[ADP <= ADPyear],
+          setNames(as_tibble(predict(effort_glm,
+                                     newdata = effort_strata.work[ADP <= ADPyear],
+                                     se.fit = TRUE, , type = "response")[1:2]),
+                   c("fitted", "se")))
 
-#TODO - generalize - below is hard code of "effort_glm"
-ggplot(effort_strata[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
+ggplot(ndata, aes(x = ADP, y = TOTAL_TRIPS)) +
   geom_point() +
-  stat_smooth(method = "glm", formula = y ~ poly(x, 3), method.args = list(family = "quasipoisson")) +
-  facet_wrap(vars(STRATA), scales = "free")
+  geom_line(aes(y = fitted)) +
+  geom_ribbon(aes(ymax = fitted + se, ymin = fitted - se), alpha = 0.5) +
+  facet_wrap(vars(STRATA), scales = "free") +
+  scale_x_continuous(breaks = seq(min(effort_strata.work$ADP), ADPyear, by = 1)) +
+  theme_bw()
 
 library(dplyr)
 
@@ -102,8 +111,8 @@ library(dplyr)
 maxback <- 5 #TODO - user defined (here by precedent, but add a max possible with an error if it exceeds number of ADP by three or four...)
 
 for(i in 1:maxback){
- preds <- effort_strata %>% filter(ADP == ADPyear - i)
- preds$TOTAL_TRIPS_PRED <- predict(glm(formula = effort_glm$formula, data = effort_strata[ADP < ADPyear - i],
+ preds <- effort_strata.work %>% filter(ADP == ADPyear - i)
+ preds$TOTAL_TRIPS_PRED <- predict(glm(formula = effort_glm$formula, data = effort_strata.work[ADP < ADPyear - i],
                                        family = effort_glm$family$family), type = "response", preds)
  if(i == 1)
    preds_out <- preds
@@ -113,37 +122,38 @@ for(i in 1:maxback){
 # Warnings because polynomial terms not appropriate for some past time series
 
 # Visualize predictions
-ggplot(preds_out[STRATA != "ZERO"], aes(x = ADP)) +
+ggplot(preds_out, aes(x = ADP)) +
   geom_point(aes(y = TOTAL_TRIPS)) +
   geom_point(aes(y = MAX_DATE_TRIPS), color = "red", alpha = 0.5) +
   geom_line(aes(y = TOTAL_TRIPS_PRED)) +
   facet_wrap(vars(STRATA), scales = "free")
   
-effort_strata <- merge(effort_strata, preds_out, all.x = TRUE)
+effort_strata.work <- merge(effort_strata.work, preds_out, all.x = TRUE)
 
-rm(preds, preds_out)
+rm(preds, preds_out, ndata)
 
 # calculate residuals
-effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED] #TODO - useful but maybe calculate MSE?
+effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED] #TODO - useful but maybe calculate MSE?
 
 # plot retrospective predictions against actuals for ADPyear - 1
-#TODO - why not plot where RESIDUALS is not NA?
-ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - maxback], aes(x = TOTAL_TRIPS, color = STRATA)) +
+ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, color = STRATA)) +
   geom_point(aes(y = TOTAL_TRIPS_PRED)) +
   geom_abline(intercept = 0, slope = 1) +
   theme_bw() +
   theme(legend.position = "bottom") +
-  labs(x = "True stratum-specific trips in ADPyear - 1", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
+  labs(x = "True stratum-specific trips in ADPyear - 1",
+       y = "Predicted stratum-specific trips in ADPyear - 1",
+       color = "Stratum")
 
 # plot retrospective residual histograms for ADPyear - 1 (old p2).  This plot shows the desired mean of zero and normal distribution of residuals based on 
 # the distribution of residuals you got.  Compare this against the mean in blue we got and the density we got in blue.
 # TODO - the text below in the stat_function is cumbersome.
-ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - maxback], aes(x = RESIDUALS)) +
+ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
   geom_histogram(aes(y = after_stat(density)), fill = "blue", color = "white", alpha = .5, bins = 20) +
   stat_function(
     fun = dnorm, 
     args = list(mean = 0, 
-                sd = sd(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - 6]$RESIDUALS)), 
+                sd = sd(effort_strata.work[!is.na(RESIDUALS)]$RESIDUALS)), 
     lwd = 2, 
     col = 'black') +
   geom_density(color = "blue", lwd = 2) +
@@ -159,15 +169,15 @@ ggplot(effort_strata[ADP < ADPyear - 1 & ADP >= ADPyear - maxback], aes(x = RESI
 # roll predictions forward one year
 #TODO - I had to change the original "on" statement to by.x and by.y...
 # This command increases the number of observations by a year * strata.
-effort_strata <- merge(effort_strata[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], 
-                       effort_strata[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
+effort_strata.work <- merge(effort_strata.work[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], 
+                       effort_strata.work[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
                        by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
  
 # Gotta recalculate residuals.
-effort_strata[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
+effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
 
 # plot retrospecitve predictions against actuals for ADPyear
-ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
+ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
       geom_point() +
       geom_abline(intercept = 0, slope = 1) +
       theme_bw() +
@@ -176,7 +186,7 @@ ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PR
 
 # plot retrospective residuals for ADPyear
 #TODO - amend as P2
-ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
+ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
       geom_histogram(bins = 20) +
       geom_vline(xintercept = 0, color = "red") +
       geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "red") +
@@ -194,11 +204,11 @@ ggplot(effort_strata[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
 if(!require("ciTools"))   install.packages("ciTools", repos='http://cran.us.r-project.org')
 
 # Can't predict prediction intervals
-#pred_ints <- add_pi(df = as.data.frame(effort_strata[ADP < ADPyear - 1]), fit = effort_glm, names = c("lpb", "upb"), nSims = 10000, alpha = 0.05) %>%
+#pred_ints <- add_pi(df = as.data.frame(effort_strata.work[ADP < ADPyear - 1]), fit = effort_glm, names = c("lpb", "upb"), nSims = 10000, alpha = 0.05) %>%
 #  add_ci(fit = effort_glm, names = c("lcb", "ucb"), alpha = 0.05)
 
 # Confidence intervals
-pred_ints <- add_ci(df = as.data.frame(effort_strata[ADP < ADPyear]),
+pred_ints <- add_ci(df = as.data.frame(effort_strata.work[ADP < ADPyear]),
                     fit = effort_glm, names = c("lcb", "ucb"), alpha = 0.05) %>%
   select(!c(TOTAL_TRIPS_PRED, RESIDUALS)) %>%
   mutate(TOTAL_TRIPS = case_when(is.na(TOTAL_TRIPS) ~ pred,
@@ -222,24 +232,8 @@ ggplot(data = pred_ints, aes(x = ADP, y = TOTAL_TRIPS)) +
   scale_x_continuous(breaks = seq(min(pred_ints$ADP), ADPyear, by = 1)) +
   theme_bw()
 
-# estimate probability of trawl EM boats not taking an observer (efp_prob; based on data from vessels that have been in 
-# the program prior to ADPyear). 2022-05-31 is the last day of the 2022 spring fisheries, and 2023-09-01 is the first day 
-# of the 2023 fall fisheries. by including trips after the 2022 spring fisheries have closed and before the 2023 fall 
-# fisheries have opened, we calculate efp_prob based on the fall 2022 and spring 2023 seasons (the two most recent full 
-# seasons, as the fall 2023 fishery was not finished by the time Valhalla was compiled).  
-efp_prob <- efp_list[unique(work.data[
-  TRIP_TARGET_DATE > as.Date("2022-05-31") & TRIP_TARGET_DATE < as.Date("2023-09-01") & 
-    TRIP_TARGET_CODE %in% c("P", "B") & AGENCY_GEAR_CODE %in% c("NPT", "PTR"),
-  .(ADP, VESSEL_ID, TRIP_ID, COVERAGE_TYPE, STRATA, AGENCY_GEAR_CODE)
-]), on = c(PERMIT = "VESSEL_ID")
-][YEAR_ADDED <= ADP
-][, .SD[all(AGENCY_GEAR_CODE == "PTR")], by = .(TRIP_ID)
-][, .N, by = .(COVERAGE_TYPE, STRATA)
-][, .(STRATA, N, EFP_PROB = N / sum(N)), by = .(COVERAGE_TYPE)
-][STRATA == "EM_TRW_EFP"]         
-
 # save effort predictions (to_draw) and the population of trips to sample from (draw_from)
-save(list = c("effort_year", "effort_strata", "efp_prob"), file = "source_data/effort_prediction.rdata")
+save(list = c("effort_year", "effort_strata.work", "efp_prob"), file = "source_data/effort_prediction.rdata")
 
 
 
@@ -255,9 +249,9 @@ save(list = c("effort_year", "effort_strata", "efp_prob"), file = "source_data/e
 ilink <- family(effort_glm)$linkinv
 
 # Add fit and se to data (cannot predict future year because missing data for MAX_DATE_TRIPS)
-ndata <- bind_cols(effort_strata[ADP <= ADPyear],
+ndata <- bind_cols(effort_strata.work[ADP <= ADPyear],
                    setNames(as_tibble(predict(effort_glm,
-                                              newdata = effort_strata[ADP <= ADPyear],
+                                              newdata = effort_strata.work[ADP <= ADPyear],
                                               se.fit = TRUE)[1:2]),
                             c("fit_link", "se_link")))
 
