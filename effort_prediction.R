@@ -2,9 +2,8 @@
 ## User inputs ----
 #==============================#
 
-# TODO - make into an API call
 #user inputs
-ADPyear <- 2025
+ADPyear <- as.numeric(rstudioapi::askForPassword("What year is the ADP year? (four digits, example: 2025)"))
 
 #==============================#
 ## Load Packages ----
@@ -42,7 +41,8 @@ effort_strata.work <- effort_strata
 #==============================#
 
 # Visualize data
-figure_c1 <- ggplot(data = effort_strata.work[ADP < ADPyear - 1]) +
+figure_c1 <- 
+  ggplot(data = effort_strata.work[ADP < ADPyear - 1]) +
   geom_col(aes(x = ADP, y = TOTAL_TRIPS)) + facet_wrap(vars(STRATA), scales = "free_y") +
   scale_x_continuous(breaks = seq(min(effort_strata.work$ADP), ADPyear, by = 5)) +
   theme_bw() +
@@ -82,7 +82,7 @@ anova(effort_glm3, effort_glm2, test = "F")
 anova(effort_glm4, effort_glm3, test = "F")
 anova(effort_glm5, effort_glm4, test = "F")
 
-# TODO - improve - "Best" model (for now just based on "a feeling")
+#Final model based on non-significant F tests for more complicated models.
 effort_glm <- effort_glm3
 
 # Evaluate "best" model
@@ -108,7 +108,7 @@ rm(E, N, p, Fit, eta)
 ndata <- bind_cols(effort_strata.work[ADP <= ADPyear],
           setNames(as_tibble(predict(effort_glm,
                                      newdata = effort_strata.work[ADP <= ADPyear],
-                                     se.fit = TRUE, , type = "response")[1:2]),
+                                     se.fit = TRUE, type = "response")[1:2]),
                    c("fitted", "se")))
 
 ggplot(ndata, aes(x = ADP, y = TOTAL_TRIPS)) +
