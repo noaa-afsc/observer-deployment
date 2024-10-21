@@ -12,15 +12,6 @@ options(scipen = 9999)
 #user inputs
 ADPyear  <- 2025
 
-#Former
-# get data object produced by get_data.R
-#load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
-# https://drive.google.com/file/d/1xH-P54wW3vPXtaQmgEDxb3YgHh-yJlp8/view?usp=drive_link
-
-# get list of trawl EM EFP vessels
-# efp_list <- fread("source_data/efp_list_2023-09-05.csv")[, PERMIT := as.character(PERMIT)]
-# https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
-
 #New
 #TODO - make this an api call
 ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
