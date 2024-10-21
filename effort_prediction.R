@@ -161,7 +161,8 @@ rm(preds, preds_out, ndata)
 effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED] #TODO - useful but maybe calculate MSE?
 
 # plot retrospective predictions against actuals for ADPyear - 1
-figure_c2a <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, color = STRATA)) +
+figure_c2a <- 
+  ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, color = STRATA)) +
   geom_point(aes(y = TOTAL_TRIPS_PRED)) +
   geom_abline(intercept = 0, slope = 1) +
   theme_bw() +
@@ -175,7 +176,8 @@ figure_c2a <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS,
 # plot retrospective residual histograms for ADPyear - 1 (old p2).  This plot shows the desired mean of zero and normal distribution of residuals based on 
 # the distribution of residuals you got.  Compare this against the mean in blue we got and the density we got in blue.
 # TODO - the text below in the stat_function is cumbersome.
-figure_c2b <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
+figure_c2b <- 
+  ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
   geom_histogram(aes(y = after_stat(density)), fill = "blue", color = "white", alpha = .5, bins = 20) +
   stat_function(
     fun = dnorm, 
@@ -196,7 +198,6 @@ ggsave(filename = "output_figures/figure_c2.png",
        width = 6.5, height = 10, units = "in")
 
 # roll predictions forward one year
-#TODO - I had to change the original "on" statement to by.x and by.y...
 # This command increases the number of observations by a year * strata.
 effort_strata.work <- merge(effort_strata.work[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], 
                        effort_strata.work[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
@@ -206,7 +207,8 @@ effort_strata.work <- merge(effort_strata.work[, !c("TOTAL_TRIPS_PRED", "RESIDUA
 effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
 
 # plot retrospecitve predictions against actuals for ADPyear
-figure_c3a <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
+figure_c3a <- 
+  ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
       geom_point() +
       geom_abline(intercept = 0, slope = 1) +
       theme_bw() +
@@ -217,7 +219,8 @@ figure_c3a <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS,
 
 # plot retrospective residuals for ADPyear
 #TODO - amend as P2
-figure_c3b <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
+figure_c3b <- 
+  ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
       geom_histogram(bins = 20) +
       geom_vline(xintercept = 0, color = "red") +
       geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "red") +
@@ -244,22 +247,25 @@ ggsave(filename = "output_figures/figure_c3.png",
 #  add_ci(fit = effort_glm, names = c("lcb", "ucb"), alpha = 0.05)
 
 # Confidence intervals
-pred_ints <- add_ci(df = as.data.frame(effort_strata.work[ADP < ADPyear]),
-                    fit = effort_glm, names = c("lcb", "ucb"), alpha = 0.05) %>%
+pred_ints <- 
+  add_ci(df = as.data.frame(effort_strata.work[ADP < ADPyear]),
+         fit = effort_glm, names = c("lcb", "ucb"), alpha = 0.05) %>%
   select(!c(TOTAL_TRIPS_PRED, RESIDUALS)) %>%
   mutate(TOTAL_TRIPS = case_when(is.na(TOTAL_TRIPS) ~ pred,
                                  TRUE ~ TOTAL_TRIPS))
 
 # Copy current year's data and predicted values
-current_yr <- pred_ints %>% filter(ADP == ADPyear - 1) %>%
-  mutate(ADP = ADPyear,
-         MAX_DATE_TRIPS = NA)
+current_yr <- 
+  pred_ints %>% 
+  filter(ADP == ADPyear - 1) %>%
+  mutate(ADP = ADPyear, MAX_DATE_TRIPS = NA)
 
 # Combine data
 pred_trips <- rbind(pred_ints, current_yr)
 
 # Visualize
-figure_c4 <- ggplot(data = pred_trips, aes(x = ADP, y = TOTAL_TRIPS)) +
+figure_c4 <- 
+  ggplot(data = pred_trips, aes(x = ADP, y = TOTAL_TRIPS)) +
   geom_ribbon(aes(ymin = lcb, ymax = ucb), alpha = 0.5, color = "black") +
   geom_point() +
   geom_point(aes(y = pred), color = "cyan", alpha = 0.75) +
@@ -289,21 +295,32 @@ save(list = c("pred_trips", "figure_c1", "figure_c2", "figure_c3", "figure_c4"),
 #'`-- Error distribution for incoporating into allocation models ------------- `
 #'`-- CRAIG --------------------`
 
-out <- predict(effort_glm, type = "link", se.fit = TRUE,
-               newdata = pred_ints)
+pred_ints$ucb_diff <- pred_ints$ucb - pred_ints$pred
+pred_ints$lcb_diff <- pred_ints$pred - pred_ints$lcb 
+#Diffs not the same
+
+
+out2 <- predict(effort_glm, type = "link", se.fit = TRUE,
+                newdata = pred_ints)
+
+# crit_val <- qt(p = 1 - alpha/2, df = fit$df.residual) #p = 0.975
+# inverselink <- fit$family$linkinv
+# pred <- inverselink(out$fit)
+# upr <- inverselink(out$fit + crit_val * out$se.fit)
+# lwr <- inverselink(out$fit - crit_val * out$se.fit)
 
 ilink <- family(effort_glm)$linkinv
 
 #Steps for Geoff:
-# TODO - is the value from se.fit the equivalent to sd in rnorm?
-testing <- ilink(rnorm(1000, mean = out$fit[96], sd = out$se.fit[96]))
+# 1. Grab a random number using the se from the model before the link is applied.
+# 2. convert this back to the raw values using the ilink function.
+testing <- ilink(rnorm(1000, mean = out2$fit[96], sd = out2$se.fit[96]))
 
 ggplot(data = as.data.frame(testing), aes(x = testing)) +
   geom_histogram() +
   geom_vline(xintercept = pred_ints$pred[96]) +
-  geom_vline(xintercept = pred_ints$ucb[96]) +
-  geom_vline(xintercept = pred_ints$lcb[96])
-
+  geom_vline(xintercept = pred_ints$lcb[96], lty = 2) +
+  geom_vline(xintercept = pred_ints$ucb[96], lty = 2)
 
 #'`-- Calculate CIs by hand ---------------------------------------------------`
 
