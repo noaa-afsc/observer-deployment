@@ -14,6 +14,7 @@ if(!require("data.table"))   install.packages("data.table", repos='http://cran.u
 if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.r-project.org')
 if(!require("FMAtools")) devtools::install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
 if(!require("ciTools"))   install.packages("ciTools", repos='http://cran.us.r-project.org') # Confidence interval calculation for GLMs
+if(!require("ggpubr"))   install.packages("ggpubr", repos='http://cran.us.r-project.org')
 
 # avoid scientific notation
 options(scipen = 9999)
@@ -160,7 +161,7 @@ rm(preds, preds_out, ndata)
 effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED] #TODO - useful but maybe calculate MSE?
 
 # plot retrospective predictions against actuals for ADPyear - 1
-figure_c2 <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, color = STRATA)) +
+figure_c2a <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, color = STRATA)) +
   geom_point(aes(y = TOTAL_TRIPS_PRED)) +
   geom_abline(intercept = 0, slope = 1) +
   theme_bw() +
@@ -171,12 +172,10 @@ figure_c2 <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, 
        y = "Predicted stratum-specific trips in ADPyear - 1",
        color = "Stratum")
 
-ggsave(filename = "output_figures/figure_c2.png", plot = figure_c2, width = 5, height = 5, units = "in")
-
 # plot retrospective residual histograms for ADPyear - 1 (old p2).  This plot shows the desired mean of zero and normal distribution of residuals based on 
 # the distribution of residuals you got.  Compare this against the mean in blue we got and the density we got in blue.
 # TODO - the text below in the stat_function is cumbersome.
-figure_c3 <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
+figure_c2b <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
   geom_histogram(aes(y = after_stat(density)), fill = "blue", color = "white", alpha = .5, bins = 20) +
   stat_function(
     fun = dnorm, 
@@ -190,7 +189,11 @@ figure_c3 <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
   theme_bw() +
   labs(x = "Residuals")
 
-ggsave(filename = "output_figures/figure_c3.png", plot = figure_c3, width = 5, height = 5, units = "in")
+figure_c2 <- ggarrange(figure_c2a, figure_c2b, ncol = 1, heights = c(1, 0.75))
+
+ggsave(filename = "output_figures/figure_c2.png",
+       figure_c2,
+       width = 6.5, height = 10, units = "in")
 
 # roll predictions forward one year
 #TODO - I had to change the original "on" statement to by.x and by.y...
@@ -203,7 +206,7 @@ effort_strata.work <- merge(effort_strata.work[, !c("TOTAL_TRIPS_PRED", "RESIDUA
 effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
 
 # plot retrospecitve predictions against actuals for ADPyear
-figure_c4 <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
+figure_c3a <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
       geom_point() +
       geom_abline(intercept = 0, slope = 1) +
       theme_bw() +
@@ -212,18 +215,20 @@ figure_c4 <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, 
       guides(color = guide_legend(ncol = 3)) +
       labs(x = "True stratum-specific trips in ADPyear", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
 
-ggsave(filename = "output_figures/figure_c4.png", plot = figure_c4, width = 5, height = 5, units = "in")
-
 # plot retrospective residuals for ADPyear
 #TODO - amend as P2
-figure_c5 <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
+figure_c3b <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
       geom_histogram(bins = 20) +
       geom_vline(xintercept = 0, color = "red") +
       geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "red") +
       theme_bw() +
       labs(x = "Residuals")
 
-ggsave(filename = "output_figures/figure_c5.png", plot = figure_c5, width = 5, height = 5, units = "in")
+figure_c3 <- ggarrange(figure_c3a, figure_c3b, ncol = 1, heights = c(1, 0.75))
+
+ggsave(filename = "output_figures/figure_c3.png",
+       figure_c3,
+       width = 6.5, height = 10, units = "in")
 
 #==============================#
 ## Confidence intervals ----
@@ -254,7 +259,7 @@ current_yr <- pred_ints %>% filter(ADP == ADPyear - 1) %>%
 pred_trips <- rbind(pred_ints, current_yr)
 
 # Visualize
-figure_c6 <- ggplot(data = pred_trips, aes(x = ADP, y = TOTAL_TRIPS)) +
+figure_c4 <- ggplot(data = pred_trips, aes(x = ADP, y = TOTAL_TRIPS)) +
   geom_ribbon(aes(ymin = lcb, ymax = ucb), alpha = 0.5, color = "black") +
   geom_point() +
   geom_point(aes(y = pred), color = "cyan", alpha = 0.75) +
@@ -267,21 +272,40 @@ figure_c6 <- ggplot(data = pred_trips, aes(x = ADP, y = TOTAL_TRIPS)) +
   labs(x = "Year",
        y = "Total trips")
 
-ggsave(filename = "output_figures/figure_c6.png", plot = figure_c6, width = 5, height = 5, units = "in")
+ggsave(filename = "output_figures/figure_c4.png", plot = figure_c4, width = 5, height = 5, units = "in")
 
 #==============================#
 ## Save results ----
 #==============================#
 
 # save effort predictions
-save(list = c("pred_trips", "figure_c1", "figure_c2", "figure_c3", "figure_c4", "figure_c5", "figure_c6"),
+save(list = c("pred_trips", "figure_c1", "figure_c2", "figure_c3", "figure_c4"),
      file = "source_data/effort_prediction.rdata")
 
 #==============================#
 ## Testing area ----
 #==============================#
 
-#'`-----------------TESTING----------------------------------------------------`
+#'`-- Error distribution for incoporating into allocation models ------------- `
+#'`-- CRAIG --------------------`
+
+out <- predict(effort_glm, type = "link", se.fit = TRUE,
+               newdata = pred_ints)
+
+ilink <- family(effort_glm)$linkinv
+
+#Steps for Geoff:
+# TODO - is the value from se.fit the equivalent to sd in rnorm?
+testing <- ilink(rnorm(1000, mean = out$fit[96], sd = out$se.fit[96]))
+
+ggplot(data = as.data.frame(testing), aes(x = testing)) +
+  geom_histogram() +
+  geom_vline(xintercept = pred_ints$pred[96]) +
+  geom_vline(xintercept = pred_ints$ucb[96]) +
+  geom_vline(xintercept = pred_ints$lcb[96])
+
+
+#'`-- Calculate CIs by hand ---------------------------------------------------`
 
 # Manually calculate 95% Confidence Intervals
 # https://fromthebottomoftheheap.net/2018/12/10/confidence-intervals-for-glms/
