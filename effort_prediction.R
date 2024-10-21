@@ -60,7 +60,7 @@ anova(effort_glm4, effort_glm3, test = "F")
 anova(effort_glm5, effort_glm4, test = "F")
 
 # TODO - improve - "Best" model (for now just based on "a feeling")
-effort_glm <- effort_glm4
+effort_glm <- effort_glm5
 
 # Evaluate "best" model
 # 1) Check for overdispersion - (if = 1, then we don't need to use quasipoisson distribution)
@@ -87,37 +87,30 @@ rm(effort_glm1, effort_glm2, effort_glm3, effort_glm4, effort_glm5, E, N, p, Fit
 #TODO - generalize - below is hard code of "effort_glm"
 ggplot(effort_strata[ADP < ADPyear - 1], aes(x = ADP, y = TOTAL_TRIPS)) +
   geom_point() +
-  stat_smooth(method = "glm", formula = y ~ poly(x, 2), method.args = list(family = "quasipoisson")) +
+  stat_smooth(method = "glm", formula = y ~ poly(x, 3), method.args = list(family = "quasipoisson")) +
   facet_wrap(vars(STRATA), scales = "free")
 
 library(dplyr)
 
-# TODO Currently this is not calculating for each year separately
-# 1) Used to assess how good our predictions are
-# 2) Creates predicted data for next year
+#'` Assess model predictions for each year `
+# 1) Used to assess how good our predictions are using the selected model
+# 2) Predicts data for each year using selected year from "maxback"
+
+#'* ISSUES HERE *:
+# 1) Best model for this year not necessarily best model in previous years
+# 2) Polynomial terms not useful for earlier datasets - causes issues in predictions
 maxback <- 6 #TODO - user defined (here by precedent, but add a max possible with an error if it exceeds number of ADP by three or four...)
 
 for(i in 1:maxback){
-  preds <- effort_strata %>% filter(ADP == ADPyear - i)
-  preds$TOTAL_TRIPS_PRED <- predict(effort_glm, type = "response", preds)
-  if(i == 1)
-    preds_out <- preds
-  else
-    preds_out <- rbind(preds, preds_out)
+ preds <- effort_strata %>% filter(ADP == ADPyear - i)
+ preds$TOTAL_TRIPS_PRED <- predict(glm(formula = effort_glm$formula, data = effort_strata[ADP < ADPyear - i],
+                                       family = effort_glm$family$family), type = "response", preds)
+ if(i == 1)
+   preds_out <- preds
+ else
+   preds_out <- rbind(preds, preds_out)
 }
-
-#'`Below is attempt to "fix" what this data is doing`
-#for(i in 1:maxback){
-#  i <- 1
-#  preds <- effort_strata %>% filter(ADP == ADPyear - i)
-#  preds$TOTAL_TRIPS_PRED <- predict(glm(formula = effort_glm$formula, data = effort_strata[ADP < ADPyear - i],
-#                                        family = effort_glm$family$family), type = "response", preds)
-#  if(i == 1)
-#    preds_out <- preds
-#  else
-#    preds_out <- rbind(preds, preds_out)
-#}
-#'`-----------------------------------------------------`
+# Warnings because polynomial terms not appropriate for some past time series
 
 # Visualize predictions
 ggplot(preds_out, aes(x = ADP)) +
