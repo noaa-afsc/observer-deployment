@@ -109,7 +109,7 @@ rm(E, N, p, Fit, eta)
 ndata <- bind_cols(effort_strata.work[ADP <= ADPyear],
           setNames(as_tibble(predict(effort_glm,
                                      newdata = effort_strata.work[ADP <= ADPyear],
-                                     se.fit = TRUE, , type = "response")[1:2]),
+                                     se.fit = TRUE, type = "response")[1:2]),
                    c("fitted", "se")))
 
 ggplot(ndata, aes(x = ADP, y = TOTAL_TRIPS)) +
