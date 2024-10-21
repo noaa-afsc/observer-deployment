@@ -1,18 +1,27 @@
-# get packages if they aren't already loaded
-if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
-if(!require("ggplot2"))   install.packages("ggplot2", repos='http://cran.us.r-project.org')
-if(!require("gridExtra"))   install.packages("gridExtra", repos='http://cran.us.r-project.org')
-if(!require("scales"))   install.packages("scales", repos='http://cran.us.r-project.org')
-if(!require("FMAtools")) devtools::install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
-
-# avoid scientific notation
-options(scipen = 9999)
+#==============================#
+## User inputs ----
+#==============================#
 
 # TODO - make into an API call
 #user inputs
 ADPyear <- 2025
 
-#New
+#==============================#
+## Load Packages ----
+#==============================#
+
+if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
+if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.r-project.org')
+if(!require("FMAtools")) devtools::install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
+if(!require("ciTools"))   install.packages("ciTools", repos='http://cran.us.r-project.org') # Confidence interval calculation for GLMs
+
+# avoid scientific notation
+options(scipen = 9999)
+
+#==============================#
+## Load data ----
+#==============================#
+
 #TODO - make this an api call
 ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
 
@@ -23,14 +32,25 @@ gdrive_download(# Will only execute if you are not already up to date.
 
 load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
 
-rm(ADP_dribble)
+rm(list = setdiff(ls(), c("effort_strata", "ADPyear")))
 
 # Create placeholder data
 effort_strata.work <- effort_strata
 
+#==============================#
+## Modeling ----
+#==============================#
+
 # Visualize data
-ggplot(data = effort_strata.work[ADP < ADPyear - 1]) +
-  geom_col(aes(x = ADP, y = TOTAL_TRIPS)) + facet_wrap(vars(STRATA), scales = "free")
+figure_c1 <- ggplot(data = effort_strata.work[ADP < ADPyear - 1]) +
+  geom_col(aes(x = ADP, y = TOTAL_TRIPS)) + facet_wrap(vars(STRATA), scales = "free_y") +
+  scale_x_continuous(breaks = seq(min(effort_strata.work$ADP), ADPyear, by = 5)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
+  labs(x = "Year",
+       y = "Total trips")
+
+ggsave(filename = "output_figures/figure_c1.png", plot = figure_c1, width = 5, height = 5, units = "in")
 
 # Model using GLM (# of trips is count data)
 # When using poisson GLM, need to check for overdispersion.
@@ -99,15 +119,19 @@ ggplot(ndata, aes(x = ADP, y = TOTAL_TRIPS)) +
   scale_x_continuous(breaks = seq(min(effort_strata.work$ADP), ADPyear, by = 1)) +
   theme_bw()
 
-library(dplyr)
+#==============================#
+## Assess model predictions ----
+#==============================#
 
-#'` Assess model predictions for each year `
 # 1) Used to assess how good our predictions are using the selected model
 # 2) Predicts data for each year using selected year from "maxback"
 
 #'* ISSUES HERE *:
 # 1) Best model for this year not necessarily best model in previous years
 # 2) Polynomial terms not useful for earlier datasets - causes issues in predictions
+
+#library(dplyr)
+
 maxback <- 5 #TODO - user defined (here by precedent, but add a max possible with an error if it exceeds number of ADP by three or four...)
 
 for(i in 1:maxback){
@@ -119,7 +143,7 @@ for(i in 1:maxback){
  else
    preds_out <- rbind(preds, preds_out)
 }
-# Warnings because polynomial terms not appropriate for some past time series
+# Warnings when using polynomials because polynomial terms not appropriate for some past time series
 
 # Visualize predictions
 ggplot(preds_out, aes(x = ADP)) +
@@ -136,7 +160,7 @@ rm(preds, preds_out, ndata)
 effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED] #TODO - useful but maybe calculate MSE?
 
 # plot retrospective predictions against actuals for ADPyear - 1
-ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, color = STRATA)) +
+figure_c2 <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, color = STRATA)) +
   geom_point(aes(y = TOTAL_TRIPS_PRED)) +
   geom_abline(intercept = 0, slope = 1) +
   theme_bw() +
@@ -145,10 +169,12 @@ ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, color = STRAT
        y = "Predicted stratum-specific trips in ADPyear - 1",
        color = "Stratum")
 
+ggsave(filename = "output_figures/figure_c2.png", plot = figure_c2, width = 5, height = 5, units = "in")
+
 # plot retrospective residual histograms for ADPyear - 1 (old p2).  This plot shows the desired mean of zero and normal distribution of residuals based on 
 # the distribution of residuals you got.  Compare this against the mean in blue we got and the density we got in blue.
 # TODO - the text below in the stat_function is cumbersome.
-ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
+figure_c3 <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
   geom_histogram(aes(y = after_stat(density)), fill = "blue", color = "white", alpha = .5, bins = 20) +
   stat_function(
     fun = dnorm, 
@@ -162,9 +188,7 @@ ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
   theme_bw() +
   labs(x = "Residuals")
 
-# png("Appendix_C/figures/EffortPredictionResiduals1.png", width = 7, height = 10, units = 'in', res=300)
-# grid.arrange(p1, p2)
-# dev.off()
+ggsave(filename = "output_figures/figure_c3.png", plot = figure_c3, width = 5, height = 5, units = "in")
 
 # roll predictions forward one year
 #TODO - I had to change the original "on" statement to by.x and by.y...
@@ -177,31 +201,34 @@ effort_strata.work <- merge(effort_strata.work[, !c("TOTAL_TRIPS_PRED", "RESIDUA
 effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
 
 # plot retrospecitve predictions against actuals for ADPyear
-ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
+figure_c4 <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
       geom_point() +
       geom_abline(intercept = 0, slope = 1) +
       theme_bw() +
       theme(legend.position = "bottom") +
       labs(x = "True stratum-specific trips in ADPyear", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
 
+ggsave(filename = "output_figures/figure_c4.png", plot = figure_c4, width = 5, height = 5, units = "in")
+
 # plot retrospective residuals for ADPyear
 #TODO - amend as P2
-ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
+figure_c5 <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
       geom_histogram(bins = 20) +
       geom_vline(xintercept = 0, color = "red") +
       geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "red") +
       theme_bw() +
       labs(x = "Residuals")
 
-# png("Appendix_C/figures/EffortPredictionResiduals2.png", width = 7, height = 10, units = 'in', res=300)
-# grid.arrange(p3, p4)
-# dev.off()
+ggsave(filename = "output_figures/figure_c5.png", plot = figure_c5, width = 5, height = 5, units = "in")
+
+#==============================#
+## Confidence intervals ----
+#==============================#
 
 # Prediction intervals?
 # https://cran.r-project.org/web/packages/ciTools/vignettes/ciTools-glm-vignette.html
 # But, meaningless for quasipoisson
 # https://stats.stackexchange.com/questions/648734/difficulty-simulating-prediction-interval-for-quasipoisson-glm-in-r
-if(!require("ciTools"))   install.packages("ciTools", repos='http://cran.us.r-project.org')
 
 # Can't predict prediction intervals
 #pred_ints <- add_pi(df = as.data.frame(effort_strata.work[ADP < ADPyear - 1]), fit = effort_glm, names = c("lpb", "upb"), nSims = 10000, alpha = 0.05) %>%
@@ -220,26 +247,35 @@ current_yr <- pred_ints %>% filter(ADP == ADPyear - 1) %>%
          MAX_DATE_TRIPS = NA)
 
 # Combine data
-pred_ints <- rbind(pred_ints, current_yr)
+pred_trips <- rbind(pred_ints, current_yr)
 
 # Visualize
-ggplot(data = pred_ints, aes(x = ADP, y = TOTAL_TRIPS)) +
-  geom_ribbon(aes(ymin = lcb, ymax = ucb), alpha = 0.5, color = "blue") +
+figure_c6 <- ggplot(data = pred_trips, aes(x = ADP, y = TOTAL_TRIPS)) +
+  geom_ribbon(aes(ymin = lcb, ymax = ucb), alpha = 0.5, color = "black") +
   geom_point() +
-  geom_point(aes(y = pred), color = "cyan") +
-  geom_point(data = pred_ints %>% filter(ADP >= ADPyear - 1), aes(y = TOTAL_TRIPS), color = "red") +
+  geom_point(aes(y = pred), color = "cyan", alpha = 0.75) +
+  geom_point(data = pred_trips %>% filter(ADP >= ADPyear - 1), aes(y = TOTAL_TRIPS), color = "red") +
   facet_wrap(vars(STRATA), scales = "free_y") +
-  scale_x_continuous(breaks = seq(min(pred_ints$ADP), ADPyear, by = 1)) +
-  theme_bw()
+  scale_x_continuous(breaks = seq(min(pred_trips$ADP), ADPyear, by = 3)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5),
+        axis.title.x = element_text(margin = margin(t = 10))) +
+  labs(x = "Year",
+       y = "Total trips")
 
-# save effort predictions (to_draw) and the population of trips to sample from (draw_from)
-save(list = c("effort_year", "effort_strata.work", "efp_prob"), file = "source_data/effort_prediction.rdata")
+ggsave(filename = "output_figures/figure_c6.png", plot = figure_c6, width = 5, height = 5, units = "in")
 
+#==============================#
+## Save results ----
+#==============================#
 
+# save effort predictions
+save(list = c("pred_trips", "figure_c1", "figure_c2", "figure_c3", "figure_c4", "figure_c5", "figure_c6"),
+     file = "source_data/effort_prediction.rdata")
 
-
-
-
+#==============================#
+## Testing area ----
+#==============================#
 
 #'`-----------------TESTING----------------------------------------------------`
 
