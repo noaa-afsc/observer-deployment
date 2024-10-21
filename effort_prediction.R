@@ -165,6 +165,8 @@ figure_c2 <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, 
   geom_abline(intercept = 0, slope = 1) +
   theme_bw() +
   theme(legend.position = "bottom") +
+  scale_fill_viridis_d(option = "viridis", aesthetics = "color") +
+  guides(color = guide_legend(ncol = 3)) +
   labs(x = "True stratum-specific trips in ADPyear - 1",
        y = "Predicted stratum-specific trips in ADPyear - 1",
        color = "Stratum")
@@ -206,6 +208,8 @@ figure_c4 <- ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, 
       geom_abline(intercept = 0, slope = 1) +
       theme_bw() +
       theme(legend.position = "bottom") +
+      scale_fill_viridis_d(option = "viridis", aesthetics = "color") +
+      guides(color = guide_legend(ncol = 3)) +
       labs(x = "True stratum-specific trips in ADPyear", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
 
 ggsave(filename = "output_figures/figure_c4.png", plot = figure_c4, width = 5, height = 5, units = "in")
