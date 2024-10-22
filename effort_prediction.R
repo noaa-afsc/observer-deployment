@@ -361,7 +361,7 @@ for(i in 1:nrow(effort_prediction)){
 df_new <- 
   merge(
     effort_prediction[i,], 
-    data.frame(TRIPS = ilink(rnorm(reps, mean = effort_prediction$mean[i], sd = effort_prediction$sd[i])
+    data.frame(TRIPS = ilink(rnorm(1000, mean = effort_prediction$mean[i], sd = effort_prediction$sd[i])
                              )
                ),
     all = TRUE)
@@ -374,6 +374,7 @@ if(i > 1)
 
 }
 # TODO - save objects effort_glm and effort_prediction locally to source_data/effort_prediction_2025.rdata
+# and upload to source_data on the Gdrive
 
 # End Geoff use --------------------------------------------------------------------------------------------------------
 
@@ -382,9 +383,10 @@ if(i > 1)
 #Plot the results
 ggplot(data = df, aes(x = TRIPS)) +
   geom_histogram() +
-  geom_vline(xintercept = pred_ints$pred[96]) +
-  geom_vline(xintercept = pred_ints$lcb[96], lty = 2) +
-  geom_vline(xintercept = pred_ints$ucb[96], lty = 2)
+   geom_vline(data = effort_prediction, aes(xintercept = TOTAL_TRIPS)) +
+   geom_vline(data = effort_prediction, aes(xintercept = lcb), lty = 2) +
+   geom_vline(data = effort_prediction, aes(xintercept = ucb), lty = 2) +
+  facet_wrap(~ STRATA, scales = "free", ncol = 2)
 
 
 
