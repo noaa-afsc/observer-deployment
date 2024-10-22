@@ -6,6 +6,9 @@
 #ADPyear <- as.numeric(rstudioapi::askForPassword("What year is the ADP year? (four digits, example: 2025)"))
 ADPyear <- 2025
 
+ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data") #Prompts user input.
+
+saveoutputs <- "NO" #Must be "YES" to save figures and rdata file.  Use any other value to skip saves.
 #==============================#
 ## Load Packages ----
 #==============================#
@@ -22,9 +25,6 @@ options(scipen = 9999)
 #==============================#
 ## Load data ----
 #==============================#
-
-#TODO - make this an api call
-ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
 
 gdrive_download(# Will only execute if you are not already up to date.
   local_path = paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"),
@@ -52,7 +52,9 @@ figure_c1 <-
   labs(x = "Year",
        y = "Total trips")
 
-ggsave(filename = "output_figures/figure_c1.png", plot = figure_c1, width = 5, height = 5, units = "in")
+if(saveoutputs == "YES"){
+  ggsave(filename = "output_figures/figure_c1.png", plot = figure_c1, width = 5, height = 5, units = "in")
+}
 
 # Model using GLM (# of trips is count data)
 # When using poisson GLM, need to check for overdispersion.
@@ -106,8 +108,9 @@ abline(h = 0, v = 0, lty = 2)
 # Clean up
 rm(E, N, p, Fit, eta)
 
-# Plot "best" model for visual evaluation
-ndata <- bind_cols(effort_strata.work[ADP <= ADPyear],
+# Plot "best" model for visual evaluation 
+#TODO - is this duplicative?  Save for later?
+ndata <- bind_cols(effort_strata.work[ADP <= ADPyear], #TODO - how does this work since there are no 2025 data?
           setNames(as_tibble(predict(effort_glm,
                                      newdata = effort_strata.work[ADP <= ADPyear],
                                      se.fit = TRUE, type = "response")[1:2]),
@@ -116,8 +119,8 @@ ndata <- bind_cols(effort_strata.work[ADP <= ADPyear],
 ggplot(ndata, aes(x = ADP, y = TOTAL_TRIPS)) +
   geom_point() +
   geom_line(aes(y = fitted)) +
-  geom_ribbon(aes(ymax = fitted + se, ymin = fitted - se), alpha = 0.5) +
-  facet_wrap(vars(STRATA), scales = "free") +
+  geom_ribbon(aes(ymax = fitted + 1.96 * se, ymin = fitted - 1.96 * se), alpha = 0.3) + #Added the 1.96
+  facet_wrap(vars(STRATA), scales = "free", ncol = 2) +
   scale_x_continuous(breaks = seq(min(effort_strata.work$ADP), ADPyear, by = 1)) +
   theme_bw()
 
@@ -154,6 +157,7 @@ ggplot(preds_out, aes(x = ADP)) +
   
 effort_strata.work <- merge(effort_strata.work, preds_out, all.x = TRUE)
 
+#TODO - dont eliminate ndata just yet.
 rm(preds, preds_out, ndata)
 
 # calculate residuals
@@ -162,7 +166,7 @@ effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED] #TODO - useful
 # plot retrospective predictions against actuals for ADPyear - 1
 figure_c2a <- 
   ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, color = STRATA)) +
-  geom_point(aes(y = TOTAL_TRIPS_PRED)) +
+  geom_point(aes(y = TOTAL_TRIPS_PRED), size = as.numeric(as.factor(effort_strata.work[!is.na(RESIDUALS)]$ADP))) +
   geom_abline(intercept = 0, slope = 1) +
   theme_bw() +
   theme(legend.position = "bottom") +
@@ -188,13 +192,15 @@ figure_c2b <-
   geom_vline(xintercept = 0, color = "black", lwd = 2) +
   geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "blue", lwd = 2) +
   theme_bw() +
-  labs(x = "Residuals")
+  labs(x = "Residuals", y = "Density")
 
 figure_c2 <- ggarrange(figure_c2a, figure_c2b, ncol = 1, heights = c(1, 0.75))
 
-ggsave(filename = "output_figures/figure_c2.png",
+if(saveoutputs == "YES"){
+  ggsave(filename = "output_figures/figure_c2.png",
        figure_c2,
        width = 6.5, height = 10, units = "in")
+}
 
 # roll predictions forward one year
 # This command increases the number of observations by a year * strata.
@@ -220,17 +226,26 @@ figure_c3a <-
 #TODO - amend as P2
 figure_c3b <- 
   ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
-      geom_histogram(bins = 20) +
-      geom_vline(xintercept = 0, color = "red") +
-      geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "red") +
-      theme_bw() +
-      labs(x = "Residuals")
+  geom_histogram(aes(y = after_stat(density)), fill = "blue", color = "white", alpha = .5, bins = 20) +
+  stat_function(
+    fun = dnorm, 
+    args = list(mean = 0, 
+                sd = sd(effort_strata.work[!is.na(RESIDUALS)]$RESIDUALS)), 
+    lwd = 2, 
+    col = 'black') +
+  geom_density(color = "blue", lwd = 2) +
+  geom_vline(xintercept = 0, color = "black", lwd = 2) +
+  geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "blue", lwd = 2) +
+  theme_bw() +
+  labs(x = "Residuals", y = "Density")
 
 figure_c3 <- ggarrange(figure_c3a, figure_c3b, ncol = 1, heights = c(1, 0.75))
 
-ggsave(filename = "output_figures/figure_c3.png",
+if(saveoutputs == "YES"){
+  ggsave(filename = "output_figures/figure_c3.png",
        figure_c3,
        width = 6.5, height = 10, units = "in")
+}
 
 #==============================#
 ## Confidence intervals ----
@@ -277,15 +292,19 @@ figure_c4 <-
   labs(x = "Year",
        y = "Total trips")
 
-ggsave(filename = "output_figures/figure_c4.png", plot = figure_c4, width = 5, height = 5, units = "in")
+if(saveoutputs == "YES"){
+  ggsave(filename = "output_figures/figure_c4.png", plot = figure_c4, width = 5, height = 5, units = "in")
+}
 
 #==============================#
 ## Save results ----
 #==============================#
 
 # save effort predictions
-save(list = c("pred_trips", "figure_c1", "figure_c2", "figure_c3", "figure_c4"),
+if(saveoutputs == "YES"){
+  save(list = c("pred_trips", "figure_c1", "figure_c2", "figure_c3", "figure_c4"),
      file = "source_data/effort_prediction.rdata")
+}
 
 #==============================#
 ## Testing area ----
@@ -327,19 +346,22 @@ pred_ints$sd <- predict(model, type = "link", se.fit = TRUE,
                           newdata = pred_ints)$se.fit
 
 #Peel off last years and use it for this year
-start_df <- pred_ints %>% filter(ADP == max(ADP))
-start_df$ADP <- ADPyear
-start_df$MAX_DATE_TRIPS <- NA
+effort_prediction <- pred_ints %>% filter(ADP == max(ADP))
+effort_prediction$ADP <- ADPyear
+effort_prediction$MAX_DATE_TRIPS <- NA
+
+
+# For use by Geoff -----------------------------------------------------------------------------------------------------
 
 #Get inverse link function
-ilink <- family(model)$linkinv
+ilink <- family(effort_glm)$linkinv
 
-for(i in 1:nrow(start_df)){
+for(i in 1:nrow(effort_prediction)){
 #Start loop - for each stratum
 df_new <- 
   merge(
-    start_df[i,], 
-    data.frame(TRIPS = ilink(rnorm(reps, mean = start_df$mean[i], sd = start_df$sd[i])
+    effort_prediction[i,], 
+    data.frame(TRIPS = ilink(rnorm(reps, mean = effort_prediction$mean[i], sd = effort_prediction$sd[i])
                              )
                ),
     all = TRUE)
@@ -351,9 +373,14 @@ if(i > 1)
   df <- rbind(df, df_new)
 
 }
+# TODO - save objects effort_glm and effort_prediction locally to source_data/effort_prediction_2025.rdata
+
+# End Geoff use --------------------------------------------------------------------------------------------------------
+
+
 
 #Plot the results
-ggplot(data = as.data.frame(testing), aes(x = testing)) +
+ggplot(data = df, aes(x = TRIPS)) +
   geom_histogram() +
   geom_vline(xintercept = pred_ints$pred[96]) +
   geom_vline(xintercept = pred_ints$lcb[96], lty = 2) +
