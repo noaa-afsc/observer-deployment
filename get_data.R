@@ -644,7 +644,7 @@ if(out_save == "Y"){
   #' For the data to be used by the rest of our scripts, we trim work.data to contain only the most recent 3 full 
   #' years and the current year.
   save(
-    work.data.recent, trips_melt, PartialCPs, full_efrt, max_date, fg_em, effort_strata,
+    work.data.recent, trips_melt, PartialCPs, full_efrt, max_date, fg_em, effort_strata, td_mod,
     file = paste0("source_data/", out_name)
   )
   #' Upload to shared Gdrive source_data folder
