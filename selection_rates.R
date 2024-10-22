@@ -8,6 +8,7 @@
 #======================================================================================================================#
 
 adp_year <- 2025
+adp_ver  <- "Final"  #' `Draft` or `Final`, which is case-sensitive!
 
 #===================#
 ## Load Packages ----
@@ -30,13 +31,14 @@ library(officer)            # For additional flextable formatting options such a
 #===============#
 
 #' Load the outputs of `get_data.R`
+
 gdrive_download(
-  local_path = "source_data/2025_Draft_ADP_data.rdata",
+  local_path = "source_data/2025_Final_ADP_data.rdata",
   gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
 )
-(load("source_data/2025_Draft_ADP_data.rdata"))
+(load("source_data/2025_Final_ADP_data.rdata"))
 
-#' Load `cost_params`, the output of `monitoring_costs.R``
+#' Load `cost_params`, the output of `monitoring_costs.R`. 2025 Draft used ver = 3. 
 gdrive_download( 
   local_path = "source_data/cost_params_2025.Rdata", 
   gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
@@ -61,8 +63,6 @@ load("source_data/ak_shp.rdata")      # shp_land, shp_nmfs, and shp_centroids ad
 
 source("common_functions/open_channel.R")
 source("common_functions/allocation_functions.R")
-#' TODO *model_trip_duration should be used by get_data.R, but until it is ready, using it here.*
-source("common_functions/model_trip_duration.R")
 
 format_dollar <- function(x, digits) paste0("$", formatC(x, digits = digits, big.mark = ",", format = "f"))
 
@@ -74,7 +74,7 @@ set_flextable_defaults(font.family = "Times New Roman", font.size = 10)
 #===============#
 
 #' Wrangle the Valhalla data set for spatiotemporal analyses using at least 2 full years
-pc_effort_sub <- work.data[ADP >= adp_year - 2]
+pc_effort_sub <- work.data.recent[ADP >= adp_year - 2]
 #' Use the STRATA_NEW column to define stratum and CVG_NEW to define coverage category
 pc_effort_sub[
 ][, STRATA := STRATA_NEW
@@ -91,51 +91,55 @@ pc_prev_year_trips <- pc_effort_st[
 pc_effort_st <- pc_effort_st[TRIP_ID %in% pc_prev_year_trips]
 range(pc_effort_st$TRIP_TARGET_DATE)
 
-#' TODO *Assigning strata to 2024/2025 definitions. Do this in get_data.R for 2025.* 
-unique(pc_effort_st$STRATA) 
-#' [get_data.R:  EM_FIXED_GOA   EM_FIXED_BSAI   EM_TRW_GOA   TRW   HAL   POT   ZERO]
-#' [2025_strata: EM_FIXED-GOA   EM_FIXED-BSAI   EM_TRW-GOA   OB_TRW-GOA   OB_TRW-BSAI   OB_FIXED-GOA   OB_FIXED-BSAI   ZERO]
-#' TODO The NEW_STRATA labels in get_data.R are still different from how we used them in 2024 or will for 2025
-#' Rename STRATA to reflect monitoring method only
-pc_effort_st[
-][STRATA == "EM_FIXED_GOA", STRATA := "EM_FIXED"
-][STRATA == "EM_FIXED_BSAI", STRATA := "EM_FIXED"
-][STRATA == "EM_TRW_GOA", STRATA := "EM_TRW"
-][STRATA %in% c("HAL", "POT"), STRATA := "FIXED"
-][STRATA %in% c("FIXED", "TRW"), STRATA := paste0("OB_", STRATA)
-#' Now apply FMP, separating monitoring method and FMP with a hyphen. Using BSAI_GOA, which determines FMP based on 
-#' which had the most total retained catch
-][, STRATA := ifelse(STRATA != "ZERO", paste0(STRATA, "-", BSAI_GOA), STRATA)]
-unique(pc_effort_st$STRATA)
-
-#' TODO *Assign DAYS column. Do this in get_data.R!*
-#' Get actual days observed, otherwise apply model.
-channel <- open_channel()
-#' Match observed ODDS and Valhalla records. This creates `mod_dat` object
-td_mod <- model_trip_duration(work.data, use_mod = "DAYS ~ RAW + ADP * AGENCY_GEAR_CODE", channel = channel)
-# Occasionally we have multiple ODDS records assigned to the same Valhalla trip. In such cases, sum the sea days.
-actual_ob_days <- unique(mod_dat[, .(TRIP_ID, ODDS_SEQ, DAYS)])[, .(DAYS = sum(DAYS)), keyby = .(TRIP_ID)]
-# Merge in actual days observed
-pc_effort_st[, DAYS := actual_ob_days[pc_effort_st, DAYS, on = c(TRIP_ID = "wd_TRIP_ID")]]
-# For other observer strata trips that were not observed, use the modeled estimates
-ob_trips_predict_days <- unique(pc_effort_st[STRATA %like% "OB" & is.na(DAYS), .(
-  ADP = as.factor(ADP), AGENCY_GEAR_CODE,
-  RAW = as.numeric(max(LANDING_DATE, TRIP_TARGET_DATE) - min(TRIP_TARGET_DATE, LANDING_DATE), units = "days")
-), keyby = .(TRIP_ID)])
-# Apply the model, rounding to the nearest half day
-ob_trips_predict_days[, DAYS := round(predict(td_mod$TD_MOD, newdata = ob_trips_predict_days)/0.5) * 0.5]
-# For trips with multiple gear types, take the average 
-ob_trips_predict_days <- ob_trips_predict_days[, .(DAYS = mean(DAYS)), keyby = .(TRIP_ID)]
-# Merge in predictions
-pc_effort_st[, MOD_DAYS := ob_trips_predict_days[pc_effort_st, DAYS, on = .(TRIP_ID)]]
-pc_effort_st[, DAYS := fcase(!is.na(DAYS), DAYS, !is.na(MOD_DAYS), MOD_DAYS)][, MOD_DAYS := NULL]
-# For non-observer strata, simply use the end - start + 1 method
-pc_effort_st[
-  is.na(DAYS), DAYS := as.numeric(
-    1 + max(TRIP_TARGET_DATE, LANDING_DATE) - min(TRIP_TARGET_DATE, LANDING_DATE), units = "days"
-  ), by = .(TRIP_ID
-)]
-if(nrow(pc_effort_st[is.na(DAYS)])) stop("Some records are still missing DAYS")
+#' [TODO:] I've assigned stratum definitions as wanted in get_Data, but I still need the DAYS column added
+if(F) {
+  
+  #' *Assigning strata to 2024/2025 definitions. Do this in get_data.R for 2025.* 
+  unique(pc_effort_st$STRATA) 
+  #' [get_data.R:  EM_FIXED_GOA   EM_FIXED_BSAI   EM_TRW_GOA   TRW   HAL   POT   ZERO]
+  #' [2025_strata: EM_FIXED-GOA   EM_FIXED-BSAI   EM_TRW-GOA   OB_TRW-GOA   OB_TRW-BSAI   OB_FIXED-GOA   OB_FIXED-BSAI   ZERO]
+  #' TODO The NEW_STRATA labels in get_data.R are still different from how we used them in 2024 or will for 2025
+  #' Rename STRATA to reflect monitoring method only
+  pc_effort_st[
+  ][STRATA == "EM_FIXED_GOA", STRATA := "EM_FIXED"
+  ][STRATA == "EM_FIXED_BSAI", STRATA := "EM_FIXED"
+  ][STRATA == "EM_TRW_GOA", STRATA := "EM_TRW"
+  ][STRATA %in% c("HAL", "POT"), STRATA := "FIXED"
+  ][STRATA %in% c("FIXED", "TRW"), STRATA := paste0("OB_", STRATA)
+  #' Now apply FMP, separating monitoring method and FMP with a hyphen. Using BSAI_GOA, which determines FMP based on 
+  #' which had the most total retained catch
+  ][, STRATA := ifelse(STRATA != "ZERO", paste0(STRATA, "-", BSAI_GOA), STRATA)]
+  unique(pc_effort_st$STRATA)
+  
+  #' TODO *Assign DAYS column. Do this in get_data.R!*
+  #' Get actual days observed, otherwise apply model.
+  channel <- open_channel()
+  #' Match observed ODDS and Valhalla records. This creates `mod_dat` object
+  td_mod <- model_trip_duration(work.data, use_mod = "DAYS ~ RAW + ADP * AGENCY_GEAR_CODE", channel = channel)
+  # Occasionally we have multiple ODDS records assigned to the same Valhalla trip. In such cases, sum the sea days.
+  actual_ob_days <- unique(mod_dat[, .(TRIP_ID, ODDS_SEQ, DAYS)])[, .(DAYS = sum(DAYS)), keyby = .(TRIP_ID)]
+  # Merge in actual days observed
+  pc_effort_st[, DAYS := actual_ob_days[pc_effort_st, DAYS, on = c(TRIP_ID = "wd_TRIP_ID")]]
+  # For other observer strata trips that were not observed, use the modeled estimates
+  ob_trips_predict_days <- unique(pc_effort_st[STRATA %like% "OB" & is.na(DAYS), .(
+    ADP = as.factor(ADP), AGENCY_GEAR_CODE,
+    RAW = as.numeric(max(LANDING_DATE, TRIP_TARGET_DATE) - min(TRIP_TARGET_DATE, LANDING_DATE), units = "days")
+  ), keyby = .(TRIP_ID)])
+  # Apply the model, rounding to the nearest half day
+  ob_trips_predict_days[, DAYS := round(predict(td_mod$TD_MOD, newdata = ob_trips_predict_days)/0.5) * 0.5]
+  # For trips with multiple gear types, take the average 
+  ob_trips_predict_days <- ob_trips_predict_days[, .(DAYS = mean(DAYS)), keyby = .(TRIP_ID)]
+  # Merge in predictions
+  pc_effort_st[, MOD_DAYS := ob_trips_predict_days[pc_effort_st, DAYS, on = .(TRIP_ID)]]
+  pc_effort_st[, DAYS := fcase(!is.na(DAYS), DAYS, !is.na(MOD_DAYS), MOD_DAYS)][, MOD_DAYS := NULL]
+  # For non-observer strata, simply use the end - start + 1 method
+  pc_effort_st[
+    is.na(DAYS), DAYS := as.numeric(
+      1 + max(TRIP_TARGET_DATE, LANDING_DATE) - min(TRIP_TARGET_DATE, LANDING_DATE), units = "days"
+    ), by = .(TRIP_ID
+  )]
+  if(nrow(pc_effort_st[is.na(DAYS)])) stop("Some records are still missing DAYS")
+}
 
 # Re-assign the ADP Year
 pc_effort_st[, ADP := adp_year]
@@ -182,12 +186,37 @@ budget_lst <- list(4.4e6)   #' *2024 Draft ADP Budget*
 #' [FINAL: TODO]  Use the outputs of effort_prediction.R, specifically 'effort_strata[ADP == 2024]', to predict 
 #' the total number of trips to sample for each stratum
 
+#' For the final ADP, use the outputs of `effort_prediction.R` as our predicted fishing effort. In the draft, we 
+#' simply assume fishing effort will be the same number of trips as fished in the previous 365 days. Also, set the 
+#' number of effort resampling iterations
+if (adp_ver == "Draft") {
+  #' *Draft*
+  sample_N <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(STRATA)]
+  resamp_iter <- 1
+  
+} else if(adp_ver == "Final") {
+  #' *Final*
+  (load("source_data/effort_prediction.rdata"))
+  #' [TODO:] effort_prediction.R has not been run for the 2025 Final ADP yet. Coercing the 2024 estimate as 2025 for now.
+  effort_strata <- copy(effort_strata) |>
+    _[ADP == max(ADP)
+    ][, ADP := 2025][]
+  sample_N <- copy(effort_strata) |>
+    _[, STRATA := gsub("_BSAI", "-BSAI", STRATA)
+    ][, STRATA := gsub("_GOA", "-GOA", STRATA)
+    ][, STRATA := gsub("_EFP", "", STRATA)
+    ][!(STRATA %like% "EM|ZERO"), STRATA := paste0("OB_", STRATA)
+    ][, N := round(TOTAL_TRIPS)
+    ][, .(STRATA, N)] |>
+    setkey(STRATA)
+  resamp_iter <- 10   # Use 1000 for full Final draft run. 10 is fine for testing
+}
+
 #=================================#
 ## Partial Coverage Allocation ----
 #=================================#
 
-sample_N <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(STRATA)]
-boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params, budget_lst, bootstrap_iter = 1)
+boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params, budget_lst, bootstrap_iter = resamp_iter)
 
 #' TODO Save the outputs of the bootstrapping and allocation
 if(F) save(boot_lst, file = "results/swor_boot_lst.rdata")
@@ -499,46 +528,49 @@ table_b3.flex <- table_b3[, -"Pool"] %>%
 # Monitoring Summary ----
 #======================================================================================================================#
 
-#' Here we will summarize the monitoring of the entire AK. Used in the PCFMAC pressentation of the 2025 Draft ADP.
+#' [TODO: Do I still need this? This was used for the 2025 Draft.]
+
+#' Here we will summarize the monitoring of the entire AK. Used in the PCFMAC presentation of the 2025 Draft ADP.
 
 #' *Full coverage*
 # Grab all full coverage trips in the last year
-mon_catch.fc <- work.data[
-][, -c("STRATA")
-  # Subset, grabbing only full coverage trips from the most recent year
-][full_efrt.smry, on = .(VESSEL_ID, TRIP_ID)
-  # Broadly categorize gear types by fixed and trawl.
-][, FIXED_TRW := ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", "FIXED")
-  # Categorize monitoring method
-][, MON := ifelse(STRATA %like% "EM_", "EM", "OB")
-  # Sum up retained catch by monitoring method, FMP, and gear
-][, .(RET_CATCH = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)), keyby = .(MON, FMP, FIXED_TRW)
-][, MON_CATCH := RET_CATCH
-][, PERC_MON := MON_CATCH / RET_CATCH * 100][]
+mon_catch.fc <- work.data.recent |>
+  _[, -c("STRATA")
+    # Subset, grabbing only full coverage trips from the most recent year
+  ][full_efrt.smry, on = .(VESSEL_ID, TRIP_ID)
+    # Broadly categorize gear types by fixed and trawl.
+  ][, FIXED_TRW := ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", "FIXED")
+    # Categorize monitoring method
+  ][, MON := ifelse(STRATA %like% "EM_", "EM", "OB")
+    # Sum up retained catch by monitoring method, FMP, and gear
+  ][, .(RET_CATCH = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)), keyby = .(MON, FMP, FIXED_TRW)
+  ][, MON_CATCH := RET_CATCH
+  ][, PERC_MON := MON_CATCH / RET_CATCH * 100][]
 
 #' *Partial Coverage*
 
-mon_catch.pc <- work.data[
-][, -"STRATA"
-  # Subset only partial coverage sector trips
-][unique(pc_effort_st[, .(wd_TRIP_ID, STRATA)]), on = c(TRIP_ID = "wd_TRIP_ID")
-  # Remove any program management codes that are state-managed
-][!(MANAGEMENT_PROGRAM_CODE %in% c("SMO", "SMPC", "SMS"))
-  # Broadly categorize gear types by fixed and trawl.
-][, FIXED_TRW := ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", "FIXED")
-  # Sum retained catch by stratum, FMP and gear type category
-][, .(
-  RET_CATCH = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)
-), keyby = .(FMP, FIXED_TRW, STRATA)]
+mon_catch.pc <- work.data.recent |>
+  _[, -"STRATA"
+    # Subset only partial coverage sector trips
+  ][unique(pc_effort_st[, .(wd_TRIP_ID, STRATA)]), on = c(TRIP_ID = "wd_TRIP_ID")
+    # Remove any program management codes that are state-managed
+  ][!(MANAGEMENT_PROGRAM_CODE %in% c("SMO", "SMPC", "SMS"))
+    # Broadly categorize gear types by fixed and trawl.
+  ][, FIXED_TRW := ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", "FIXED")
+    # Sum retained catch by stratum, FMP and gear type category
+  ][, .(
+    RET_CATCH = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)
+  ), keyby = .(FMP, FIXED_TRW, STRATA)]
 # Merge partial coverage sampling rates in
-mon_catch.pc <- mon_catch.pc[, SAMPLE_RATE := rates_adp[mon_catch.pc, SAMPLE_RATE, on = .(STRATA)]
-][STRATA == "ZERO", SAMPLE_RATE := 0
-][STRATA == "EM_TRW-GOA", SAMPLE_RATE := 1
-  # Define Monitoring category
-][, MON := fcase(STRATA %like% "EM", "EM", STRATA %like% "OB", "OB", STRATA %like% "ZERO", "ZERO")
-  # Sum up retained catch by monitoring method, FMP, and gear
-][, .(RET_CATCH = sum(RET_CATCH), MON_CATCH = sum(RET_CATCH * SAMPLE_RATE)), keyby = .(MON, FMP, FIXED_TRW)
-][, PERC_MON  := MON_CATCH / RET_CATCH * 100][]
+mon_catch.pc <- mon_catch.pc |>
+  _[, SAMPLE_RATE := rates_adp[mon_catch.pc, SAMPLE_RATE, on = .(STRATA)]
+  ][STRATA == "ZERO", SAMPLE_RATE := 0
+  ][STRATA == "EM_TRW-GOA", SAMPLE_RATE := 1
+    # Define Monitoring category
+  ][, MON := fcase(STRATA %like% "EM", "EM", STRATA %like% "OB", "OB", STRATA %like% "ZERO", "ZERO")
+    # Sum up retained catch by monitoring method, FMP, and gear
+  ][, .(RET_CATCH = sum(RET_CATCH), MON_CATCH = sum(RET_CATCH * SAMPLE_RATE)), keyby = .(MON, FMP, FIXED_TRW)
+  ][, PERC_MON  := MON_CATCH / RET_CATCH * 100][]
 
 mon_catch <- rbind(
   cbind(SECTOR = "FULL", mon_catch.fc),
@@ -552,25 +584,25 @@ mon_catch.long <- melt(
   mon_catch, 
   id.vars = c("SECTOR", "FMP", "FIXED_TRW", "MON"),
   measure.vars = c("UNMON_CATCH", "MON_CATCH")
-)[
+) |>
   # Divide tonnage into 800 units. With 800, each box represents .25% of catch, each colum represents 5%
-][, unit_count := round(value/sum(value) * 800)
-  # Define groupings based on sector, monitoring method, and whether catch was expected to be monitored.
-][, GROUP := fcase(
-  SECTOR == "FULL" & variable == "MON_CATCH" & MON == "OB", "Full coverage - Observer",
-  SECTOR == "FULL" & variable == "MON_CATCH" & MON == "EM", "Full coverage - EM",
-  SECTOR == "PARTIAL" & MON == "ZERO", "No selection",
-  SECTOR == "PARTIAL" & variable == "UNMON_CATCH", "Partial coverage - Unmonitored",
-  SECTOR == "PARTIAL" & variable == "MON_CATCH" & MON == "OB", "Partial coverage - Observer",
-  SECTOR == "PARTIAL" & variable == "MON_CATCH" & MON == "EM", "Partial coverage - EM"
-)
-# Re-lable variables for plotting
-][, FIXED_TRW := ifelse(FIXED_TRW == "FIXED", "Fixed", "Trawl")
-][, GROUP := factor(GROUP, levels = c(
-  "Full coverage - Observer", "Full coverage - EM",
-  "Partial coverage - Observer", "Partial coverage - EM", "Partial coverage - Unmonitored", "No selection"))
-][, FMP := factor(FMP, levels = c("BSAI", "GOA"))
-][, FIXED_TRW := factor(FIXED_TRW, levels = c("Trawl", "Fixed"))][]
+  _[, unit_count := round(value/sum(value) * 800)
+    # Define groupings based on sector, monitoring method, and whether catch was expected to be monitored.
+  ][, GROUP := fcase(
+    SECTOR == "FULL" & variable == "MON_CATCH" & MON == "OB", "Full coverage - Observer",
+    SECTOR == "FULL" & variable == "MON_CATCH" & MON == "EM", "Full coverage - EM",
+    SECTOR == "PARTIAL" & MON == "ZERO", "No selection",
+    SECTOR == "PARTIAL" & variable == "UNMON_CATCH", "Partial coverage - Unmonitored",
+    SECTOR == "PARTIAL" & variable == "MON_CATCH" & MON == "OB", "Partial coverage - Observer",
+    SECTOR == "PARTIAL" & variable == "MON_CATCH" & MON == "EM", "Partial coverage - EM"
+  )
+  # Re-label variables for plotting
+  ][, FIXED_TRW := ifelse(FIXED_TRW == "FIXED", "Fixed", "Trawl")
+  ][, GROUP := factor(GROUP, levels = c(
+    "Full coverage - Observer", "Full coverage - EM",
+    "Partial coverage - Observer", "Partial coverage - EM", "Partial coverage - Unmonitored", "No selection"))
+  ][, FMP := factor(FMP, levels = c("BSAI", "GOA"))
+  ][, FIXED_TRW := factor(FIXED_TRW, levels = c("Trawl", "Fixed"))][]
 setorder(mon_catch.long, GROUP, FMP, FIXED_TRW)
 
 ## Figure for PCFMAC - Waffle plot of tonnage monitored ----
