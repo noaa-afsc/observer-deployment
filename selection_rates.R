@@ -73,21 +73,22 @@ set_flextable_defaults(font.family = "Times New Roman", font.size = 10)
 ## Data Prep ----
 #===============#
 
-#' Wrangle the Valhalla data set for spatiotemporal analyses using at least 2 full years
-pc_effort_sub <- work.data.recent[ADP >= adp_year - 2]
+#' Wrangle the Valhalla data set for spatiotemporal analyses 
+pc_effort_sub <- work.data.recent |>
+  # Use at least 2 full years. We'll trim this down to 1 year after a bit of wrangling
+  _[ADP >= adp_year - 2
 #' Use the STRATA_NEW column to define stratum and CVG_NEW to define coverage category
-pc_effort_sub[
-][, STRATA := STRATA_NEW
-][, COVERAGE_TYPE := CVG_NEW] 
+  ][, STRATA := STRATA_NEW
+  ][, COVERAGE_TYPE := CVG_NEW][]
 
 #' Simplify the dataset
 pc_effort_st <- spatiotemp_data_prep(pc_effort_sub) 
 
 #' Grab the most recent 1-year of data (trimming off 2 weeks from the last trip)
 valhalla_date <- max_date - 14
-pc_prev_year_trips <- pc_effort_st[
-][, .(MIN_TRIP_TARGET_DATE = min(TRIP_TARGET_DATE)), keyby = .(TRIP_ID)
-][between(MIN_TRIP_TARGET_DATE, valhalla_date - 365, valhalla_date), TRIP_ID]
+pc_prev_year_trips <- pc_effort_st |>
+  _[, .(MIN_TRIP_TARGET_DATE = min(TRIP_TARGET_DATE)), keyby = .(TRIP_ID)
+  ][between(MIN_TRIP_TARGET_DATE, valhalla_date - 365, valhalla_date), TRIP_ID]
 pc_effort_st <- pc_effort_st[TRIP_ID %in% pc_prev_year_trips]
 range(pc_effort_st$TRIP_TARGET_DATE)
 
@@ -176,14 +177,14 @@ box_params <- list(
 
 #' Set the budget(s) to evaluate. The allocation functions were originally built to handle multiple budgets for the 
 #' 2024 ADP (as a list). Can't be sure if they still can, but either way, the budget should be defined as a list.
-budget_lst <- list(4.4e6)   #' *2024 Draft ADP Budget*
+budget_lst <- list(4.4e6)   #' [TODO: UPDATE] *2024 Draft ADP Budget*
 
 #======================================================================================================================#
 # Sampling Rates ----
 #======================================================================================================================#
 
-#' [DRAFT:] No bootstrap is performed, simply sampling all trips in `pc_effort_st` 1 time.
-#' [FINAL: TODO]  Use the outputs of effort_prediction.R, specifically 'effort_strata[ADP == 2024]', to predict 
+#' In the Draft, no bootstrap is performed, simply sampling all trips in `pc_effort_st` 1 time.
+#' [TODO: Final draft resampling] In the Final, use the outputs of effort_prediction.R, specifically 'effort_strata[ADP == 2024]', to predict 
 #' the total number of trips to sample for each stratum
 
 #' For the final ADP, use the outputs of `effort_prediction.R` as our predicted fishing effort. In the draft, we 
@@ -197,6 +198,8 @@ if (adp_ver == "Draft") {
 } else if(adp_ver == "Final") {
   #' *Final*
   (load("source_data/effort_prediction.rdata"))
+  
+  #'*=========================================================================*
   #' [TODO:] effort_prediction.R has not been run for the 2025 Final ADP yet. Coercing the 2024 estimate as 2025 for now.
   effort_strata <- copy(effort_strata) |>
     _[ADP == max(ADP)
@@ -209,12 +212,17 @@ if (adp_ver == "Draft") {
     ][, N := round(TOTAL_TRIPS)
     ][, .(STRATA, N)] |>
     setkey(STRATA)
+  #' [TODO]
   resamp_iter <- 10   # Use 1000 for full Final draft run. 10 is fine for testing
+  #'*=========================================================================*
 }
 
 #=================================#
 ## Partial Coverage Allocation ----
 #=================================#
+
+#' [TODO: Make sample_N also give parameters for bootstrap_allo to vary trips].
+#'In draft, there will be no variation, but in the final, it will parameterize the random stratum N.
 
 boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params, budget_lst, bootstrap_iter = resamp_iter)
 
