@@ -25,41 +25,35 @@ spatiotemp_data_prep <- function(valhalla){
   # Count total of partial coverage trips
   pc_trip_id_count <- uniqueN(pc_effort_dt$TRIP_ID)
   
-  # For each trip, identify which FMP had most retained catch, splitting FMP by BSAI and GOA
-  fmp_bsai_goa <- pc_effort_dt[, .(
-    FMP_WT = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)
-  ), by = .(TRIP_ID, BSAI_GOA = FMP)
-  ][, .SD[which.max(FMP_WT)], by = .(TRIP_ID)
-  ][, FMP_WT := NULL][]
-  if( (pc_trip_id_count != uniqueN(fmp_bsai_goa$TRIP_ID) ) | (pc_trip_id_count != nrow(fmp_bsai_goa)) ) {
-    stop("Something went wrong making 'fmp_bsai_goa'")
-  }
+  #' `BSAI_GOA` is now created in get_data.R
   
-  # For each trip, Identify which FMP had most retained catch, splitting FMP by BS, AI and GOA
-  fmp_bs_ai_goa <- copy(pc_effort_dt)[
-  ][, BS_AI_GOA := fcase(
-    REPORTING_AREA_CODE %in% c(541, 542, 543), "AI",
-    REPORTING_AREA_CODE %in% c(508, 509, 512, 513, 514, 516, 517, 518, 519, 521, 523, 524), "BS",
-    REPORTING_AREA_CODE %in% c(610, 620 ,630, 640, 649, 650, 659), "GOA")  
-  ][, .(
-    FMP_WT = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)
-  ), by = .(TRIP_ID, BS_AI_GOA)][, .SD[which.max(FMP_WT)], by = .(TRIP_ID)][, FMP_WT := NULL][]
-  if( 
-    (pc_trip_id_count != uniqueN(fmp_bs_ai_goa$TRIP_ID) ) | 
-    (pc_trip_id_count != uniqueN(fmp_bs_ai_goa[!is.na(BS_AI_GOA), TRIP_ID]) ) 
-  ){
-    stop("Something went wrong making 'fmp_bs_ai_goa'")
-  }
+  #' `BS_AI_GOA` is no longer needed, but can still be created here if desired.
+  # # For each trip, Identify which FMP had most retained catch, splitting FMP by BS, AI and GOA
+  # fmp_bs_ai_goa <- copy(pc_effort_dt)[
+  # ][, BS_AI_GOA := fcase(
+  #   REPORTING_AREA_CODE %in% c(541, 542, 543), "AI",
+  #   REPORTING_AREA_CODE %in% c(508, 509, 512, 513, 514, 516, 517, 518, 519, 521, 523, 524), "BS",
+  #   REPORTING_AREA_CODE %in% c(610, 620 ,630, 640, 649, 650, 659), "GOA")  
+  # ][, .(
+  #   FMP_WT = sum(WEIGHT_POSTED[SOURCE_TABLE == "Y"], na.rm = T)
+  # ), by = .(TRIP_ID, BS_AI_GOA)][, .SD[which.max(FMP_WT)], by = .(TRIP_ID)][, FMP_WT := NULL][]
+  # if( 
+  #   (pc_trip_id_count != uniqueN(fmp_bs_ai_goa$TRIP_ID) ) | 
+  #   (pc_trip_id_count != uniqueN(fmp_bs_ai_goa[!is.na(BS_AI_GOA), TRIP_ID]) ) 
+  # ){
+  #   stop("Something went wrong making 'fmp_bs_ai_goa'")
+  # }
   
+  # Simplify the output
   pc_effort_dt <- unique(
     pc_effort_dt[, .(
-      PERMIT, TARGET = TRIP_TARGET_CODE, AREA = as.integer(REPORTING_AREA_CODE), AGENCY_GEAR_CODE, 
+      PERMIT, TARGET = TRIP_TARGET_CODE, AREA = as.integer(REPORTING_AREA_CODE), AGENCY_GEAR_CODE, BSAI_GOA,
       GEAR = ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", AGENCY_GEAR_CODE), STRATA, OBSERVED_FLAG,
       TRIP_TARGET_DATE, LANDING_DATE, ADFG_STAT_AREA_CODE = as.integer(ADFG_STAT_AREA_CODE), wd_TRIP_ID),
       keyby = .(ADP = as.integer(ADP), TRIP_ID)])
   
-  # Merge in FMP classifications
-  pc_effort_dt <- pc_effort_dt[fmp_bsai_goa, on = .(TRIP_ID)][fmp_bs_ai_goa, on = .(TRIP_ID)]
+  #' Merge in FMP classifications, only if you want to add "BS_AI_GOA" 
+  # pc_effort_dt <- pc_effort_dt[fmp_bs_ai_goa, on = .(TRIP_ID)]
   
   # Assign Pool
   pc_effort_dt[, POOL := ifelse(STRATA %like% "EM", "EM", ifelse(STRATA == "ZERO", "ZE", "OB"))]
@@ -79,7 +73,7 @@ spatiotemp_data_prep <- function(valhalla){
   # Set the order of columns
   setcolorder(pc_effort_dt, neworder = c(
     "ADP", "POOL", "PERMIT", "TRIP_ID", "STRATA", "AGENCY_GEAR_CODE", "GEAR", "TRIP_TARGET_DATE", "LANDING_DATE", "AREA", 
-    "ADFG_STAT_AREA_CODE", "BSAI_GOA", "BS_AI_GOA", "TARGET", "wd_TRIP_ID", "OBSERVED_FLAG"
+    "ADFG_STAT_AREA_CODE", "BSAI_GOA", "TARGET", "wd_TRIP_ID", "OBSERVED_FLAG"
   ))
   setorder(pc_effort_dt, ADP, POOL, PERMIT, TRIP_TARGET_DATE)
   
