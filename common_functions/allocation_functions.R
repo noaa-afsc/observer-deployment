@@ -52,7 +52,7 @@ spatiotemp_data_prep <- function(valhalla){
   pc_effort_dt <- pc_effort_dt[, .(
     PERMIT, TARGET = TRIP_TARGET_CODE, AREA = as.integer(REPORTING_AREA_CODE), AGENCY_GEAR_CODE, BSAI_GOA,
     GEAR = ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", AGENCY_GEAR_CODE), STRATA, OBSERVED_FLAG,
-    TRIP_TARGET_DATE, LANDING_DATE, ADFG_STAT_AREA_CODE = as.integer(ADFG_STAT_AREA_CODE), wd_TRIP_ID
+    TRIP_TARGET_DATE, LANDING_DATE, ADFG_STAT_AREA_CODE = as.integer(ADFG_STAT_AREA_CODE), DAYS, wd_TRIP_ID
     ), keyby = .(ADP = as.integer(ADP), TRIP_ID)] |>
     unique()
   
@@ -625,6 +625,7 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
   # effort_pred_n <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)]; bootstrap_iter <- 1
   
   pc_effort_lst <- split(pc_effort_st, by = "STRATA")
+  sample_N_lst <- split(sample_N, by = "STRATA")
   
   # Make sure names and ordering are the same
   if(!identical(names(pc_effort_lst), sample_N$STRATA)) stop("Strata names/order are not the same!")
@@ -635,19 +636,19 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
   set.seed(seed)
   for(k in seq_len(bootstrap_iter)) {
     # k <- 1
-    cat(k, ", ")
+    cat(paste0(k, ", "))
     
     # Bootstrap using adp_strata_N to sample each stratum's population size size
     swor_bootstrap.effort <- rbindlist(Map(
       function(prior, strata_N) {
-        # prior <- pc_effort_lst[[5]]; strata_N <- sample_N$N[5]
+        # prior <- pc_effort_lst[[5]]; strata_N <- sample_N_lst[[5]]
         
         # Create vector of TRIP_IDs
         trip_ids <- unique(prior$TRIP_ID)
         # How many times does prior effort go into future effort?
-        prior_vs_future <- floor(strata_N / length(trip_ids))
+        prior_vs_future <- floor(strata_N$N / length(trip_ids))
         # What number of trips should be sampled without replacement?
-        swr_n <- strata_N - (length(trip_ids) * prior_vs_future)
+        swr_n <- strata_N$N - (length(trip_ids) * prior_vs_future)
         # Create dt of trip_ids
         sampled_trip_ids <- data.table(
           TRIP_ID = c(
@@ -662,25 +663,14 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
         bootstrap_sample <- prior[sampled_trip_ids, on = .(TRIP_ID), allow.cartesian = T]
       }, 
       prior = pc_effort_lst,
-      strata_N = sample_N$N
+      strata_N = sample_N_lst
     ))
     
     # Re-assign trip_id so that we can differentiate trips sampled multiple times
     swor_bootstrap.effort[, TRIP_ID := .GRP, keyby = .(ADP, STRATA, BSAI_GOA, TRIP_ID, I)]
     if(uniqueN(swor_bootstrap.effort$TRIP_ID) != sum(sample_N$N)) stop("Count of TRIP_IDs doesn't match!")
     
-    # [2024 only] Apply the Trawl EM EFP opt-in probability, move those that 'opt-out' into OB_TRW-GOA
-    # em_trw_id <- unique(swor_bootstrap.effort[STRATA == "EM_TRW-GOA", TRIP_ID ])
-    # # Randomly sample vessels as opting in (TRUE) or out (FALSE) of the EFP. We will use the 'expected' number of trips
-    # # opting out rather than allowing it to be stochastic so that STRATA_N does not vary between iterations.
-    # trw_em_opt_out_N <- round(sample_N[STRATA == "EM_TRW-GOA", N] * efp_prob[COVERAGE_TYPE == "PARTIAL", 1 - EFP_PROB])
-    # trw_em_opt_out_id <- sample(em_trw_id, size = trw_em_opt_out_N)
-    # swor_bootstrap.effort[TRIP_ID %in% trw_em_opt_out_id, ':=' (POOL = "OB", STRATA = "OB_TRW-GOA")]
-    
     # Define boxes of bootstrapped effort
-    
-    #' TODO *Have this function take the box definition parameters!*
-    
     swor_bootstrap.box <- define_boxes(
       swor_bootstrap.effort, space = box_params$space, time = box_params$time,
       year_col = box_params$year_col, stratum_cols = box_params$stratum_cols, ps_cols = box_params$ps_cols )
