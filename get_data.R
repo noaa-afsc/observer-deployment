@@ -118,7 +118,7 @@ gdrive_download(local_path = "source_data/loki.valhalla.rdata", gdrive_dribble =
 (load("source_data/loki.valhalla.rdata"))
 
 # Check to make sure the Gdrive has the latest version of Valhalla. It should have a run date of ADPyear - 1
-if( year(max(work.data$RUN_DATE, na.rm = T)) != year(Sys.Date()) ) {
+if( year(max(work.data$RUN_DATE, na.rm = T)) >= year(Sys.Date()) ) {
   message("Local copy of Valhalla has not been updated with more recent data. Performing SQL query to loki.valhalla.")
   # Pull a full copy of Valhalla
   work.data <- setDT(dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla")))
