@@ -18,6 +18,8 @@ if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.
 # Establish channels ------------------------------------------------------
 
 source("common_functions/open_channel.R")
+source("common_functions/model_trip_duration.R")
+
 channel_afsc <- open_channel()
 
 ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
@@ -83,7 +85,7 @@ em_requests <- dbGetQuery(channel_afsc, paste(
   "
 ))
 
-#' @UDPATE *This currently reflects what was used in the 2024 ADP. Update for 2025 or remove!*
+#' [TODO: This currently reflects what was used in the 2024 ADP. Update for 2025 or remove!]
 # Hardcode EM removals, opt-outs, and approvals
 em_base <- em_base %>% 
            # removal
@@ -96,7 +98,7 @@ em_base <- em_base %>%
 # * Trawl EM ----
 
 trawl_em <- read.csv("source_data/efp_list_2023-09-05.csv")
-#' @TODO This file is in the [Vision 2024 ADP/Data] folder. We should have a more updated version? 
+#' [TODO: This file is in the Vision 2024 ADP/Data folder. We should have a more updated version?] 
 # https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
 
 # * Vessel lengths ----
@@ -129,8 +131,8 @@ if( year(max(work.data$RUN_DATE, na.rm = T)) != (ADPyear - 1) ) {
 gc()
 
 # Load data from current year. The AKRO Region will re-run Valhalla for the current year to date (ADPyear - 1).
-gdrive_download("source_data/2024-10-01valhalla.Rdata", ADP_dribble)
-load("source_data/2024-10-01valhalla.Rdata")
+gdrive_download("source_data/2024-10-21cas_valhalla.Rdata", ADP_dribble)
+load("source_data/2024-10-21cas_valhalla.Rdata")
 
 # Append data from current year to data from prior year. Ensure data types match between the old and new datasets.
 date_cols <- c("TRIP_TARGET_DATE", "LANDING_DATE")
@@ -587,6 +589,47 @@ effort_strata <- effort_strata[, .(
 # make total trips NA for ADPyear - 1, since the year is not over
 ][ADP == ADPyear - 1, TOTAL_TRIPS := NA][]
 
+# * Trip duration ----
+
+#' First, trim off the most recent 4 years of trips. Modeling trip duration over the entire dataset is not needed and
+#' doesn't always give the best model for the next year. 
+work.data.recent <- work.data[ADP >= ADPyear - 4]
+
+#' Match observed trip assignment duration (to half day) with Valhalla trip duration, and model the relationship. The
+#' year x gear type interaction gives a decent match. Creates the mod_dat object.
+td_mod <- model_trip_duration(work.data.recent, use_mod = "DAYS ~ RAW + ADP * AGENCY_GEAR_CODE", channel = channel_afsc)
+
+# Occasionally we have multiple ODDS records assigned to the same Valhalla trip. In such cases, sum the sea days.
+actual_ob_days <- unique(mod_dat[, .(TRIP_ID, ODDS_SEQ, DAYS)]) |>
+  _[, .(DAYS = sum(DAYS)), keyby = .(TRIP_ID)]
+
+# Merge in actual days observed. NAs will fill for any non partial coverage observer stratum trip
+work.data.recent[, DAYS := actual_ob_days[work.data.recent, DAYS, on = .(TRIP_ID)]]
+
+# For other observer strata trips that were not observed, use the modeled estimates
+ob_trips_predict_days <- unique(work.data.recent[STRATA_NEW %like% "OB" & is.na(DAYS), .(
+  ADP = as.factor(ADP), AGENCY_GEAR_CODE,
+  RAW = as.numeric(max(LANDING_DATE, TRIP_TARGET_DATE) - min(TRIP_TARGET_DATE, LANDING_DATE), units = "days")
+), keyby = .(TRIP_ID)])
+# Apply the model, rounding to the nearest half day
+ob_trips_predict_days[, DAYS := round(predict(td_mod$TD_MOD, newdata = ob_trips_predict_days)/0.5) * 0.5]
+# For trips with multiple gear types, take the average 
+ob_trips_predict_days <- ob_trips_predict_days[, .(DAYS = mean(DAYS)), keyby = .(TRIP_ID)]
+# Merge in predictions
+work.data.recent |>
+  _[, MOD_DAYS := ob_trips_predict_days[work.data.recent, DAYS, on = .(TRIP_ID)]
+  ][, DAYS := fcase(!is.na(DAYS), DAYS, !is.na(MOD_DAYS), MOD_DAYS)
+  ][, MOD_DAYS := NULL]
+
+# For non-observer partial coverage strata, simply use the end - start + 1 method
+work.data.recent[
+  is.na(DAYS) & CVG_NEW == "PARTIAL", 
+  DAYS := as.numeric(
+    1 + max(TRIP_TARGET_DATE, LANDING_DATE) - min(TRIP_TARGET_DATE, LANDING_DATE), units = "days"
+  ),
+  by = .(TRIP_ID)]
+if(nrow(work.data.recent[CVG_NEW == "PARTIAL" & is.na(DAYS)])) stop("Some records are still missing DAYS")
+
 # Final outputs ----
 
 out_name <- paste(ADPyear, ADP_version, "ADP_data.rdata", sep="_")
@@ -600,9 +643,8 @@ if(out_save == "Y"){
   
   #' For the data to be used by the rest of our scripts, we trim work.data to contain only the most recent 3 full 
   #' years and the current year.
-  work.data <- work.data[ADP >= ADPyear - 4]
   save(
-    work.data, trips_melt, PartialCPs, full_efrt, max_date, fg_em, effort_strata,
+    work.data.recent, trips_melt, PartialCPs, full_efrt, max_date, fg_em, effort_strata,
     file = paste0("source_data/", out_name)
   )
   #' Upload to shared Gdrive source_data folder
