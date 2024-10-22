@@ -2,8 +2,9 @@
 ## User inputs ----
 #==============================#
 
-#user inputs
-ADPyear <- as.numeric(rstudioapi::askForPassword("What year is the ADP year? (four digits, example: 2025)"))
+#'* I had an issue with this - when running gdrive_download this caused the entire script to run at once *
+#ADPyear <- as.numeric(rstudioapi::askForPassword("What year is the ADP year? (four digits, example: 2025)"))
+ADPyear <- 2025
 
 #==============================#
 ## Load Packages ----
@@ -83,7 +84,7 @@ anova(effort_glm3, effort_glm2, test = "F")
 anova(effort_glm4, effort_glm3, test = "F")
 anova(effort_glm5, effort_glm4, test = "F")
 
-#Final model based on non-significant F tests for more complicated models.
+# Final model based on non-significant F tests for more complicated models.
 effort_glm <- effort_glm3
 
 # Evaluate "best" model
@@ -130,8 +131,6 @@ ggplot(ndata, aes(x = ADP, y = TOTAL_TRIPS)) +
 #'* ISSUES HERE *:
 # 1) Best model for this year not necessarily best model in previous years
 # 2) Polynomial terms not useful for earlier datasets - causes issues in predictions
-
-#library(dplyr)
 
 maxback <- 5 #TODO - user defined (here by precedent, but add a max possible with an error if it exceeds number of ADP by three or four...)
 
