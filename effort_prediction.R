@@ -294,14 +294,9 @@ save(list = c("pred_trips", "figure_c1", "figure_c2", "figure_c3", "figure_c4"),
 
 #'`-- Error distribution for incoporating into allocation models ------------- `
 #'`-- CRAIG --------------------`
+# Below we are grabbing the se values to use them for bootstrapping predictions.
+# We only need to do this once
 
-pred_ints$ucb_diff <- pred_ints$ucb - pred_ints$pred
-pred_ints$lcb_diff <- pred_ints$pred - pred_ints$lcb 
-#Diffs not the same
-
-
-out2 <- predict(effort_glm, type = "link", se.fit = TRUE,
-                newdata = pred_ints)
 
 # crit_val <- qt(p = 1 - alpha/2, df = fit$df.residual) #p = 0.975
 # inverselink <- fit$family$linkinv
@@ -309,18 +304,64 @@ out2 <- predict(effort_glm, type = "link", se.fit = TRUE,
 # upr <- inverselink(out$fit + crit_val * out$se.fit)
 # lwr <- inverselink(out$fit - crit_val * out$se.fit)
 
-ilink <- family(effort_glm)$linkinv
-
 #Steps for Geoff:
 # 1. Grab a random number using the se from the model before the link is applied.
 # 2. convert this back to the raw values using the ilink function.
-testing <- ilink(rnorm(1000, mean = out2$fit[96], sd = out2$se.fit[96]))
 
+
+# Below we randomly sample a normal distribution of mean of the prediction 
+# (in link space, where the assumption of normality is true) for the strata year combination (row)
+# using the se.fit.  Then, we use the inverse link to convert back to predicted values.
+# TODO - turn into a function for each row and year combination (row of data for terminal year)
+
+# function(reps, model, newdata, ADPyear) 
+#reps = 10
+#model = effort_glm
+#newdata = pred_ints
+
+
+#Calculate link se estimates using model
+pred_ints$mean <- predict(model, type = "link", se.fit = TRUE,
+                newdata = pred_ints)$fit
+
+pred_ints$sd <- predict(model, type = "link", se.fit = TRUE,
+                          newdata = pred_ints)$se.fit
+
+#Peel off last years and use it for this year
+start_df <- pred_ints %>% filter(ADP == max(ADP))
+start_df$ADP <- ADPyear
+start_df$MAX_DATE_TRIPS <- NA
+
+#Get inverse link function
+ilink <- family(model)$linkinv
+
+for(i in 1:nrow(start_df)){
+#Start loop - for each stratum
+df_new <- 
+  merge(
+    start_df[i,], 
+    data.frame(TRIPS = ilink(rnorm(reps, mean = start_df$mean[i], sd = start_df$sd[i])
+                             )
+               ),
+    all = TRUE)
+
+# go to next stratum.
+if(i == 1)
+  df <- df_new
+if(i > 1)
+  df <- rbind(df, df_new)
+
+}
+
+#Plot the results
 ggplot(data = as.data.frame(testing), aes(x = testing)) +
   geom_histogram() +
   geom_vline(xintercept = pred_ints$pred[96]) +
   geom_vline(xintercept = pred_ints$lcb[96], lty = 2) +
   geom_vline(xintercept = pred_ints$ucb[96], lty = 2)
+
+
+
 
 #'`-- Calculate CIs by hand ---------------------------------------------------`
 
