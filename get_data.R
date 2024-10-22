@@ -118,14 +118,14 @@ gdrive_download(local_path = "source_data/loki.valhalla.rdata", gdrive_dribble =
 (load("source_data/loki.valhalla.rdata"))
 
 # Check to make sure the Gdrive has the latest version of Valhalla. It should have a run date of ADPyear - 1
-if( year(max(work.data$RUN_DATE, na.rm = T)) != (ADPyear - 1) ) {
-  message("Local copy has not been updated with more recent data. Performing SQL query to loki.valhalla.")
+if( year(max(work.data$RUN_DATE, na.rm = T)) != year(Sys.Date()) ) {
+  message("Local copy of Valhalla has not been updated with more recent data. Performing SQL query to loki.valhalla.")
   # Pull a full copy of Valhalla
   work.data <- setDT(dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla")))
   # Save it and upload to the Gdrive
   save(work.data, file = "source_data/loki.valhalla.rdata")
   gdrive_upload(local_path = "source_data/loki.valhalla.rdata", gdrive_dribble = ADP_dribble)
-}
+} else message("Local copy of Valhalla is up-to-date")
 gc()
 
 # Load data from current year. The AKRO Region will re-run Valhalla for the current year to date (ADPyear - 1).
