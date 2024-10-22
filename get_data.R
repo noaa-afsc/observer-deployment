@@ -120,14 +120,14 @@ gdrive_download(local_path = "source_data/loki.valhalla.rdata", gdrive_dribble =
 (load("source_data/loki.valhalla.rdata"))
 
 # Check to make sure the Gdrive has the latest version of Valhalla. It should have a run date of ADPyear - 1
-if( year(max(work.data$RUN_DATE, na.rm = T)) != (ADPyear - 1) ) {
-  message("Local copy has not been updated with more recent data. Performing SQL query to loki.valhalla.")
+if( year(Sys.Date()) == (ADPyear - 1) & year(max(work.data$RUN_DATE, na.rm = T)) != (ADPyear - 1) ) {
+  message("Local copy of Valhalla has not been updated with more recent data. Performing SQL query to loki.valhalla.")
   # Pull a full copy of Valhalla
   work.data <- setDT(dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla")))
   # Save it and upload to the Gdrive
   save(work.data, file = "source_data/loki.valhalla.rdata")
   gdrive_upload(local_path = "source_data/loki.valhalla.rdata", gdrive_dribble = ADP_dribble)
-}
+} else message("Local copy of Valhalla is up-to-date")
 gc()
 
 # Load data from current year. The AKRO Region will re-run Valhalla for the current year to date (ADPyear - 1).
@@ -145,7 +145,7 @@ work.data |>
   _[, VESSEL_ID := as.character(VESSEL_ID)
   ][, TENDER := toupper(TENDER)]
 
-# Defer to database dates for all trips in valhalla with dates that don't match the database
+# Defer to AKRO database dates for all trips in valhalla with dates that don't match the database
 up_dates[, ':='(DB_TRIP_TARGET_DATE = as.Date(DB_TRIP_TARGET_DATE), DB_LANDING_DATE = as.Date(DB_LANDING_DATE))]
 
 # View the changes to be made to dates
@@ -160,7 +160,7 @@ changes <- up_dates |>
     LANDING_DATE_DIFF = as.numeric(DB_LANDING_DATE - LANDING_DATE))
   ][order(-abs(TRIP_TARGET_DATE_DIFF))]
 
-# Defer to database when dates don't match
+# Defer to the AKRO database when dates don't match
 work.data <- up_dates |>
   _[work.data, on = .(REPORT_ID)
   ][!is.na(DB_TRIP_TARGET_DATE) & TRIP_TARGET_DATE != DB_TRIP_TARGET_DATE, TRIP_TARGET_DATE := DB_TRIP_TARGET_DATE
@@ -170,7 +170,7 @@ work.data <- up_dates |>
 # View the changes to be made to gear
 work.data[AGENCY_GEAR_CODE != DB_AGENCY_GEAR_CODE, .(REPORT_IDS = uniqueN(REPORT_ID)), by = .(AGENCY_GEAR_CODE, DB_AGENCY_GEAR_CODE)]
 
-# Defer to database when gear doesn't match
+# Defer to the AKRO database when gear doesn't match
 work.data |>
   _[AGENCY_GEAR_CODE != DB_AGENCY_GEAR_CODE, AGENCY_GEAR_CODE := DB_AGENCY_GEAR_CODE
   ][, DB_AGENCY_GEAR_CODE := NULL]
