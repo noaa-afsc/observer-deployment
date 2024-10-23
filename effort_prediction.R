@@ -2,13 +2,10 @@
 ## User inputs ----
 #==============================#
 
-#'* I had an issue with this - when running gdrive_download this caused the entire script to run at once *
-#ADPyear <- as.numeric(rstudioapi::askForPassword("What year is the ADP year? (four digits, example: 2025)"))
-ADPyear <- 2025
-
-ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data") #Prompts user input.
+ADPyear <- as.numeric(rstudioapi::askForPassword("What year is the ADP year? (four digits, example: 2025)"))
 
 saveoutputs <- "NO" #Must be "YES" to save figures and rdata file.  Use any other value to skip saves.
+
 #==============================#
 ## Load Packages ----
 #==============================#
@@ -26,6 +23,8 @@ options(scipen = 9999)
 ## Load data ----
 #==============================#
 
+ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data") #Prompts user input.
+
 gdrive_download(# Will only execute if you are not already up to date.
   local_path = paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"),
   gdrive_dribble = ADP_dribble
@@ -33,7 +32,7 @@ gdrive_download(# Will only execute if you are not already up to date.
 
 load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
 
-rm(list = setdiff(ls(), c("effort_strata", "ADPyear")))
+rm(list = setdiff(ls(), c("effort_strata", "ADPyear", "saveoutputs")))
 
 # Create placeholder data
 effort_strata.work <- effort_strata
@@ -223,7 +222,6 @@ figure_c3a <-
       labs(x = "True stratum-specific trips in ADPyear", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
 
 # plot retrospective residuals for ADPyear
-#TODO - amend as P2
 figure_c3b <- 
   ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
   geom_histogram(aes(y = after_stat(density)), fill = "blue", color = "white", alpha = .5, bins = 20) +
@@ -297,68 +295,34 @@ if(saveoutputs == "YES"){
 }
 
 #==============================#
-## Save results ----
+## Extract values for trip prediction from model ----
 #==============================#
 
-# save effort predictions
-if(saveoutputs == "YES"){
-  save(list = c("pred_trips", "figure_c1", "figure_c2", "figure_c3", "figure_c4"),
-     file = "source_data/effort_prediction.rdata")
-}
-
-#==============================#
-## Testing area ----
-#==============================#
-
-#'`-- Error distribution for incoporating into allocation models ------------- `
-#'`-- CRAIG --------------------`
 # Below we are grabbing the se values to use them for bootstrapping predictions.
 # We only need to do this once
-
-
-# crit_val <- qt(p = 1 - alpha/2, df = fit$df.residual) #p = 0.975
-# inverselink <- fit$family$linkinv
-# pred <- inverselink(out$fit)
-# upr <- inverselink(out$fit + crit_val * out$se.fit)
-# lwr <- inverselink(out$fit - crit_val * out$se.fit)
-
-#Steps for Geoff:
-# 1. Grab a random number using the se from the model before the link is applied.
-# 2. convert this back to the raw values using the ilink function.
-
 
 # Below we randomly sample a normal distribution of mean of the prediction 
 # (in link space, where the assumption of normality is true) for the strata year combination (row)
 # using the se.fit.  Then, we use the inverse link to convert back to predicted values.
-# TODO - turn into a function for each row and year combination (row of data for terminal year)
-
-# function(reps, model, newdata, ADPyear) 
-#reps = 10
-#model = effort_glm
-#newdata = pred_ints
-
 
 #Calculate link se estimates using model
-pred_ints$mean <- predict(model, type = "link", se.fit = TRUE,
+pred_ints$mean <- predict(effort_glm, type = "link", se.fit = TRUE,
                 newdata = pred_ints)$fit
 
-pred_ints$sd <- predict(model, type = "link", se.fit = TRUE,
+pred_ints$sd <- predict(effort_glm, type = "link", se.fit = TRUE,
                           newdata = pred_ints)$se.fit
 
-#Peel off last years and use it for this year
+# Peel off last years and use it for this year
 effort_prediction <- pred_ints %>% filter(ADP == max(ADP))
 effort_prediction$ADP <- ADPyear
 effort_prediction$MAX_DATE_TRIPS <- NA
 
-
-# For use by Geoff -----------------------------------------------------------------------------------------------------
-
-#Get inverse link function
+# Get inverse link function
 ilink <- family(effort_glm)$linkinv
 
 for(i in 1:nrow(effort_prediction)){
 #Start loop - for each stratum
-df_new <- 
+trip_draws.i <- 
   merge(
     effort_prediction[i,], 
     data.frame(TRIPS = ilink(rnorm(1000, mean = effort_prediction$mean[i], sd = effort_prediction$sd[i])
@@ -368,69 +332,31 @@ df_new <-
 
 # go to next stratum.
 if(i == 1)
-  df <- df_new
+  trip_draws <- trip_draws.i
 if(i > 1)
-  df <- rbind(df, df_new)
+  trip_draws <- rbind(trip_draws, trip_draws.i)
 
 }
-# TODO - save objects effort_glm and effort_prediction locally to source_data/effort_prediction_2025.rdata
-# and upload to source_data on the Gdrive
-
-# End Geoff use --------------------------------------------------------------------------------------------------------
-
-
 
 #Plot the results
-ggplot(data = df, aes(x = TRIPS)) +
+ggplot(data = trip_draws, aes(x = TRIPS)) +
   geom_histogram() +
    geom_vline(data = effort_prediction, aes(xintercept = TOTAL_TRIPS)) +
    geom_vline(data = effort_prediction, aes(xintercept = lcb), lty = 2) +
    geom_vline(data = effort_prediction, aes(xintercept = ucb), lty = 2) +
   facet_wrap(~ STRATA, scales = "free", ncol = 2)
 
+#==============================#
+## Save results ----
+#==============================#
 
+# save effort predictions
+if(saveoutputs == "YES"){
+  save(list = c("figure_c1", "figure_c2", "figure_c3", "figure_c4", "trip_draws", "effort_glm", "effort_prediction"),
+       file = paste0("source_data/effort_prediction", ADPyear, ".rdata"))
+}
 
+#==============================#
+## Testing area ----
+#==============================#
 
-#'`-- Calculate CIs by hand ---------------------------------------------------`
-
-# Manually calculate 95% Confidence Intervals
-# https://fromthebottomoftheheap.net/2018/12/10/confidence-intervals-for-glms/
-# Grab inverse function from model
-ilink <- family(effort_glm)$linkinv
-
-# Add fit and se to data (cannot predict future year because missing data for MAX_DATE_TRIPS)
-ndata <- bind_cols(effort_strata.work[ADP <= ADPyear],
-                   setNames(as_tibble(predict(effort_glm,
-                                              newdata = effort_strata.work[ADP <= ADPyear],
-                                              se.fit = TRUE)[1:2]),
-                            c("fit_link", "se_link")))
-
-# Based off of code used to calculate these in function investr::predFit
-# https://rdrr.io/cran/investr/src/R/predFit.R
-ndata <- ndata %>%
-  mutate(fit_resp = ilink(fit_link),
-         upr = ilink(fit_link + se_link * stats::qnorm((0.95 + 1) / 2)),
-         lwr = ilink(fit_link - se_link * stats::qnorm((0.95 + 1) / 2))) %>%
-  # Assign current year predicted trips as total trips
-  mutate(TOTAL_TRIPS = case_when(is.na(TOTAL_TRIPS) ~ fit_resp,
-                                 TRUE ~ TOTAL_TRIPS)) %>%
-  select(!c(TOTAL_TRIPS_PRED, RESIDUALS, fit_link, se_link))
-
-# Copy current year's data and predicted values
-current_yr <- ndata %>% filter(ADP == ADPyear - 1) %>% mutate(ADP = ADPyear)
-
-# Combine data sets
-ndata <- ndata %>%
-  filter(ADP != 2025) %>%
-  rbind(current_yr)
-
-# Visualize
-ggplot(ndata[ADP >= ADPyear - 6], aes(x = ADP)) +
-  geom_point(aes(y = TOTAL_TRIPS)) +
-  geom_line(aes(y = TOTAL_TRIPS)) +
-  geom_line(data = ndata[ADP >= ADPyear -1], aes(y = TOTAL_TRIPS), color = "red") +
-  geom_point(data = ndata[ADP >= ADPyear - 1], aes(y = TOTAL_TRIPS), color = "red") +
-  geom_errorbar(data = ndata[ADP == ADPyear], aes(ymin = lwr, ymax = upr), color = "red", width = 0.2) +
-  geom_errorbar(data = ndata[ADP == ADPyear - 1], aes(ymin = lwr, ymax = upr), color = "red", width = 0.2) +
-  geom_errorbar(data = ndata[ADP == ADPyear - 2], aes(ymin = lwr, ymax = upr), color = "blue", width = 0.2) +
-  facet_wrap(vars(STRATA), scales = "free")
