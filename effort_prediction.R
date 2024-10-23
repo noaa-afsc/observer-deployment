@@ -4,7 +4,7 @@
 
 ADPyear <- as.numeric(rstudioapi::askForPassword("What year is the ADP year? (four digits, example: 2025)"))
 
-saveoutputs <- "NO" #Must be "YES" to save figures and rdata file.  Use any other value to skip saves.
+saveoutputs <- "NO" #Must be "YES" to save figures and rdata file. Use any other value to skip saves.
 
 #==============================#
 ## Load Packages ----
@@ -51,6 +51,8 @@ figure_c1 <-
   labs(x = "Year",
        y = "Total trips")
 
+figure_c1
+
 if(saveoutputs == "YES"){
   ggsave(filename = "output_figures/figure_c1.png", plot = figure_c1, width = 5, height = 5, units = "in")
 }
@@ -71,6 +73,10 @@ effort_glm3 <- glm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_st
                    family = "quasipoisson")
 summary(effort_glm3)
 
+effort_glm3b <- glm(TOTAL_TRIPS ~ ADP + STRATA * MAX_DATE_TRIPS, data = effort_strata.work[ADP < ADPyear - 1],
+                   family = "quasipoisson")
+summary(effort_glm3b)
+
 effort_glm4 <- glm(TOTAL_TRIPS ~ poly(ADP, 2) * STRATA * MAX_DATE_TRIPS, data = effort_strata.work[ADP < ADPyear - 1], 
                    family = "quasipoisson")
 summary(effort_glm4)
@@ -82,6 +88,7 @@ summary(effort_glm5)
 # Compare models
 anova(effort_glm2, effort_glm1, test = "F")
 anova(effort_glm3, effort_glm2, test = "F")
+anova(effort_glm3b, effort_glm3, test = "F")
 anova(effort_glm4, effort_glm3, test = "F")
 anova(effort_glm5, effort_glm4, test = "F")
 
@@ -175,6 +182,8 @@ figure_c2a <-
        y = "Predicted stratum-specific trips in ADPyear - 1",
        color = "Stratum")
 
+figure_c2a
+
 # plot retrospective residual histograms for ADPyear - 1 (old p2).  This plot shows the desired mean of zero and normal distribution of residuals based on 
 # the distribution of residuals you got.  Compare this against the mean in blue we got and the density we got in blue.
 # TODO - the text below in the stat_function is cumbersome.
@@ -192,6 +201,8 @@ figure_c2b <-
   geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "blue", lwd = 2) +
   theme_bw() +
   labs(x = "Residuals", y = "Density")
+
+figure_c2b
 
 figure_c2 <- ggarrange(figure_c2a, figure_c2b, ncol = 1, heights = c(1, 0.75))
 
@@ -221,6 +232,8 @@ figure_c3a <-
       guides(color = guide_legend(ncol = 3)) +
       labs(x = "True stratum-specific trips in ADPyear", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
 
+figure_c3a
+
 # plot retrospective residuals for ADPyear
 figure_c3b <- 
   ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
@@ -236,6 +249,8 @@ figure_c3b <-
   geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "blue", lwd = 2) +
   theme_bw() +
   labs(x = "Residuals", y = "Density")
+
+figure_c3b
 
 figure_c3 <- ggarrange(figure_c3a, figure_c3b, ncol = 1, heights = c(1, 0.75))
 
@@ -290,6 +305,8 @@ figure_c4 <-
   labs(x = "Year",
        y = "Total trips")
 
+figure_c4
+
 if(saveoutputs == "YES"){
   ggsave(filename = "output_figures/figure_c4.png", plot = figure_c4, width = 5, height = 5, units = "in")
 }
@@ -305,7 +322,7 @@ if(saveoutputs == "YES"){
 # (in link space, where the assumption of normality is true) for the strata year combination (row)
 # using the se.fit.  Then, we use the inverse link to convert back to predicted values.
 
-#Calculate link se estimates using model
+# Calculate link se estimates using model
 pred_ints$mean <- predict(effort_glm, type = "link", se.fit = TRUE,
                 newdata = pred_ints)$fit
 
@@ -338,7 +355,7 @@ if(i > 1)
 
 }
 
-#Plot the results
+# Plot the results
 ggplot(data = trip_draws, aes(x = TRIPS)) +
   geom_histogram() +
    geom_vline(data = effort_prediction, aes(xintercept = TOTAL_TRIPS)) +
