@@ -643,6 +643,8 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
       function(prior, strata_N) {
         # prior <- pc_effort_lst[[5]]; strata_N <- sample_N_lst[[5]]
         
+        #' [TODO: Here is where we would incorporate variance into N]
+        
         # Create vector of TRIP_IDs
         trip_ids <- unique(prior$TRIP_ID)
         # How many times does prior effort go into future effort?
@@ -676,33 +678,41 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
       year_col = box_params$year_col, stratum_cols = box_params$stratum_cols, ps_cols = box_params$ps_cols )
     
     # Calculate each stratum's mean trip duration of bootstrapped effort
-    swor_bootstrap.allo_lst <- list(effort = unique(swor_bootstrap.effort[, .(ADP, STRATA, BSAI_GOA, TRIP_ID, DAYS)])[
-    ][, .(STRATA_N = uniqueN(TRIP_ID), TRP_DUR = mean(DAYS)), keyby = .(ADP, STRATA)])
+    swor_bootstrap.allo_lst <- list(
+      effort = unique(swor_bootstrap.effort[, .(ADP, STRATA, BSAI_GOA, TRIP_ID, DAYS)]) |>
+        _[, .(STRATA_N = uniqueN(TRIP_ID), TRP_DUR = mean(DAYS)), keyby = .(ADP, STRATA)]
+    )
     
-    #' * TESTING ============================*
+    # For observer stratum trips, create a vector of julian Days
     ob_contract_dates <- trip_dates(swor_bootstrap.effort[STRATA %like% "OB_"])
     # For each trip, calculate the proportion of dates the occurred BEFORE the contract change date
     ob_contract_calc <- ob_contract_dates$dt[, .(TRIP_ID)]
     ob_contract_calc$PROP <- sapply(
       ob_contract_dates$lst, function(x) sum(x < julian.Date(cost_params$OB$contract_change_date)) / length(x)
     )
-    # Merge ADP, STRATA, and DAYS back in
-    ob_contract_calc <- unique(swor_bootstrap.effort[STRATA %like% "OB_", .(ADP, STRATA, TRIP_ID, DAYS)])[
-    ][ob_contract_calc, on = .(TRIP_ID)]
-    # For each Stratum, calculate the number of days on contract period 1 and contract period 2
-    ob_contract_calc <- ob_contract_calc[, .(
-      CONTRACT_1 = sum(DAYS * PROP),
-      CONTRACT_2 = sum(DAYS *(1 - PROP))
-    ), keyby = .(ADP, STRATA)]
+    # Summarize the number of days on each partial coverage contract for each stratum
+    ob_contract_calc <- swor_bootstrap.effort |>
+      _[STRATA %like% "OB_", .(ADP, STRATA, TRIP_ID, DAYS)] |>
+      unique() |>
+      # Merge in proportion of days on each contract for each trip
+      _[ob_contract_calc, on = .(TRIP_ID)
+        # For each Stratum, calculate the number of days on contract period 1 and contract period 2
+      ][, .(
+        CONTRACT_1 = sum(DAYS * PROP),
+        CONTRACT_2 = sum(DAYS *(1 - PROP))
+      ), keyby = .(ADP, STRATA)]
+    
     # Merge in contract proportions
     swor_bootstrap.allo_lst$effort <- ob_contract_calc[swor_bootstrap.allo_lst$effort, on = .(ADP, STRATA)]
-    #' * TESTING ============================*
     
     # Calculate rates afforded with the specified budget.
     
-    #' [NOTE] The `allo_prox()` function currently excludes the "EM_TRW" strata by default.
+    #' [NOTE:] The `allo_prox()` function currently excludes the "EM_TRW" strata by default.
+    #' [NOTE:] This part of the function is a bit slow thanks to the roundabout way we have to calculate costs. Can 
+    #' probably code this to be more efficient...
     swor_bootstrap.rates <- allo_prox(
-      swor_bootstrap.box, swor_bootstrap.allo_lst, cost_params, budget_lst[[1]], max_budget = 7e6, index_interval = 0.0001
+      swor_bootstrap.box, swor_bootstrap.allo_lst, cost_params, 
+      budget_lst[[1]], max_budget = 7e6, index_interval = 0.0001
     )
     # Capture results of iteration
     swor_boot_lst[[k]] <- list(
