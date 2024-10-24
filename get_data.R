@@ -31,7 +31,7 @@ gdrive_download(
   local_path = paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", sep = "_")),
   gdrive_dribble = ADP_dribble
 )
-load(paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", sep = "_")))
+(load(paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", sep = "_"))))
 
 # Data queries ------------------------------------------------------------
 
