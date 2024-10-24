@@ -118,7 +118,7 @@ rm(E, N, p, Fit, eta)
 #TODO - is this duplicative?  Save for later?
 ndata <- bind_cols(effort_strata.work, #'TODO - how does this work since there are no 2025 data? - *it ignores 2025 since there is no data - adjusted code since call not needed*
           setNames(as_tibble(predict(effort_glm,
-                                     newdata = effort_strata.work[ADP <= ADPyear],
+                                     newdata = effort_strata.work,
                                      se.fit = TRUE, type = "response")[1:2]),
                    c("fitted", "se")))
 
