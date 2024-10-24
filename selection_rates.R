@@ -192,28 +192,55 @@ budget_lst <- list(4.4e6)   #' [TODO: UPDATE] *2024 Draft ADP Budget*
 #' number of effort resampling iterations
 if (adp_ver == "Draft") {
   #' *Draft*
-  sample_N <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(STRATA)]
   resamp_iter <- 1
+  #' [TODO: make this a length 1 list to be consistent with sample_N used in the final ADP (rename)]
+  sample_N <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(STRATA)]
   
 } else if(adp_ver == "Final") {
   #' *Final*
-  (load("source_data/effort_prediction.rdata"))
+  
+  #' [TODO]
+  resamp_iter <- 10   # Use 1000 for full Final draft run. 10 is fine for testing
   
   #'*=========================================================================*
   #' [TODO:] effort_prediction.R has not been run for the 2025 Final ADP yet. Coercing the 2024 estimate as 2025 for now.
-  effort_strata <- copy(effort_strata) |>
-    _[ADP == max(ADP)
-    ][, ADP := 2025][]
-  sample_N <- copy(effort_strata) |>
-    _[, STRATA := gsub("_BSAI", "-BSAI", STRATA)
-    ][, STRATA := gsub("_GOA", "-GOA", STRATA)
-    ][, STRATA := gsub("_EFP", "", STRATA)
-    ][!(STRATA %like% "EM|ZERO"), STRATA := paste0("OB_", STRATA)
-    ][, N := round(TOTAL_TRIPS)
-    ][, .(STRATA, N)] |>
-    setkey(STRATA)
-  #' [TODO]
-  resamp_iter <- 10   # Use 1000 for full Final draft run. 10 is fine for testing
+  # (load("source_data/effort_prediction.rdata"))
+  # effort_strata <- copy(effort_strata) |>
+  #   _[ADP == max(ADP)
+  #   ][, ADP := 2025][]
+  # sample_N <- copy(effort_strata) |>
+  #   _[, STRATA := gsub("_BSAI", "-BSAI", STRATA)
+  #   ][, STRATA := gsub("_GOA", "-GOA", STRATA)
+  #   ][, STRATA := gsub("_EFP", "", STRATA)
+  #   ][!(STRATA %like% "EM|ZERO"), STRATA := paste0("OB_", STRATA)
+  #   ][, N := round(TOTAL_TRIPS)
+  #   ][, .(STRATA, N)] |>
+  #   setkey(STRATA)
+  
+  # Build the effort prediction model
+  effort_glm <- glm(
+    formula = TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, 
+    data = effort_strata[ADP < ADPyear - 1], family = "quasipoisson")
+  # Get the prediction for the most recent ADP year
+  effort_pred <- cbind(
+    effort_strata[ADP == max(ADP)],
+    as.data.table(predict(effort_glm, type = "link", newdata = effort_strata[ADP == max(ADP)], se.fit = TRUE))
+  )
+
+  sample_N <- unname(split(
+    rbindlist(
+      # For each stratum, sample a number of trips based on a distribution of our fishing effort estimate
+      lapply(split(effort_pred, by = "STRATA"), function(x) {
+        cbind(
+          x[, .(I = 1:resamp_iter, ADP = adp_year, STRATA)],
+          N = round(exp(rnorm(n = resamp_iter, mean = x[["fit"]], sd = x[["se.fit"]]))))})
+    ) |>
+      # Order by resampling iteration, ADP, and stratum 
+      setorder(I, ADP, STRATA),
+    # Split by resampling iteration so each list element represents one iteration of partial coverage fishing effort
+    by = "I", keep.by = F))
+
+  
   #'*=========================================================================*
 }
 
