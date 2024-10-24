@@ -328,6 +328,7 @@ if(saveoutputs == "YES"){
 #==============================#
 ## Extract values for trip prediction from model ----
 #==============================#
+# This section is largely incorporated in the ADP script.
 
 # Below we are grabbing the se values to use them for bootstrapping predictions.
 # We only need to do this once
@@ -351,12 +352,15 @@ effort_prediction$MAX_DATE_TRIPS <- NA
 # Get inverse link function
 ilink <- family(effort_glm)$linkinv
 
+#Set seed for random numbers and repeatability
+set.seed(102424)
+
 for(i in 1:nrow(effort_prediction)){
 # Start loop - for each stratum
 trip_draws.i <- 
   merge(
     effort_prediction[i,], 
-    data.frame(TRIPS = ilink(rnorm(1000, mean = effort_prediction$mean[i], sd = effort_prediction$sd[i])
+    data.frame(TRIPS = ilink(rnorm(10000, mean = effort_prediction$mean[i], sd = effort_prediction$sd[i])
                              )
                ),
     all = TRUE)
@@ -370,12 +374,27 @@ if(i > 1)
 }
 
 # Plot the results
+# Calculate the probability quantiles from the random draws for comparison with the CIs from effort_prediction 
+trip_draws_summary <- 
+  trip_draws %>%
+  group_by(STRATA) %>%
+  summarize(Median = quantile(TRIPS, probs = 0.5),
+         lcb = quantile(TRIPS, probs = 0.025),
+         ucb = quantile(TRIPS, probs = 0.975)
+         )
+
 ggplot(data = trip_draws, aes(x = TRIPS)) +
-  geom_histogram() +
-   geom_vline(data = effort_prediction, aes(xintercept = TOTAL_TRIPS)) +
-   geom_vline(data = effort_prediction, aes(xintercept = lcb), lty = 2) +
-   geom_vline(data = effort_prediction, aes(xintercept = ucb), lty = 2) +
-  facet_wrap(~ STRATA, scales = "free", ncol = 2)
+  geom_histogram(fill = "blue", color = "white") +
+  #Add values from model output
+   geom_vline(data = effort_prediction, aes(xintercept = TOTAL_TRIPS), color = "red") +
+   geom_vline(data = effort_prediction, aes(xintercept = lcb), lty = 2, color = 'red') +
+   geom_vline(data = effort_prediction, aes(xintercept = ucb), lty = 2, color = "red") +
+  # And compare them to those from the random number draws
+  
+   geom_vline(data = trip_draws_summary, aes(xintercept = Median), color = "blue", alpha = 0.5) +
+   geom_vline(data = trip_draws_summary, aes(xintercept = lcb), color = "blue", alpha = 0.5) +
+   geom_vline(data = trip_draws_summary, aes(xintercept = ucb), color = "blue", alpha = 0.5) +
+   facet_wrap(~ STRATA, scales = "free", ncol = 2)
 
 #==============================#
 ## Save results ----
