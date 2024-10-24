@@ -7,7 +7,7 @@ ADPyear <- as.numeric(rstudioapi::askForPassword("What year is the ADP year? (fo
 saveoutputs <- "NO" #Must be "YES" to save figures and rdata file. Use any other value to skip saves.
 
 #==============================#
-## Load Packages ----
+## Load packages ----
 #==============================#
 
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
@@ -268,10 +268,7 @@ if(saveoutputs == "YES"){
 # https://cran.r-project.org/web/packages/ciTools/vignettes/ciTools-glm-vignette.html
 # But, meaningless for quasipoisson
 # https://stats.stackexchange.com/questions/648734/difficulty-simulating-prediction-interval-for-quasipoisson-glm-in-r
-
 # Can't predict prediction intervals
-#pred_ints <- add_pi(df = as.data.frame(effort_strata.work[ADP < ADPyear - 1]), fit = effort_glm, names = c("lpb", "upb"), nSims = 10000, alpha = 0.05) %>%
-#  add_ci(fit = effort_glm, names = c("lcb", "ucb"), alpha = 0.05)
 
 # Confidence intervals
 pred_ints <- 
@@ -338,7 +335,7 @@ effort_prediction$MAX_DATE_TRIPS <- NA
 ilink <- family(effort_glm)$linkinv
 
 for(i in 1:nrow(effort_prediction)){
-#Start loop - for each stratum
+# Start loop - for each stratum
 trip_draws.i <- 
   merge(
     effort_prediction[i,], 
