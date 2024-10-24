@@ -4,7 +4,7 @@
 
 ADPyear <- as.numeric(rstudioapi::askForPassword("What year is the ADP year? (four digits, example: 2025)"))
 
-saveoutputs <- "NO" #Must be "YES" to save figures and rdata file. Use any other value to skip saves.
+saveoutputs <- "NO" # Must be "YES" to save figures and rdata file. Use any other value to skip saves.
 
 #==============================#
 ## Load packages ----
@@ -23,7 +23,7 @@ options(scipen = 9999)
 ## Load data ----
 #==============================#
 
-ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data") #Prompts user input.
+ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data") # Prompts user input.
 
 gdrive_download(# Will only execute if you are not already up to date.
   local_path = paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"),
@@ -116,7 +116,7 @@ rm(E, N, p, Fit, eta)
 
 # Plot "best" model for visual evaluation 
 #TODO - is this duplicative?  Save for later?
-ndata <- bind_cols(effort_strata.work[ADP <= ADPyear], #TODO - how does this work since there are no 2025 data?
+ndata <- bind_cols(effort_strata.work, #'TODO - how does this work since there are no 2025 data? - *it ignores 2025 since there is no data - adjusted code since call not needed*
           setNames(as_tibble(predict(effort_glm,
                                      newdata = effort_strata.work[ADP <= ADPyear],
                                      se.fit = TRUE, type = "response")[1:2]),
