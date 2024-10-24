@@ -1,10 +1,26 @@
+# Prediction of future fishing effort
+# Craig Faunce (CraigFaunce-NOAA github) and Christian Gredzens (cgredzens-NOAA github)
+
+# This script uses annual numbers of trips from each statum belonging to the ADPyear and prior back to 2013.
+# Its goal is to leverage the number of trips that have occurred in the current year to date.
+# To do this, it runs a model to the year prior.  User selects best model.
+# We then use this model to predict the end of the year trips for the current year.
+# Then we see how well this process predicts the NEXT year (remember we are concerned with only next year from now)
+# Then we calculate confidence intervals on the current end of year trips.
+# This code also contains useful code for the final ADP to generate random draws from the distribution of 
+# predictions from the model for the current year, assumed to be the same as next year.
+
 #==============================#
-## User inputs ----
+## User inputs ---- ADPyear, whether outputs are to be saved this run, and the auth token for getting data.
 #==============================#
 
 ADPyear <- as.numeric(rstudioapi::askForPassword("What year is the ADP year? (four digits, example: 2025)"))
 
-saveoutputs <- "NO" # Must be "YES" to save figures and rdata file. Use any other value to skip saves.
+saveoutputs <- "YES" # Must be "YES" to save figures and rdata file. Use any other value to skip saves.
+
+if(!require("FMAtools")) devtools::install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
+  ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data") # Prompts user input.
+
 
 #==============================#
 ## Load packages ----
@@ -12,7 +28,6 @@ saveoutputs <- "NO" # Must be "YES" to save figures and rdata file. Use any othe
 
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
 if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.r-project.org')
-if(!require("FMAtools")) devtools::install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
 if(!require("ciTools"))   install.packages("ciTools", repos='http://cran.us.r-project.org') # Confidence interval calculation for GLMs
 if(!require("ggpubr"))   install.packages("ggpubr", repos='http://cran.us.r-project.org')
 
@@ -23,8 +38,6 @@ options(scipen = 9999)
 ## Load data ----
 #==============================#
 
-ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data") # Prompts user input.
-
 gdrive_download(# Will only execute if you are not already up to date.
   local_path = paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"),
   gdrive_dribble = ADP_dribble
@@ -32,7 +45,9 @@ gdrive_download(# Will only execute if you are not already up to date.
 
 load(paste0("source_data/", ADPyear, "_Final_ADP_data.rdata"))
 
+# Cleanup all but the absolutely necessary inputs
 rm(list = setdiff(ls(), c("effort_strata", "ADPyear", "saveoutputs")))
+gc()
 
 # Create placeholder data
 effort_strata.work <- effort_strata
@@ -115,7 +130,6 @@ abline(h = 0, v = 0, lty = 2)
 rm(E, N, p, Fit, eta)
 
 # Plot "best" model for visual evaluation 
-#TODO - is this duplicative?  Save for later?
 ndata <- bind_cols(effort_strata.work,
           setNames(as_tibble(predict(effort_glm,
                                      newdata = effort_strata.work,
@@ -163,16 +177,17 @@ ggplot(preds_out, aes(x = ADP)) +
   
 effort_strata.work <- merge(effort_strata.work, preds_out, all.x = TRUE)
 
-#TODO - dont eliminate ndata just yet.
 rm(preds, preds_out, ndata)
 
 # calculate residuals
 effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED] #TODO - useful but maybe calculate MSE?
 
 # plot retrospective predictions against actuals for ADPyear - 1
+# Dots are sized to their factor(year) to visually give more emphasis on recent years.
 figure_c2a <- 
   ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, color = STRATA)) +
-  geom_point(aes(y = TOTAL_TRIPS_PRED), size = as.numeric(as.factor(effort_strata.work[!is.na(RESIDUALS)]$ADP))) +
+  geom_point(aes(y = TOTAL_TRIPS_PRED), 
+             size = as.numeric(as.factor(effort_strata.work[!is.na(RESIDUALS)]$ADP))) +
   geom_abline(intercept = 0, slope = 1) +
   theme_bw() +
   theme(legend.position = "bottom") +
@@ -205,6 +220,7 @@ figure_c2b <-
 figure_c2b
 
 figure_c2 <- ggarrange(figure_c2a, figure_c2b, ncol = 1, heights = c(1, 0.75))
+figure_c2
 
 if(saveoutputs == "YES"){
   ggsave(filename = "output_figures/figure_c2.png",
@@ -224,7 +240,7 @@ effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
 # plot retrospecitve predictions against actuals for ADPyear
 figure_c3a <- 
   ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
-      geom_point() +
+      geom_point(size = as.numeric(as.factor(effort_strata.work[!is.na(RESIDUALS)]$ADP))) +
       geom_abline(intercept = 0, slope = 1) +
       theme_bw() +
       theme(legend.position = "bottom") +
@@ -253,6 +269,7 @@ figure_c3b <-
 figure_c3b
 
 figure_c3 <- ggarrange(figure_c3a, figure_c3b, ncol = 1, heights = c(1, 0.75))
+figure_c3
 
 if(saveoutputs == "YES"){
   ggsave(filename = "output_figures/figure_c3.png",
