@@ -307,6 +307,7 @@ current_yr <-
 pred_trips <- rbind(pred_ints, current_yr)
 
 # Visualize
+# Black is actual total trips, light blue is the model fit, and red is model predictions
 figure_c4 <- 
   ggplot(data = pred_trips, aes(x = ADP, y = TOTAL_TRIPS)) +
   geom_ribbon(aes(ymin = lcb, ymax = ucb), alpha = 0.5, color = "black") +
@@ -351,28 +352,25 @@ effort_prediction <- pred_ints %>% filter(ADP == max(ADP))
 effort_prediction$ADP <- ADPyear
 effort_prediction$MAX_DATE_TRIPS <- NA
 
-# Get inverse link function
+# Get inverse link function. For a quasipoisson model that uses a log link, the inverse is exp()
 ilink <- family(effort_glm)$linkinv
 
 #Set seed for random numbers and repeatability
 set.seed(102424)
 
 for(i in 1:nrow(effort_prediction)){
-# Start loop - for each stratum
-trip_draws.i <- 
-  merge(
-    effort_prediction[i,], 
-    data.frame(TRIPS = ilink(rnorm(10000, mean = effort_prediction$mean[i], sd = effort_prediction$sd[i])
-                             )
-               ),
-    all = TRUE)
-
-# go to next stratum.
-if(i == 1)
-  trip_draws <- trip_draws.i
-if(i > 1)
-  trip_draws <- rbind(trip_draws, trip_draws.i)
-
+  # Start loop - for each stratum
+  trip_draws.i <- 
+    merge(
+      effort_prediction[i,], 
+      data.frame(TRIPS = ilink(rnorm(10000, mean = effort_prediction$mean[i], sd = effort_prediction$sd[i]))),
+      all = TRUE)
+  
+  # go to next stratum.
+  if(i == 1)
+    trip_draws <- trip_draws.i
+  if(i > 1)
+    trip_draws <- rbind(trip_draws, trip_draws.i)
 }
 
 # Plot the results
