@@ -57,6 +57,7 @@ effort_strata.work <- effort_strata
 #==============================#
 
 # Visualize data
+# Trip counts by stratum, using strata definitions of ADPyear
 figure_c1 <- 
   ggplot(data = effort_strata.work[ADP < ADPyear - 1]) +
   geom_col(aes(x = ADP, y = TOTAL_TRIPS)) + facet_wrap(vars(STRATA), scales = "free_y") +
@@ -136,8 +137,9 @@ ndata <- bind_cols(effort_strata.work,
                                      se.fit = TRUE, type = "response")[1:2]),
                    c("fitted", "se")))
 
+# Model fit to actual trip counts based on MAX_DATE_TRIPS
 ggplot(ndata, aes(x = ADP, y = TOTAL_TRIPS)) +
-  geom_point() +
+  geom_point(na.rm = T) +
   geom_line(aes(y = fitted)) +
   geom_ribbon(aes(ymax = fitted + 1.96 * se, ymin = fitted - 1.96 * se), alpha = 0.3) + #Added the 1.96
   facet_wrap(vars(STRATA), scales = "free", ncol = 2) +
@@ -168,9 +170,9 @@ for(i in 1:maxback){
 }
 # Warnings when using polynomials because polynomial terms not appropriate for some past time series
 
-# Visualize predictions
+# Visualize predictions (line), with MAX_DATE_TRIPS in red and TOTAL_TRIPS in black
 ggplot(preds_out, aes(x = ADP)) +
-  geom_point(aes(y = TOTAL_TRIPS)) +
+  geom_point(aes(y = TOTAL_TRIPS), na.rm = T) +
   geom_point(aes(y = MAX_DATE_TRIPS), color = "red", alpha = 0.5) +
   geom_line(aes(y = TOTAL_TRIPS_PRED)) +
   facet_wrap(vars(STRATA), scales = "free")
