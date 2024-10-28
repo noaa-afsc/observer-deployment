@@ -22,7 +22,6 @@ saveoutputs <- "YES" # Must be "YES" to save figures and rdata file. Use any oth
 if(!require("FMAtools")) devtools::install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
   ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data") # Prompts user input.
 
-
 #==============================#
 ## Load packages ----
 #==============================#
@@ -152,7 +151,10 @@ ggplot(ndata, aes(x = ADP, y = TOTAL_TRIPS)) +
 #==============================#
 
 # 1) Used to assess how good our predictions are using the selected model
-# 2) Predicts data for each year using selected year from "maxback"
+#     - Answers the following question: What predictions would we have gotten each ADP year using the
+#       model informed by the data from prior years only
+#   * Figure C2: How do predictions this year compare to true number of trips this year
+#   * Figure C3: How do predictions last year compare to true number of trips this year 
 
 #'* ISSUES HERE *:
 # 1) Best model for this year not necessarily best model in previous years
@@ -164,10 +166,10 @@ for(i in 1:maxback){
  preds <- effort_strata.work %>% filter(ADP == ADPyear - i)
  preds$TOTAL_TRIPS_PRED <- predict(glm(formula = effort_glm$formula, data = effort_strata.work[ADP < ADPyear - i],
                                        family = effort_glm$family$family), type = "response", preds)
- if(i == 1)
+ {if(i == 1)
    preds_out <- preds
  else
-   preds_out <- rbind(preds, preds_out)
+   preds_out <- rbind(preds, preds_out)}
 }
 # Warnings when using polynomials because polynomial terms not appropriate for some past time series
 
