@@ -166,9 +166,9 @@ for(i in 1:maxback){
  preds <- effort_strata.work %>% filter(ADP == ADPyear - i)
  preds$TOTAL_TRIPS_PRED <- predict(glm(formula = effort_glm$formula, data = effort_strata.work[ADP < ADPyear - i],
                                        family = effort_glm$family$family), type = "response", preds)
- {if(i == 1)
+ if(i == 1) {
    preds_out <- preds
- else
+ } else {
    preds_out <- rbind(preds, preds_out)}
 }
 # Warnings when using polynomials because polynomial terms not appropriate for some past time series
