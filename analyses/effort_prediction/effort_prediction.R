@@ -70,7 +70,7 @@ figure_c1 <-
 figure_c1
 
 if(saveoutputs == "YES"){
-  ggsave(filename = "output_figures/figure_c1.png", plot = figure_c1, width = 5, height = 5, units = "in")
+  ggsave(filename = "analyses/effort_prediction/figures/figure_c1.png", plot = figure_c1, width = 5, height = 5, units = "in")
 }
 
 # Model using GLM (# of trips is count data)
@@ -228,7 +228,7 @@ figure_c2 <- ggarrange(figure_c2a, figure_c2b, ncol = 1, heights = c(1, 0.75))
 figure_c2
 
 if(saveoutputs == "YES"){
-  ggsave(filename = "output_figures/figure_c2.png",
+  ggsave(filename = "analyses/effort_prediction/figures/figure_c2.png",
        figure_c2,
        width = 6.5, height = 10, units = "in")
 }
@@ -277,7 +277,7 @@ figure_c3 <- ggarrange(figure_c3a, figure_c3b, ncol = 1, heights = c(1, 0.75))
 figure_c3
 
 if(saveoutputs == "YES"){
-  ggsave(filename = "output_figures/figure_c3.png",
+  ggsave(filename = "analyses/effort_prediction/figures/figure_c3.png",
        figure_c3,
        width = 6.5, height = 10, units = "in")
 }
@@ -328,7 +328,7 @@ figure_c4 <-
 figure_c4
 
 if(saveoutputs == "YES"){
-  ggsave(filename = "output_figures/figure_c4.png", plot = figure_c4, width = 5, height = 5, units = "in")
+  ggsave(filename = "analyses/effort_prediction/figures/figure_c4.png", plot = figure_c4, width = 5, height = 5, units = "in")
 }
 
 #==============================#
