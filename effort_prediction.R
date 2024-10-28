@@ -400,11 +400,11 @@ ggplot(data = trip_draws, aes(x = TRIPS)) +
 # save effort predictions
 if(saveoutputs == "YES"){
   save(list = c("effort_glm", "effort_prediction"),
-       file = paste0("source_data/effort_prediction", ADPyear, ".rdata"))
+       file = paste0("source_data/effort_prediction_", ADPyear, ".rdata"))
 }
 
 gdrive_upload(
-  local_path = paste0("source_data/effort_prediction", ADPyear, ".rdata"),
+  local_path = paste0("source_data/effort_prediction_", ADPyear, ".rdata"),
   gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data")
 )
 
