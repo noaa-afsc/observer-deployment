@@ -344,11 +344,8 @@ if(saveoutputs == "YES"){
 # using the se.fit.  Then, we use the inverse link to convert back to predicted values.
 
 # Calculate link se estimates using model
-pred_ints$mean <- predict(effort_glm, type = "link", se.fit = TRUE,
-                newdata = pred_ints)$fit
-
-pred_ints$sd <- predict(effort_glm, type = "link", se.fit = TRUE,
-                          newdata = pred_ints)$se.fit
+pred_ints[, c("mean", "sd")] <- predict(effort_glm, type = "link", se.fit = TRUE,
+                                        newdata = pred_ints)[c("fit", "se.fit")]
 
 # Peel off last years and use it for this year
 effort_prediction <- pred_ints %>% filter(ADP == max(ADP))
@@ -370,10 +367,8 @@ for(i in 1:nrow(effort_prediction)){
       all = TRUE)
   
   # go to next stratum.
-  if(i == 1)
-    trip_draws <- trip_draws.i
-  if(i > 1)
-    trip_draws <- rbind(trip_draws, trip_draws.i)
+  if(i == 1) trip_draws <- trip_draws.i
+  if(i > 1) trip_draws <- rbind(trip_draws, trip_draws.i)
 }
 
 # Plot the results
@@ -393,7 +388,6 @@ ggplot(data = trip_draws, aes(x = TRIPS)) +
    geom_vline(data = effort_prediction, aes(xintercept = lcb), lty = 2, color = 'red') +
    geom_vline(data = effort_prediction, aes(xintercept = ucb), lty = 2, color = "red") +
   # And compare them to those from the random number draws
-  
    geom_vline(data = trip_draws_summary, aes(xintercept = Median), color = "blue", alpha = 0.5) +
    geom_vline(data = trip_draws_summary, aes(xintercept = lcb), color = "blue", alpha = 0.5) +
    geom_vline(data = trip_draws_summary, aes(xintercept = ucb), color = "blue", alpha = 0.5) +
@@ -405,9 +399,14 @@ ggplot(data = trip_draws, aes(x = TRIPS)) +
 
 # save effort predictions
 if(saveoutputs == "YES"){
-  save(list = c("figure_c1", "figure_c2", "figure_c3", "figure_c4", "trip_draws", "effort_glm", "effort_prediction"),
+  save(list = c("effort_glm", "effort_prediction"),
        file = paste0("source_data/effort_prediction", ADPyear, ".rdata"))
 }
+
+gdrive_upload(
+  local_path = paste0("source_data/effort_prediction", ADPyear, ".rdata"),
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data")
+)
 
 #==============================#
 ## Testing area ----
