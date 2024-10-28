@@ -48,6 +48,16 @@ gdrive_download(
 #' Using `fg_em`, add the number of fixed-gear EM vessels to the `cost_params` list
 cost_params$EMFG$emfg_v <- uniqueN(fg_em$PERMIT)
 
+#' Load `effort_glm`, the output of `effort_prediction.R` This is done for the final draft only.
+if(adp_ver == "Final") {
+  gdrive_download( 
+    local_path = "source_data/effort_prediction2025.rdata", 
+    gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output/")
+  )
+  (load("source_data/effort_prediction2025.rdata"))
+  rm(figure_c1, figure_c2, figure_c3, figure_c4, trip_draws, effort_prediction)
+}
+
 # Load the ADFG statistical area shapefile.
 stat_area_sf <- st_read(
   dsn = "source_data/ADFG_Stat_Area_shapefile/PVG_Statewide_2001_Present_GCS_WGS1984.shp", quiet = T) %>%
@@ -199,7 +209,6 @@ if (adp_ver == "Draft") {
 } else if(adp_ver == "Final") {
   #' *Final*
   
-  #' [TODO]
   resamp_iter <- 10   # Use 1000 for full Final draft run. 10 is fine for testing
   
   #'*=========================================================================*
