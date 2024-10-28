@@ -14,7 +14,8 @@
 ## User inputs ---- ADPyear, whether outputs are to be saved this run, and the auth token for getting data.
 #==============================#
 
-ADPyear <- as.numeric(rstudioapi::askForPassword("What year is the ADP year? (four digits, example: 2025)"))
+ADPyear <- as.numeric(rstudioapi::showPrompt(title = "Enter year",
+                                             message = "What year is the ADP year? (four digits, example: 2025)"))
 
 saveoutputs <- "YES" # Must be "YES" to save figures and rdata file. Use any other value to skip saves.
 
