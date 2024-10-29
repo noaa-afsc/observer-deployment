@@ -620,28 +620,32 @@ allo_equal <- function(x, budget){
 
 #' Bootstrap fishing effort for each stratum, sampling trips without replacement.
 #' `sample_N` is a data.table of columns `STRATA` and the predicted number of trips as `N`.
-bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budget_lst, bootstrap_iter = 1, seed = 12345) {
+bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budget_lst, seed = 12345) {
   #' [Defaults to use when effort_prediction.R is not yet run]
-  # effort_pred_n <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)]; bootstrap_iter <- 1
+  # seed <- 12345
+  
+  time_start <- Sys.time()
+  if( length(sample_N) > 1 ) cat(paste0("[Start: ", time_start, "]\n"))
   
   pc_effort_lst <- split(pc_effort_st, by = "STRATA")
-  sample_N_lst <- split(sample_N, by = "STRATA")
   
   # Make sure names and ordering are the same
-  if(!identical(names(pc_effort_lst), sample_N$STRATA)) stop("Strata names/order are not the same!")
+  if(!identical(names(pc_effort_lst), sample_N[[1]]$STRATA)) stop("Strata names/order are not the same!")
+  
+  # sample_N_lst <- split(sample_N, by = "STRATA")
   
   # Initialize bootstrap list
-  swor_boot_lst <- vector(mode = "list", length = bootstrap_iter)
+  swor_boot_lst <- vector(mode = "list", length = length(sample_N))
   
   set.seed(seed)
-  for(k in seq_len(bootstrap_iter)) {
+  for(k in seq_along(sample_N)) {
     # k <- 1
     cat(paste0(k, ", "))
     
-    # Bootstrap using adp_strata_N to sample each stratum's population size size
+    # Bootstrap using each item in strata_N to resample each stratum's population size
     swor_bootstrap.effort <- rbindlist(Map(
       function(prior, strata_N) {
-        # prior <- pc_effort_lst[[5]]; strata_N <- sample_N_lst[[5]]
+        # prior <- pc_effort_lst[[5]]; strata_N <- sample_N[[5]]
         
         #' [TODO: Here is where we would incorporate variance into N]
         
@@ -665,12 +669,12 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
         bootstrap_sample <- prior[sampled_trip_ids, on = .(TRIP_ID), allow.cartesian = T]
       }, 
       prior = pc_effort_lst,
-      strata_N = sample_N_lst
+      strata_N = split(sample_N[[k]], by = "STRATA")
     ))
     
     # Re-assign trip_id so that we can differentiate trips sampled multiple times
     swor_bootstrap.effort[, TRIP_ID := .GRP, keyby = .(ADP, STRATA, BSAI_GOA, TRIP_ID, I)]
-    if(uniqueN(swor_bootstrap.effort$TRIP_ID) != sum(sample_N$N)) stop("Count of TRIP_IDs doesn't match!")
+    if(uniqueN(swor_bootstrap.effort$TRIP_ID) != sum(sample_N[[k]]$N)) stop("Count of TRIP_IDs doesn't match!")
     
     # Define boxes of bootstrapped effort
     swor_bootstrap.box <- define_boxes(
@@ -683,7 +687,7 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
         _[, .(STRATA_N = uniqueN(TRIP_ID), TRP_DUR = mean(DAYS)), keyby = .(ADP, STRATA)]
     )
     
-    # For observer stratum trips, create a vector of julian Days
+    # For observer stratum trips, create a vector of Julian Days
     ob_contract_dates <- trip_dates(swor_bootstrap.effort[STRATA %like% "OB_"])
     # For each trip, calculate the proportion of dates the occurred BEFORE the contract change date
     ob_contract_calc <- ob_contract_dates$dt[, .(TRIP_ID)]
@@ -717,9 +721,15 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
     # Capture results of iteration
     swor_boot_lst[[k]] <- list(
       rates = swor_bootstrap.rates,
-      strata_N = sample_N
+      strata_N = sample_N[[k]]
     )
     
+  }
+  
+  time_end <- Sys.time()
+  if( length(sample_N) > 1 ) {
+    cat(paste0("[End:   ", time_end, "]\n"))
+    cat(paste("[Elapsed: ", round(as.numeric(time_end - time_start, units = "mins"),3), "min]"))
   }
   
   swor_boot_lst
