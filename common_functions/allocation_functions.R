@@ -645,7 +645,7 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
     # Bootstrap using each item in strata_N to resample each stratum's population size
     swor_bootstrap.effort <- rbindlist(Map(
       function(prior, strata_N) {
-        # prior <- pc_effort_lst[[5]]; strata_N <- sample_N[[5]]
+        # prior <- pc_effort_lst[[5]]; strata_N <-  split(sample_N[[k]], by = "STRATA")[[5]]
         
         #' [TODO: Here is where we would incorporate variance into N]
         
@@ -667,11 +667,12 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
         sampled_trip_ids[, I := .I]
         # Bring in each trip's data
         bootstrap_sample <- prior[sampled_trip_ids, on = .(TRIP_ID), allow.cartesian = T]
+        bootstrap_sample
       }, 
       prior = pc_effort_lst,
       strata_N = split(sample_N[[k]], by = "STRATA")
     ))
-    
+
     # Re-assign trip_id so that we can differentiate trips sampled multiple times
     swor_bootstrap.effort[, TRIP_ID := .GRP, keyby = .(ADP, STRATA, BSAI_GOA, TRIP_ID, I)]
     if(uniqueN(swor_bootstrap.effort$TRIP_ID) != sum(sample_N[[k]]$N)) stop("Count of TRIP_IDs doesn't match!")
@@ -721,7 +722,8 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
     # Capture results of iteration
     swor_boot_lst[[k]] <- list(
       rates = swor_bootstrap.rates,
-      strata_N = sample_N[[k]]
+      strata_N = sample_N[[k]],
+      resample = unique(swor_bootstrap.effort[, .(wd_TRIP_ID, I)])
     )
     
   }
