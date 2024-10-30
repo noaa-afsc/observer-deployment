@@ -51,11 +51,10 @@ cost_params$EMFG$emfg_v <- uniqueN(fg_em$PERMIT)
 #' Load `effort_glm`, the output of `effort_prediction.R` This is done for the final draft only.
 if(adp_ver == "Final") {
   gdrive_download( 
-    local_path = "source_data/effort_prediction2025.rdata", 
-    gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output/")
+    local_path = "source_data/effort_prediction_2025.rdata", 
+    gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
   )
-  (load("source_data/effort_prediction2025.rdata"))
-  rm(figure_c1, figure_c2, figure_c3, figure_c4, trip_draws, effort_prediction)
+  (load("source_data/effort_prediction_2025.rdata"))
 }
 
 # Load the ADFG statistical area shapefile.
@@ -203,64 +202,40 @@ budget_lst <- list(4.4e6)   #' [TODO: UPDATE] *2024 Draft ADP Budget*
 if (adp_ver == "Draft") {
   #' *Draft*
   resamp_iter <- 1
-  #' [TODO: make this a length 1 list to be consistent with sample_N used in the final ADP (rename)]
-  sample_N <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(STRATA)]
+  sample_N <- list(pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)])
   
 } else if(adp_ver == "Final") {
   #' *Final*
   
-  resamp_iter <- 10   # Use 1000 for full Final draft run. 10 is fine for testing
+  resamp_iter <- 10   # Use 1000 for full Final draft run. 10 is fine for testing.
   
-  #'*=========================================================================*
-  #' [TODO:] effort_prediction.R has not been run for the 2025 Final ADP yet. Coercing the 2024 estimate as 2025 for now.
-  # (load("source_data/effort_prediction.rdata"))
-  # effort_strata <- copy(effort_strata) |>
-  #   _[ADP == max(ADP)
-  #   ][, ADP := 2025][]
-  # sample_N <- copy(effort_strata) |>
-  #   _[, STRATA := gsub("_BSAI", "-BSAI", STRATA)
-  #   ][, STRATA := gsub("_GOA", "-GOA", STRATA)
-  #   ][, STRATA := gsub("_EFP", "", STRATA)
-  #   ][!(STRATA %like% "EM|ZERO"), STRATA := paste0("OB_", STRATA)
-  #   ][, N := round(TOTAL_TRIPS)
-  #   ][, .(STRATA, N)] |>
-  #   setkey(STRATA)
-  
-  # Build the effort prediction model
-  effort_glm <- glm(
-    formula = TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, 
-    data = effort_strata[ADP < ADPyear - 1], family = "quasipoisson")
-  # Get the prediction for the most recent ADP year
-  effort_pred <- cbind(
-    effort_strata[ADP == max(ADP)],
-    as.data.table(predict(effort_glm, type = "link", newdata = effort_strata[ADP == max(ADP)], se.fit = TRUE))
-  )
-
+  # Vary the number of trips in each stratum based on the effort prediction's confidence intervals.
+  set.seed(12345)
+  setDT(effort_prediction)
   sample_N <- unname(split(
     rbindlist(
       # For each stratum, sample a number of trips based on a distribution of our fishing effort estimate
-      lapply(split(effort_pred, by = "STRATA"), function(x) {
+      lapply(split(effort_prediction, by = "STRATA"), function(x) {
         cbind(
-          x[, .(I = 1:resamp_iter, ADP = adp_year, STRATA)],
-          N = round(exp(rnorm(n = resamp_iter, mean = x[["fit"]], sd = x[["se.fit"]]))))})
+          x[, .(I = 1:resamp_iter, ADP = as.integer(ADP), STRATA)],
+          N = as.integer(round(exp(rnorm(n = resamp_iter, mean = x[["mean"]], sd = x[["sd"]])))))
+      })
     ) |>
       # Order by resampling iteration, ADP, and stratum 
       setorder(I, ADP, STRATA),
     # Split by resampling iteration so each list element represents one iteration of partial coverage fishing effort
     by = "I", keep.by = F))
-
-  
-  #'*=========================================================================*
 }
 
 #=================================#
 ## Partial Coverage Allocation ----
 #=================================#
 
-#' [TODO: Make sample_N also give parameters for bootstrap_allo to vary trips].
+#' [TODO: I've made sample_N a list, so allo_prox won't have to do the N sampling itself].
 #'In draft, there will be no variation, but in the final, it will parameterize the random stratum N.
 
-boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params, budget_lst, bootstrap_iter = resamp_iter)
+gc()
+boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params, budget_lst)
 
 #' TODO Save the outputs of the bootstrapping and allocation
 if(F) save(boot_lst, file = "results/swor_boot_lst.rdata")
@@ -270,17 +245,19 @@ boot_dt <- rbindlist(lapply(boot_lst, "[[", "rates"), idcol = "BOOT_ITER")
 
 # If bootstrapping multiple populations, view the distribution of allocated rates
 if(uniqueN(boot_dt$BOOT_ITER) > 1) {
+  # Distribution of Proximity Allocation Index
+  ggplot(unique(boot_dt[, .(BOOT_ITER, INDEX)]), aes(x = INDEX)) + geom_histogram()
   
-  ggplot(boot_dt, aes(x = STRATA, y = SAMPLE_RATE)) + geom_violin(draw_quantiles = 0.5) + 
-    facet_wrap(.~ STRATA, scales = "free") + stat_summary(geom = "point", fun = mean)
-  
-  ggplot(boot_dt, aes(x = STRATA, y = SAMPLE_RATE)) + geom_violin(draw_quantiles = 0.5) + 
+  # Distribution of sampling rates
+  ggplot(boot_dt, aes(x = STRATA, y = SAMPLE_RATE)) + geom_boxplot() + 
     stat_summary(geom = "point", fun = mean) + labs(x = "Stratum", y = "Sample Rate") + 
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + geom_hline(yintercept = 0)
 }
 
 # Calculate the rates to use as the mean across iterations. Also calculate average proximity (PROX) and cv_scaling metrics
-rates_adp <- boot_dt[, lapply(.SD, mean), .SDcols = c("SAMPLE_RATE", "n", "PROX", "CV_SCALING", "INDEX"), keyby = .(ADP, STRATA, STRATA_N)]
+#' [NOTE:] Here are calculating the mean of STRATA_N, SAMPLE_RATE, and n across resampling iterations, but they will
+#' no longer be mathematically related. The only important thing we will be using here is the SAMPLE_RATE
+rates_adp <- boot_dt[, lapply(.SD, mean), .SDcols = c("STRATA_N", "SAMPLE_RATE", "n", "PROX", "CV_SCALING", "INDEX"), keyby = .(ADP, STRATA)]
 
 
 #===========================#
@@ -301,51 +278,128 @@ full_efrt.smry <- pc_effort_sub[COVERAGE_TYPE == "FULL", .(
 #' Now that rates are determined, simulate sampling to create a distribution of expected costs, where variance is caused 
 #' only by the random selection of trips in the at-sea observer and fixed-gear EM strata.
 
+#' [TODO: In the draft, we did this to simulate trip selection 10K times for our one fishing effort prediction]
+#' In the final, we will want to simulate trip selection and costs for each resampling iteration. Ideally, do 1K ODDS
+#' simulations per each 1000 resampling iterations for 1 million total? This migh take forever?
+
 #' [DRAFT:] For the Draft ADP, we will not simulate fishing effort, so `pc_effort_st` can be used as-is.
 #' [FINAL:] For the Final ADP, we will bootstrap fishing effort using outputs of `effort_prediction.R`
 
-# Set number of bootstrapping simulations for cost estimtes
-cost_boot_iter <- 10000
-# Initialize results list
-cost_boot_lst <- vector(mode = "list", length = cost_boot_iter)
-# Identify trips and their strata
-cost_boot_trips_dt <- unique(pc_effort_st[, .(ADP, STRATA, TRIP_ID)])
+if( adp_ver == "Draft") {
 
-#' Hard-code the EM_TRW sampling rate, which is 1/3
-rates_em_trw_goa <- cost_boot_trips_dt[STRATA == "EM_TRW-GOA", .(STRATA_N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)]
-cost_boot_rates <- rbind(rates_adp, rates_em_trw_goa, fill = T)
-cost_boot_rates[STRATA == "EM_TRW-GOA", SAMPLE_RATE := 0.3333]
-cost_boot_rates[, MON_RATE := SAMPLE_RATE]
+  # Set number of bootstrapping simulations for cost estimtes
+  cost_boot_iter <- 10000
+  # Initialize results list
+  cost_boot_lst <- vector(mode = "list", length = cost_boot_iter)
+  # Identify trips and their strata
+  cost_boot_trips_dt <- unique(pc_effort_st[, .(ADP, STRATA, TRIP_ID)])
+  
+  #' Hard-code the EM_TRW sampling rate, which is 1/3
+  rates_em_trw_goa <- cost_boot_trips_dt[STRATA == "EM_TRW-GOA", .(STRATA_N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)]
+  cost_boot_rates <- rbind(rates_adp, rates_em_trw_goa, fill = T)
+  cost_boot_rates[STRATA == "EM_TRW-GOA", SAMPLE_RATE := 0.3333]
+  cost_boot_rates[, MON_RATE := SAMPLE_RATE]
+  
+  # Begin trip simulation
+  set.seed(12345)
+  for(i in seq_len(cost_boot_iter)) {
+    
+    if(i == 1) cat(paste0(cost_boot_iter, " iterations:\n"))
+    if( (i %% (cost_boot_iter/10)) == 0 ) cat(paste0(i, ", "))
+    
+    cost_boot_trips_dt.iter <- copy(cost_boot_trips_dt)
+    # Merge in sampling rates. 
+    cost_boot_trips_dt.iter <- cost_boot_trips_dt.iter[rates_adp[, .(ADP, STRATA, SAMPLE_RATE)], on = .(ADP, STRATA) ]
+    # Assign random numbers
+    cost_boot_trips_dt.iter[, RN := runif(.N)]
+    # Subset the sampled trips, then subset pc_effort_st
+    cost_boot_trips_dt.n <- pc_effort_st[cost_boot_trips_dt.iter[RN < SAMPLE_RATE, ], on = .(ADP, STRATA, TRIP_ID)]
+    
+    #' Calculate cost of each stratum. Just need a day summary 
+    em_fg_d <- unique(cost_boot_trips_dt.n[STRATA %like% "EM_FIXED", .(ADP, STRATA, TRIP_ID, DAYS)])[
+    ][, .(d = sum(DAYS)), keyby = .(ADP, STRATA)]
+    
+    cost_boot_lst[[i]] <- cbind(
+      ob_cost_new(cost_boot_rates, cost_params = cost_params, allo_sub = cost_boot_trips_dt.n, sim = T),
+      emfg_cost(em_fg_d, cost_params = cost_params, sim = T),
+      emtrw_cost_new(cost_boot_trips_dt.n, cost_params = cost_params)
+    )
+    
+  }
+  cost_boot_dt <- rbindlist(cost_boot_lst, idcol = "iter")
+  cost_boot_dt.med <- cost_boot_dt[, median(OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)]
+  cost_boot_dt.95 <- cost_boot_dt[, list(quantile(OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL, c(0.025, .975)))]
+  
+} else if( adp_ver == "Final") {
+  
+  #' [TODO: With only 100 ODDS iterations, this takes a while]
+  #'        A 'for' loop would let us monitor progress. Need to make costs calculate faster... Is it the Julian date that is slow?
+  odds_iter <- 100
+  
+  set.seed(12345)
+  
+  cost_boot_dt <- lapply(
+    # Grab the trip IDs from the resampling and recreate
+    lapply(boot_lst, "[[", "resample"),
+    function(x) {
+      # x <- lapply(boot_lst, "[[", "resample")[[1]]
+      
+      # Rebuild the fishing effort using the resampling results from allocation
+      resample_effort <- unique(pc_effort_st[, .(ADP, POOL, STRATA, wd_TRIP_ID, DAYS, TRIP_TARGET_DATE, LANDING_DATE)])[x, on = .(wd_TRIP_ID)]
+      resample_effort[, TRIP_ID := .GRP, keyby = .(ADP, STRATA, wd_TRIP_ID, I)]
+      
+      # Calculate cost of EM_TRW-GOA. This will vary only by nubmer of trips, not via ODDS.
+      em_trw_goa.cost <- unique(resample_effort[STRATA == "EM_TRW-GOA", .(STRATA_N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)])
+      
+      # Apply the final selection rates, simulating ODDS
+      odds_lst <- vector(mode = "list", length = odds_iter)
+      
+      # Calculate costs from each ODDS iteration
+      rbindlist(lapply(1:odds_iter, function(y) {
 
-# Begin trip simulation
-set.seed(12345)
-for(i in seq_len(cost_boot_iter)) {
-  
-  if(i == 1) cat(paste0(cost_boot_iter, " iterations:\n"))
-  if( (i %% (cost_boot_iter/10)) == 0 ) cat(paste0(i, ", "))
-  
-  cost_boot_trips_dt.iter <- copy(cost_boot_trips_dt)
-  # Merge in sampling rates. 
-  cost_boot_trips_dt.iter <- cost_boot_trips_dt.iter[rates_adp[, .(ADP, STRATA, SAMPLE_RATE)], on = .(ADP, STRATA) ]
-  # Assign random numbers
-  cost_boot_trips_dt.iter[, RN := runif(.N)]
-  # Subset the sampled trips, then subset pc_effort_st
-  cost_boot_trips_dt.n <- pc_effort_st[cost_boot_trips_dt.iter[RN < SAMPLE_RATE, ], on = .(ADP, STRATA, TRIP_ID)]
-  
-  #' Calculate cost of each stratum. Just need a day summary 
-  em_fg_d <- unique(cost_boot_trips_dt.n[STRATA %like% "EM_FIXED", .(ADP, STRATA, TRIP_ID, DAYS)])[
-  ][, .(d = sum(DAYS)), keyby = .(ADP, STRATA)]
-  
-  cost_boot_lst[[i]] <- cbind(
-    ob_cost_new(cost_boot_rates, cost_params = cost_params, allo_sub = cost_boot_trips_dt.n, sim = T),
-    emfg_cost(em_fg_d, cost_params = cost_params, sim = T),
-    emtrw_cost_new(cost_boot_trips_dt.n, cost_params = cost_params)
+        cost_boot_trips_dt.iter <- copy(resample_effort)
+        
+        # Merge in sampling rates.
+        cost_boot_trips_dt.iter <- cost_boot_trips_dt.iter[rates_adp[, .(ADP, STRATA, SAMPLE_RATE)], on = .(ADP, STRATA) ]
+        
+        # Assign random numbers
+        cost_boot_trips_dt.trip_id <- unique(cost_boot_trips_dt.iter[, .(TRIP_ID, SAMPLE_RATE)])[, RN := runif(.N)][]
+
+        # Subset the sampled trips, then subset pc_effort_st
+        cost_boot_trips_dt.trip_id_sel <- cost_boot_trips_dt.trip_id[RN < SAMPLE_RATE, ]
+        cost_boot_trips_dt.n <- cost_boot_trips_dt.iter[cost_boot_trips_dt.trip_id_sel, on = .(TRIP_ID)]
+        
+        #' Calculate costs of at-sea observer strata
+        ob_cost_new(rates_adp, cost_params, allo_sub = cost_boot_trips_dt.n, sim = T)
+
+        #' Calculate cost of fixed-gear EM strata
+        em_fg_d <- unique(cost_boot_trips_dt.n[STRATA %like% "EM_FIXED", .(ADP, STRATA, TRIP_ID, DAYS)])[
+        ][, .(d = sum(DAYS)), keyby = .(ADP, STRATA)]
+        
+        cbind(
+          ob_cost_new(rates_adp, cost_params, allo_sub = cost_boot_trips_dt.n, sim = T),
+          emfg_cost(em_fg_d, cost_params = cost_params, sim = T),
+          #' [TODO: EMTRW_TOTAL is hard-coded in cost_params - 
+          #'        EMTRW_DATA should vary slightly with number of trips in simulations! and number of GOA-only vessels?]
+          emtrw_cost_new(em_trw_goa.cost, cost_params = cost_params)
+        )
+        
+      }), idcol = "ODDS_iter")
+    }
   )
+
+  cost_boot_final <- rbindlist(cost_boot_dt, idcol = "RESAMP_iter")
+  cost_boot_final[, TOTAL_COST := OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL]
   
+  # Costs look pretty normally distributed...
+  ggplot(cost_boot_final, aes(x = TOTAL_COST)) + geom_histogram() + geom_vline(xintercept = mean(cost_boot_final$TOTAL_COST))
+  
+  ggplot(cost_boot_final[RESAMP_iter <= 30], aes(x = TOTAL_COST)) + geom_density(aes(fill = as.character(RESAMP_iter)), alpha = 0.5) + 
+    theme(legend.position = "none") + 
+    geom_vline(xintercept = mean(cost_boot_final$TOTAL_COST)) 
+  
+   
 }
-cost_boot_dt <- rbindlist(cost_boot_lst, idcol = "iter")
-cost_boot_dt.med <- cost_boot_dt[, median(OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)]
-cost_boot_dt.95 <- cost_boot_dt[, list(quantile(OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL, c(0.025, .975)))]
 
 #====================================#
 ## Figure B-2. Cost Distribution  ----
