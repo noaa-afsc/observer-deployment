@@ -33,6 +33,48 @@ load(paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", s
 
 # Data queries ------------------------------------------------------------
 
+#'* TESTING ---------------------------------------------------------------*
+
+# * GOA Trawl EM Tender Offloads ----
+
+#   TENDER_OFFLOAD_DATE needed to match CV deliveries to Tender deliveries
+#   Did not exist prior to 2021
+#   Not a required field in eLandings
+
+tender <- dbGetQuery(channel_afsc, paste(
+  "SELECT * FROM norpac_views.atl_landing_id o
+  WHERE o.year >= 2021
+  AND o.tender_offload_date IS NOT NULL
+  AND o.report_id IN
+    (SELECT m.report_id FROM norpac_views.atl_landing_mgm_id m
+     WHERE m.management_program_modifier = 'TEM'
+     AND m.fmp_area_code = 'GOA')"
+))
+
+# Checking to see if data matches
+max_date <- max(work.data.recent$LANDING_DATE, na.rm = TRUE) 
+max_date_2 <- max(tender$LANDING_DATE, na.rm = TRUE) 
+
+tender_filter <- tender %>%
+  filter(LANDING_DATE <= max_date) %>%
+  select(REPORT_ID, LANDING_DATE, VESSEL_ID)
+
+max_date_3 <- max(tender_filter$LANDING_DATE, na.rm = TRUE) 
+
+n_occur <- data.frame(table(tender_filter$REPORT_ID))
+n_occur[n_occur$Freq > 1, ]
+
+test <- work.data.recent %>% 
+  filter(REPORT_ID %in% tender_filter$REPORT_ID) %>%
+  select(REPORT_ID, VESSEL_ID, MANAGEMENT_PROGRAM_CODE, AGENCY_GEAR_CODE, LANDING_DATE) %>%
+  distinct()
+
+comp <- left_join(tender_filter, test, by = join_by(REPORT_ID))
+
+
+#'*------------------------------------------------------------------------*
+
+
 # * Partial Coverage CPs ----
 
 #   Requests to join must be made prior to July 1  
