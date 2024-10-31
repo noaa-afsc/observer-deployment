@@ -117,7 +117,7 @@ filter(akro_offloads, OBS_REPORT_ID %in% compare$OBS_REPORT_ID)
 # Missing CV fish tickets do not exist in norpac.atl_offload
 
 obs_EM_offloads <- obs_offloads %>%
-  select(OBS_REPORT_ID, OBS_SALMON_CNT_FLAG)
+  select(OBS_REPORT_ID, OBS_SALMON_CNT_FLAG, YEAR)
 
 # Connect observer data to eLandings
 # Need to separate tender and CV landings to connect to observer data
@@ -134,6 +134,22 @@ GOA_EM_cv <-
   select(!c(TENDER_OFFLOAD_DATE, TENDER_VESSEL_ADFG_NUMBER)) %>%
   left_join(obs_EM_offloads, by = join_by(OBS_REPORT_ID))
 # There are offloads here where we have no observer data
+
+# Exploratory plots
+ggplot(GOA_EM_tender, aes(x = PROCESSOR_NAME)) +
+  geom_bar() +
+  facet_wrap(vars(YEAR)) +
+  theme(axis.text.x = element_text(angle = 90))
+
+CV <- GOA_EM_cv %>% mutate(type = "CV") %>% select(!c(REPORT_ID, LANDING_DATE, VESSEL_ID, VESSEL_NAME, VESSEL_ADFG_NUMBER))
+TEN <- GOA_EM_tender %>% mutate(type = "Tender") %>% select(!c(TENDER_OFFLOAD_DATE, TENDER_VESSEL_ADFG_NUMBER))
+
+combo <- rbind(CV, TEN)
+
+ggplot(combo, aes(x = PROCESSOR_NAME, fill = type)) +
+  geom_bar() +
+  facet_wrap(vars(YEAR)) +
+  theme(axis.text.x = element_text(angle = 90))
 
 #'*------------------------------------------------------------------------*
 
