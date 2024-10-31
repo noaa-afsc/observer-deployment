@@ -55,11 +55,18 @@ effort_strata.work <- effort_strata
 #==============================#
 ## Modeling ----
 #==============================#
+#Set levels of strata for figures
+effort_strata.work$STRATA <- factor(effort_strata.work$STRATA, 
+                                    levels = c("EM_FIXED-BSAI", "EM_FIXED-GOA",
+                                               "OB_FIXED-BSAI", "OB_FIXED-GOA",
+                                               "OB_TRW-BSAI", "OB_TRW-GOA",
+                                               "ZERO","EM_TRW-GOA"))
+
 
 # Visualize data
 figure_c1 <- 
   ggplot(data = effort_strata.work[ADP < ADPyear - 1]) +
-  geom_col(aes(x = ADP, y = TOTAL_TRIPS)) + facet_wrap(vars(STRATA), scales = "free_y") +
+  geom_col(aes(x = ADP, y = TOTAL_TRIPS)) + facet_wrap(vars(STRATA), scales = "free_y", ncol = 2) +
   scale_x_continuous(breaks = seq(min(effort_strata.work$ADP), ADPyear, by = 5)) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
@@ -192,7 +199,7 @@ figure_c2a <-
   theme_bw() +
   theme(legend.position = "bottom") +
   scale_fill_viridis_d(option = "viridis", aesthetics = "color") +
-  guides(color = guide_legend(ncol = 3)) +
+  guides(color = guide_legend(ncol = 4)) +
   labs(x = "True stratum-specific trips in ADPyear - 1",
        y = "Predicted stratum-specific trips in ADPyear - 1",
        color = "Stratum")
@@ -245,7 +252,7 @@ figure_c3a <-
       theme_bw() +
       theme(legend.position = "bottom") +
       scale_fill_viridis_d(option = "viridis", aesthetics = "color") +
-      guides(color = guide_legend(ncol = 3)) +
+      guides(color = guide_legend(ncol = 4)) +
       labs(x = "True stratum-specific trips in ADPyear", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
 
 figure_c3a
@@ -311,7 +318,7 @@ figure_c4 <-
   geom_point() +
   geom_point(aes(y = pred), color = "cyan", alpha = 0.75) +
   geom_point(data = pred_trips %>% filter(ADP >= ADPyear - 1), aes(y = TOTAL_TRIPS), color = "red") +
-  facet_wrap(vars(STRATA), scales = "free_y") +
+  facet_wrap(vars(STRATA), scales = "free_y", ncol = 2) +
   scale_x_continuous(breaks = seq(min(pred_trips$ADP), ADPyear, by = 3)) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5),
