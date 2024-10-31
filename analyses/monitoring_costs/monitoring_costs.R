@@ -49,10 +49,10 @@ gdrive_download(
 #' the preliminary winning contract, but will use prior data from the `FMA Days Paid` spreadsheet to estimate travel 
 #' costs. When the contract is finalized, we can update this spreadsheet with new day costs instead of hard-code. 
 #' `This spreadsheet includes day rates for both at-sea and shoreside observers`
+#' [https://docs.google.com/spreadsheets/d/1KGmZNo7uVuB6FCVRZd4UV2PROa4Jl7-J/edit?gid=355780110#gid=355780110]
 
 #' Download and save an updated instance of FMA Days Paid to analyses/monitoring_costs/ folder.
 #' TODO [Make a google spreadsheet that mirrors the FMA Days Paid data using IMPORTRANGE() function]
-#' [https://docs.google.com/spreadsheets/d/1KGmZNo7uVuB6FCVRZd4UV2PROa4Jl7-J/edit?gid=355780110#gid=355780110]
 
 FMA_days_paid <- lapply(read_xl_allsheets("analyses/monitoring_costs/FMA Days Paid.xlsx"), setDT)
 
@@ -95,12 +95,72 @@ gdrive_upload(
   gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
 )
 
+#' *========================*
+#' [TODO: Pull all plant days?]
+
+if(F) {
+    
+  # Enter vector of ports accepting GOA-only catch from EM Trawl Vessels. Must be in camel-case as in norpac.atl_lov_port
+  goa_plants <- c("Kodiak", "False Pass")
+  
+  trawl_em_plant_days <- setDT(dbGetQuery(channel, paste0(
+    "
+    SELECT 
+      a.*, b.name, b.port_code, d.name AS PORT_NAME, EXTRACT(YEAR FROM a.embark_date) AS YEAR,
+      c.delivery_vessel_adfg, c.gear_type_code, c.delivery_end_date, c.nmfs_area, c.landing_report_id
+    FROM norpac.ols_vessel_plant a
+      JOIN norpac.atl_lov_plant b
+        ON a.permit = b.permit
+      LEFT JOIN norpac.atl_offload c
+        ON a.cruise = c.cruise AND b.permit = c.permit
+      LEFT JOIN norpac.atl_lov_port_code d
+        ON b.port_code = d.port_code
+    WHERE d.name IN('", paste0(goa_plants, collapse = "','"), "')  
+      AND EXTRACT(YEAR FROM a.embark_date) >= 2023
+    ORDER BY embark_date, delivery_end_date
+    "
+  )))
+  
+    # Make sure delivery dates fall between assignment start and end dates (inclusive)
+    a <- trawl_em_plant_days[data.table::between(DELIVERY_END_DATE, EMBARK_DATE, DISEMBARK_DATE )] |> unique()
+    # Get number of unique assigned days by each cruise and port_code
+    a1 <- a[, .(YEAR, CRUISE, PERMIT, EMBARK_DATE, DISEMBARK_DATE, PORT_CODE, PORT_NAME)] |> unique()
+    a1[, c("START", "END") := lapply(.SD, function(x) julian(as.Date(x))), .SDcols = c("EMBARK_DATE", "DISEMBARK_DATE")]
+    calc_plant_days <- function(x) {
+      x1 <- apply(x, 1, function(y) seq(y[1], y[2], 1))
+      length(unique(unlist(x1)))
+    }
+    a2 <- a1[, .(plant_days = calc_plant_days(.SD) ), keyby = .(YEAR, PORT_NAME, CRUISE), .SDcols = c("START", "END")]
+    a2[, .(Cruises = length(unique(CRUISE)), Total_Days = sum(plant_days)), keyby = .(YEAR, PORT_NAME)]  # 
+    
+    # how many unique days did we have observers at each port?
+    a1[, .(Cruise = length(unique(CRUISE)), plant_days = calc_plant_days(.SD) ), keyby = .(YEAR, PORT_NAME), .SDcols = c("START", "END")]
+    # 113 days in 2024, although we had 144 in 2023. In the draft ADP, we rounded 144 up to 150. 
+    
+    # How did the seasons differ?
+    unique_plant_days <- function(x) {
+      x1 <- apply(x, 1, function(y) seq(y[1], y[2], 1))
+      unique(unlist(x1))
+    }
+    a3 <- a1[, .(plant_days = unique_plant_days(.SD) ), keyby = .(YEAR, PORT_NAME), .SDcols = c("START", "END")]
+    a3[, YDAY := yday(as.Date(plant_days))][, DATE := as.Date(plant_days)]
+    ggplot(a3, aes(x = YDAY, y = PORT_NAME)) + facet_grid(YEAR ~ .) + geom_point()
+    a3[YDAY >= 200, as.list(range(DATE)), keyby = .(YEAR, PORT_NAME)]
+    
+    # It looks like the pollock season wrapped up much sooner this year than last year. Last year it went thorouh Nov 4.
+    # This year it looks like it completed Sep-27 in Kodiak, and Sep 19 in False Pass
+    
+}
+
+#' *========================*
+
+
 #======================================================================================================================#
 # AT-SEA OBSERVER COSTS ----
 #======================================================================================================================#
 
 #==================================================================================#
-#' [2025 Draft]  *Remove this hard-coding once FMA Days Paid is updated* ----
+#' [2025 Draft]  *Remove this hard-coding once FMA Days Paid is updated for 2025 Fiscal Year* ----
 
 #' Option Year 4 (the current contract) was extended to September 30. 
 #' *However, Lisa is currently negotiating new day rates for the Aug-Sep range with AIS for this extension*
@@ -162,7 +222,7 @@ travel_costs
 #' can take an average of 2022 and 2023 costs to be safe?
 
 #' Calculate an estimate of the travel cost per day to apply to the ADP year.
-#' *For the 2025 ADP, I'm simply taking the average of the 2 full years post-COVID: years 2022 and 2023*
+#' *For the 2025 Final ADP, I'm simply taking the average of the 3 full years post-COVID: years 2022-2024 to date*
 travel_cpd <- travel_costs[Calendar %in% 2022:2023, mean(Travel_CPD_infl)]
 
 #===================#
@@ -192,15 +252,15 @@ contract_change_date <- as.Date("2025-10-01")
 #' guaranteed days on the contract, which is a more conservative approach for budgeting purposes than using end date.
 #' This is an underestimate because trips that start before or on the contract change date may have fishing days after
 #' the new contract begins.
-current_contract_days.smry <- pc_effort_st[
-][STRATA %like% "OB_", .(
-  START = min(TRIP_TARGET_DATE, LANDING_DATE), END = max(TRIP_TARGET_DATE, LANDING_DATE)
-  ), keyby = .(STRATA, TRIP_ID, DAYS)
-][yday(START) > yday(contract_end), .(OB_DAYS = sum(DAYS)), keyby = .(STRATA)]
-# Merge in 'current' ADP's monitoring rates and estimate observed days
-current_contract_days.smry[
-][, SAMPLE_RATE := rates_adp_2024_final[current_contract_days.smry, SAMPLE_RATE, on = .(STRATA)]
-][, OB_d := OB_DAYS * SAMPLE_RATE]
+current_contract_days.smry <- pc_effort_st |>
+  _[STRATA %like% "OB_", .(
+    START = min(TRIP_TARGET_DATE, LANDING_DATE), END = max(TRIP_TARGET_DATE, LANDING_DATE)
+    ), keyby = .(STRATA, TRIP_ID, DAYS)
+  ][yday(START) > yday(contract_end), .(OB_DAYS = sum(DAYS)), keyby = .(STRATA)]
+  # Merge in 'current' ADP's monitoring rates and estimate observed days
+current_contract_days.smry |>
+  _[, SAMPLE_RATE := rates_adp_2024_final[current_contract_days.smry, SAMPLE_RATE, on = .(STRATA)]
+  ][, OB_d := OB_DAYS * SAMPLE_RATE]
 current_contract_days <- round(sum(current_contract_days.smry$OB_d))
 
 #=============================#
@@ -252,8 +312,9 @@ emfg_review <- data.table(
 #' average, I'm going to total the inflation-adjusted costs and divide by the total number or reviewed days.
 ggplot(emfg_review, aes(x = REVIEWED_DAYS, y = REVIEW_COST)) + geom_point()
 
-emfg_review[, Infl_Factor := inflation_dt[emfg_review, Infl_Factor, on = c(Calendar = "YEAR")]]
-emfg_review[, Infl_REVIEW_COST := REVIEW_COST * Infl_Factor]
+emfg_review |>
+  _[, Infl_Factor := inflation_dt[emfg_review, Infl_Factor, on = c(Calendar = "YEAR")]
+  ][, Infl_REVIEW_COST := REVIEW_COST * Infl_Factor]
 emfg_review_cpd <- emfg_review[, sum(Infl_REVIEW_COST) / sum(REVIEWED_DAYS)]
 
 #=========================#
@@ -275,17 +336,18 @@ emfg_nonamortized <- data.table(
   NON_AMORTIZED = c(784031, 663886, 642946, 926844, 915425),
   AMORTIZED = c(967395, 871244, 377613, 153313, 203422),
   REVIEWED_DAYS = c(259 + 357 + 706, 1005, 1817, 1442, 1458)
-)
-emfg_nonamortized[, TOTAL := NON_AMORTIZED + AMORTIZED]
+) |>
+  _[, TOTAL := NON_AMORTIZED + AMORTIZED]
 # Apply an inflation-adjusted non-amortized cost
-emfg_nonamortized[, Infl_Factor := inflation_dt[emfg_nonamortized, Infl_Factor, on = c(Calendar = "YEAR")]]
-emfg_nonamortized[, Infl_NON_AMORTIZED := NON_AMORTIZED * Infl_Factor]
+emfg_nonamortized |>
+  _[, Infl_Factor := inflation_dt[emfg_nonamortized, Infl_Factor, on = c(Calendar = "YEAR")]
+  ][, Infl_NON_AMORTIZED := NON_AMORTIZED * Infl_Factor
 # Estimate the cost of review, inflation-adjusted
-emfg_nonamortized[, Infl_REVIEW_COST := emfg_review_cpd * REVIEWED_DAYS]
+  ][, Infl_REVIEW_COST := emfg_review_cpd * REVIEWED_DAYS
 # Subtract the cost of review from the non-amortized costs
-emfg_nonamortized[, Infl_TOTAL_VESSEL_COST := Infl_NON_AMORTIZED - Infl_REVIEW_COST]
+  ][, Infl_TOTAL_VESSEL_COST := Infl_NON_AMORTIZED - Infl_REVIEW_COST
 # Calculate the cost per vessel each year
-emfg_nonamortized[, Infl_CPV := Infl_TOTAL_VESSEL_COST / POOL_SIZE]
+  ][, Infl_CPV := Infl_TOTAL_VESSEL_COST / POOL_SIZE]
 emfg_nonamortized
 #' There is definitely a lot of variation across years, so we will again get a total per-vessel costs across all years 
 #' and divide by the total pool size to arrive at the average no-amortized cost-per-vessel
@@ -294,7 +356,7 @@ emfg_nonamortized_cpv <- emfg_nonamortized[, sum(Infl_TOTAL_VESSEL_COST) / sum(P
 ## [Summary] ----
 
 #' emfg_v                 # The number of fixed-gear EM vessels will be specified by the outputs of `get_data.R`
-emfg_nonamortized_cpv     # The recurring cost per vessel in the fixed-gear EM pool
+emfg_nonamortized_cpv     # The recurring cost per vessel for maintenance in the fixed-gear EM pool
 emfg_review_cpd           # The cost per review day, which will be multiplied by the trip duration * monitoring rate 
 #' amortized_cpv          # The equipment installation/replacement costs. Assumed to be covered by Murkowski funds.
 
@@ -306,13 +368,14 @@ emfg_review_cpd           # The cost per review day, which will be multiplied by
 ## GOA Plant Day Costs ---- 
 #=========================#
 
-#' [2025] Per [https://docs.google.com/document/d/12iFmlgZlk9vL0-ML583tqiUMDMhXK9ucQ3clxUwu35A/edit], planning to have 
-#' *2* observers at Kodiak Trident to cover both lines during 12-hour shifts , and *3* observers to cover the other 3 
-#' Kodiak Plants, SBS, APS, OBI,  so *5* total observers during the fishing seasons. Need to estimate the duration of
-#' the fishing season as total days of the year. Whether Sand Point or False Pass will operate during 2025 is unknown,
-#' so we will assume they will not operate and will not be accounted for.
+#' [2025Final:]
+#' [JenMondragon: https://docs.google.com/document/d/1uH1HjjAKs9ROgInFkmSCK3QacINTw4aLwmixWbEjffY/edit?tab=t.0#heading=h.jctyds2qk09r],
+#' [LisaThompson: https://docs.google.com/document/d/124sC_W8cvyfH_2sJq1oHvOQxs04RNbwZ3H3tavAqxDI/edit?tab=t.0#heading=h.qu65okam02sc]
+#' Planning to have *6* total observers, *5* in Kodiak and *1* at False pass. Need to estimate the duration of
+#' the fishing season as total days of the year. Currently assuming there will not be any partial-coverage only 
+#' activity at Sand Point for 2025.
 
-goa_plant_obs <- 5
+goa_plant_obs <- 6
 
 #=============================#
 ### Count of GOA Plant Days ----
@@ -321,6 +384,8 @@ goa_plant_obs <- 5
 date_cols <- c("EMBARK_DATE", "DISEMBARK_DATE", "DELIVERY_END_DATE")
 kodiak_plant_days[, (date_cols) := lapply(.SD, as.Date), .SDcols = date_cols]
 kodiak_assignments <- unique(kodiak_plant_days[, .(YEAR, CRUISE, PERMIT, EMBARK_DATE, DISEMBARK_DATE, NAME)])
+
+#' [TODO: Need to figure out plant days needed for both Kodiak AND False Pass]
 
 # 2023 A and B season and 2024 A season. 
 fig.kodiak_plant_deliveries <- ggplot(kodiak_assignments, aes(y = as.factor(CRUISE)) ) + 
@@ -344,10 +409,10 @@ cruise_year <- unique(kodiak_assignments[, .(CRUISE = as.character(CRUISE), YEAR
 assign_dates_dt <- assign_dates_dt[cruise_year, on = .(CRUISE)]
 assign_dates_dt[, .(CRUISE_N = uniqueN(CRUISE), DAYS = sum(DAYS)), keyby = .(YEAR)]
 
-#' Total of 519 unique CRUISE x days of plant observers assigned in 2023. According to e-mail from [Chelsae Radell] sent
-#' 2024-Jun-24, 2023 planned 279 days in A season and 150 days in B season = 429 days, plus another 104 days at Sand 
-#' Point. Not sure why there is a large discrepancy of 90 days. The 517 plant days in 2024 was only during A season, as 
-#' there were 3 observers stationed at APA/OBI/SBS and 4 observers stationed at Trident-Kodiak.
+#' Total of 519 unique CRUISE x days of plant observers assigned in 2023, 627 days in 2024.
+#' In 2024, we had 3 observers assigned to APS, OBI, and SBS in A season and 2 in B Season. AT Trident Kodiak, We had 
+#' 4 observers in A Season and 2 in B season. However, because of changes to sampling protocols, we expect that only 2 
+#' observers will be needed to cover the Trident Plants in A season.
 
 #' How many days were an observer assigned each year?
 unique_assigned_days <- rbindlist(assign_dates, idcol = "CRUISE")[
