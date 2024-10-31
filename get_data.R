@@ -42,7 +42,9 @@ load(paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", s
 #   Not a required field in eLandings
 
 tender <- dbGetQuery(channel_afsc, paste(
-  "SELECT * FROM norpac_views.atl_landing_id o
+  "SELECT report_id, processor_permit_id, processor_name, vessel_id, vessel_name, vessel_adfg_number, landing_date,
+          agency_gear_code, tender_vessel_adfg_number, tender_offload_date
+  FROM norpac_views.atl_landing_id o
   WHERE o.year >= 2021
   AND o.tender_offload_date IS NOT NULL
   AND o.report_id IN
@@ -51,29 +53,31 @@ tender <- dbGetQuery(channel_afsc, paste(
      AND m.fmp_area_code = 'GOA')"
 ))
 
-# Checking to see if data matches
-max_date <- max(work.data.recent$LANDING_DATE, na.rm = TRUE) 
-max_date_2 <- max(tender$LANDING_DATE, na.rm = TRUE) 
+# Check to see if data matches
+max_date <- max(work.data$LANDING_DATE, na.rm = TRUE)
+max_date
+max(tender$LANDING_DATE, na.rm = TRUE) 
 
 tender_filter <- tender %>%
   filter(LANDING_DATE <= max_date) %>%
   select(REPORT_ID, LANDING_DATE, VESSEL_ID)
 
-max_date_3 <- max(tender_filter$LANDING_DATE, na.rm = TRUE) 
+max(tender_filter$LANDING_DATE, na.rm = TRUE) 
 
+# Check if any fish tickets are duplicated
 n_occur <- data.frame(table(tender_filter$REPORT_ID))
 n_occur[n_occur$Freq > 1, ]
 
-test <- work.data.recent %>% 
+# Check for correct matching of records
+val_reports <- work.data %>% 
   filter(REPORT_ID %in% tender_filter$REPORT_ID) %>%
   select(REPORT_ID, VESSEL_ID, MANAGEMENT_PROGRAM_CODE, AGENCY_GEAR_CODE, LANDING_DATE) %>%
   distinct()
 
-comp <- left_join(tender_filter, test, by = join_by(REPORT_ID))
-
+tender_filter %>% left_join(val_reports, by = join_by(REPORT_ID)) %>% filter(is.na(LANDING_DATE.y))
+# Missing matches for records near max date of work.data
 
 #'*------------------------------------------------------------------------*
-
 
 # * Partial Coverage CPs ----
 
