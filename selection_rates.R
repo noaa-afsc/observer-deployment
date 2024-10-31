@@ -25,6 +25,7 @@ library(readxl)             # For read_xlsx
 library(odbc)               # For database connectivity
 library(flextable)          # For print-ready tables
 library(officer)            # For additional flextable formatting options such as fp_border
+googledrive::drive_auth()   # Refresh authorization for googldrive package
 
 #===============#
 ## Load data ----
@@ -83,6 +84,7 @@ set_flextable_defaults(font.family = "Times New Roman", font.size = 10)
 #===============#
 
 #' Wrangle the Valhalla data set for spatiotemporal analyses 
+#' [TODO: This object is used to create the full coverage summary too, so name it something other than 'pc_...']
 pc_effort_sub <- work.data.recent |>
   # Use at least 2 full years. We'll trim this down to 1 year after a bit of wrangling
   _[ADP >= adp_year - 2
