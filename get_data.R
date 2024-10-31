@@ -64,26 +64,13 @@ tender <- dbGetQuery(channel_afsc, paste(
 # Missing matches for records near max_date of work.data
 
 #'* Connecting observer data to EM offloads*
-# High level information on landings to connect to observer data
-# Need to separate tender and CV landings
-
-AKRO_tender <-
-  tender %>%
-  select(!c(REPORT_ID, LANDING_DATE, VESSEL_ADFG_NUMBER, VESSEL_NAME)) %>%
-  filter(!is.na(TENDER_VESSEL_ADFG_NUMBER)) %>%
-  distinct()
-
-AKRO_cv <-
-  tender %>%
-  filter(is.na(TENDER_VESSEL_ADFG_NUMBER)) %>%
-  select(!c(TENDER_OFFLOAD_DATE, TENDER_VESSEL_ADFG_NUMBER))
 
 # Observer recorded offload data
 obs_offloads_raw <- dbGetQuery(channel_afsc, paste(
       "SELECT o.landing_report_id AS report_id, o.cruise, o.permit AS processor_permit_id,
       o.delivery_vessel_adfg, o.delivery_end_date, o.offload_to_tender_flag, o.pgm_code,
       CASE WHEN EXISTS (SELECT 1 FROM norpac.atl_salmon WHERE cruise = o.cruise AND permit = o.permit AND offload_seq = o.offload_seq)
-      THEN 'Y' ELSE 'N' END as obs_salmon_cnt_flag --Idenitifes where salmon counts were done
+      THEN 'Y' ELSE 'N' END as obs_salmon_cnt_flag --Idenitifes where salmon counts were done (proxy for observer workload)
       FROM norpac.atl_offload o
       WHERE extract(year FROM delivery_end_date) >= 2021"
     )
@@ -118,14 +105,34 @@ obs_offloads_raw <- dbGetQuery(channel_afsc, paste(
   # Restrict to OBS_REPORT_IDs in eLandings data
   filter(OBS_REPORT_ID %in% tender$OBS_REPORT_ID)
 
+# Check for missing connections between datasets
 obs <- select(obs_offloads_raw, OBS_REPORT_ID)
 ten <- tender %>% select(OBS_REPORT_ID) %>% distinct()
 
 compare <- anti_join(ten, obs)
 
-missing <- filter(tender, OBS_REPORT_ID %in% compare$OBS_REPORT_ID)
+filter(tender, OBS_REPORT_ID %in% compare$OBS_REPORT_ID)
 # Missing CV fish tickets do not exist in norpac.atl_offload
 
+obs_EM_offloads <- obs_offloads_raw %>%
+  select(OBS_REPORT_ID, OBS_SALMON_CNT_FLAG)
+
+# Connect observer data to eLandings
+# Need to separate tender and CV landings to connect to observer data
+
+AKRO_tender <-
+  tender %>%
+  select(!c(REPORT_ID, LANDING_DATE, VESSEL_ADFG_NUMBER, VESSEL_NAME)) %>%
+  filter(!is.na(TENDER_VESSEL_ADFG_NUMBER)) %>%
+  distinct() %>%
+  left_join(obs_EM_offloads, by = join_by(OBS_REPORT_ID))
+
+AKRO_cv <-
+  tender %>%
+  filter(is.na(TENDER_VESSEL_ADFG_NUMBER)) %>%
+  select(!c(TENDER_OFFLOAD_DATE, TENDER_VESSEL_ADFG_NUMBER)) %>%
+  left_join(obs_EM_offloads, by = join_by(OBS_REPORT_ID))
+# There are offloads here where we have no observer data
 
 #'*------------------------------------------------------------------------*
 
