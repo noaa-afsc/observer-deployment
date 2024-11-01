@@ -41,16 +41,18 @@ load(paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", s
 #   Did not exist prior to 2021
 #   Not a required field in eLandings
 
+#'[TODO: Separate the queries from the wrangling]
+
 akro_offloads <- dbGetQuery(channel_afsc, paste(
   "SELECT report_id, processor_permit_id, processor_name, vessel_id, vessel_name, vessel_adfg_number, landing_date,
           agency_gear_code, tender_vessel_adfg_number,
           trunc(o.tender_offload_date) AS tender_offload_date
   FROM norpac_views.atl_landing_id o
   WHERE o.year >= 2021
-  AND o.report_id IN
-    (SELECT m.report_id FROM norpac_views.atl_landing_mgm_id m
-     WHERE m.management_program_modifier = 'TEM'
-     AND m.fmp_area_code = 'GOA')"
+    AND o.report_id IN (
+      SELECT m.report_id 
+      FROM norpac_views.atl_landing_mgm_id m
+      WHERE m.management_program_modifier = 'TEM' AND m.fmp_area_code = 'GOA')"
 )) %>%
   mutate(TENDER_VESSEL_ADFG_NUMBER = as.numeric(TENDER_VESSEL_ADFG_NUMBER),
          REPORT_ID = as.character(REPORT_ID),
