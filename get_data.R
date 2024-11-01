@@ -52,7 +52,7 @@ em_research <- dbGetQuery(channel_afsc, paste(
     SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
     FROM loki.em_vessels_by_adp
     WHERE sample_plan_seq_desc = 'Electronic Monitoring -  research not logged '
-      AND adp >=", if(ADP_version == "Draft" | EM_final == "N") (ADPyear - 1) else (ADPyear), "
+      AND adp =", if(ADP_version == "Draft" | EM_final == "N") (ADPyear - 1) else (ADPyear), "
     ORDER BY adp, vessel_id
   "
 ))
@@ -63,7 +63,7 @@ em_base <- dbGetQuery(channel_afsc, paste(
   "
     SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
     FROM loki.em_vessels_by_adp
-    WHERE adp >= ", if(ADP_version == "Draft" | EM_final == "N") (ADPyear - 1) else (ADPyear), "
+    WHERE adp = ", if(ADP_version == "Draft" | EM_final == "N") (ADPyear - 1) else (ADPyear), "
       AND em_request_status = 'A'
       AND sample_plan_seq_desc IN (
         'Electronic Monitoring - Gear Type- Selected Trips',   -- Pre-2024
