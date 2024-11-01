@@ -65,7 +65,9 @@ em_base <- dbGetQuery(channel_afsc, paste(
     FROM loki.em_vessels_by_adp
     WHERE adp >= ", if(ADP_version == "Draft" | EM_final == "N") (ADPyear - 1) else (ADPyear), "
       AND em_request_status = 'A'
-      AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'
+      AND sample_plan_seq_desc IN (
+        'Electronic Monitoring - Gear Type- Selected Trips',   -- Pre-2024
+        'EM Fixed Gear  - Fishing Area')                       -- 2024 onward
     ORDER BY adp, vessel_id
   "
 ))
@@ -81,7 +83,9 @@ em_requests <- dbGetQuery(channel_afsc, paste(
     FROM loki.em_vessels_by_adp
     WHERE adp = ", ADPyear,"
       AND em_request_status = 'NEW'
-      AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'
+      AND sample_plan_seq_desc IN(
+        'Electronic Monitoring - Gear Type- Selected Trips',   -- Pre-2024
+        'EM Fixed Gear  - Fishing Area')                       -- 2024 onward
   "
 ))
 
