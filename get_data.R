@@ -48,11 +48,10 @@ akro_offloads <- dbGetQuery(channel_afsc, paste(
           agency_gear_code, tender_vessel_adfg_number,
           trunc(o.tender_offload_date) AS tender_offload_date
   FROM norpac_views.atl_landing_id o
-  WHERE o.year >= 2021
-    AND o.report_id IN (
-      SELECT m.report_id 
-      FROM norpac_views.atl_landing_mgm_id m
-      WHERE m.management_program_modifier = 'TEM' AND m.fmp_area_code = 'GOA')"
+  WHERE o.year >= 2021 AND o.report_id IN (
+    SELECT m.report_id 
+    FROM norpac_views.atl_landing_mgm_id m
+    WHERE m.management_program_modifier = 'TEM' AND m.fmp_area_code = 'GOA')"
 )) %>%
   mutate(TENDER_VESSEL_ADFG_NUMBER = as.numeric(TENDER_VESSEL_ADFG_NUMBER),
          REPORT_ID = as.character(REPORT_ID),
@@ -71,12 +70,14 @@ tender <- filter(akro_offloads, !is.na(TENDER_OFFLOAD_DATE))
 
 # Observer recorded offload data
 obs_offloads <- dbGetQuery(channel_afsc, paste(
-      "SELECT o.landing_report_id AS report_id, o.cruise, o.permit AS processor_permit_id,
-      o.delivery_vessel_adfg, o.delivery_end_date, o.offload_to_tender_flag, o.pgm_code,
-      CASE WHEN EXISTS (SELECT 1 FROM norpac.atl_salmon WHERE cruise = o.cruise AND permit = o.permit AND offload_seq = o.offload_seq)
-      THEN 'Y' ELSE 'N' END as obs_salmon_cnt_flag --Idenitifes where salmon counts were done (proxy for observer workload)
-      FROM norpac.atl_offload o
-      WHERE extract(year FROM delivery_end_date) >= 2021"
+    "SELECT o.landing_report_id AS report_id, o.cruise, o.permit AS processor_permit_id,
+            o.delivery_vessel_adfg, o.delivery_end_date, o.offload_to_tender_flag, o.pgm_code,
+            --Idenitifes where salmon counts were done (proxy for observer workload)
+            CASE WHEN EXISTS (
+              SELECT 1 FROM norpac.atl_salmon WHERE cruise = o.cruise AND permit = o.permit AND offload_seq = o.offload_seq)
+            THEN 'Y' ELSE 'N' END AS obs_salmon_cnt_flag
+    FROM norpac.atl_offload o
+    WHERE extract(year FROM delivery_end_date) >= 2021"
     )
   ) %>%
   mutate(DELIVERY_VESSEL_ADFG = as.numeric(DELIVERY_VESSEL_ADFG),
