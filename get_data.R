@@ -151,7 +151,7 @@ combo <- rbind(CV, TEN)
 
 ggplot(combo, aes(x = PROCESSOR_NAME, fill = type)) +
   geom_bar() +
-  facet_wrap(vars(YEAR)) +
+  facet_grid(YEAR ~ .) +
   theme(axis.text.x = element_text(angle = 90))
 
 #'*------------------------------------------------------------------------*
