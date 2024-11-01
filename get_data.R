@@ -141,7 +141,7 @@ GOA_EM_cv <-
 # Exploratory plots
 ggplot(GOA_EM_tender, aes(x = PROCESSOR_NAME)) +
   geom_bar() +
-  facet_wrap(vars(YEAR)) +
+  facet_grid(YEAR ~ .) +
   theme(axis.text.x = element_text(angle = 90))
 
 CV <- GOA_EM_cv %>% mutate(type = "CV") %>% select(!c(REPORT_ID, LANDING_DATE, VESSEL_ID, VESSEL_NAME, VESSEL_ADFG_NUMBER))
