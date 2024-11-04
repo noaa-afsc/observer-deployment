@@ -14,13 +14,13 @@
 ## User inputs ---- ADPyear, whether outputs are to be saved this run, and the auth token for getting data.
 #==============================#
 
-ADPyear <- as.numeric(rstudioapi::askForPassword("What year is the ADP year? (four digits, example: 2025)"))
+ADPyear <- as.numeric(rstudioapi::showPrompt(title = "Enter year",
+                                             message = "What year is the ADP year? (four digits, example: 2025)"))
 
 saveoutputs <- "YES" # Must be "YES" to save figures and rdata file. Use any other value to skip saves.
 
 if(!require("FMAtools")) devtools::install_github("Alaska-Fisheries-Monitoring-Analytics/FMAtools")
   ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data") # Prompts user input.
-
 
 #==============================#
 ## Load packages ----
@@ -64,6 +64,7 @@ effort_strata.work$STRATA <- factor(effort_strata.work$STRATA,
 
 
 # Visualize data
+# Trip counts by stratum, using strata definitions of ADPyear
 figure_c1 <- 
   ggplot(data = effort_strata.work[ADP < ADPyear - 1]) +
   geom_col(aes(x = ADP, y = TOTAL_TRIPS)) + facet_wrap(vars(STRATA), scales = "free_y", ncol = 2) +
@@ -76,7 +77,7 @@ figure_c1 <-
 figure_c1
 
 if(saveoutputs == "YES"){
-  ggsave(filename = "output_figures/figure_c1.png", plot = figure_c1, width = 5, height = 5, units = "in")
+  ggsave(filename = "analyses/effort_prediction/figures/figure_c1.png", plot = figure_c1, width = 5, height = 5, units = "in")
 }
 
 # Model using GLM (# of trips is count data)
@@ -143,8 +144,9 @@ ndata <- bind_cols(effort_strata.work,
                                      se.fit = TRUE, type = "response")[1:2]),
                    c("fitted", "se")))
 
+# Model fit to actual trip counts based on MAX_DATE_TRIPS
 ggplot(ndata, aes(x = ADP, y = TOTAL_TRIPS)) +
-  geom_point() +
+  geom_point(na.rm = T) +
   geom_line(aes(y = fitted)) +
   geom_ribbon(aes(ymax = fitted + 1.96 * se, ymin = fitted - 1.96 * se), alpha = 0.3) + #Added the 1.96
   facet_wrap(vars(STRATA), scales = "free", ncol = 2) +
@@ -156,7 +158,10 @@ ggplot(ndata, aes(x = ADP, y = TOTAL_TRIPS)) +
 #==============================#
 
 # 1) Used to assess how good our predictions are using the selected model
-# 2) Predicts data for each year using selected year from "maxback"
+#     - Answers the following question: What predictions would we have gotten each ADP year using the
+#       model informed by the data from prior years only
+#   * Figure C2: How do predictions this year compare to true number of trips this year
+#   * Figure C3: How do predictions last year compare to true number of trips this year 
 
 #'* ISSUES HERE *:
 # 1) Best model for this year not necessarily best model in previous years
@@ -168,16 +173,16 @@ for(i in 1:maxback){
  preds <- effort_strata.work %>% filter(ADP == ADPyear - i)
  preds$TOTAL_TRIPS_PRED <- predict(glm(formula = effort_glm$formula, data = effort_strata.work[ADP < ADPyear - i],
                                        family = effort_glm$family$family), type = "response", preds)
- if(i == 1)
+ if(i == 1) {
    preds_out <- preds
- else
-   preds_out <- rbind(preds, preds_out)
+ } else {
+   preds_out <- rbind(preds, preds_out)}
 }
 # Warnings when using polynomials because polynomial terms not appropriate for some past time series
 
-# Visualize predictions
+# Visualize predictions (line), with MAX_DATE_TRIPS in red and TOTAL_TRIPS in black
 ggplot(preds_out, aes(x = ADP)) +
-  geom_point(aes(y = TOTAL_TRIPS)) +
+  geom_point(aes(y = TOTAL_TRIPS), na.rm = T) +
   geom_point(aes(y = MAX_DATE_TRIPS), color = "red", alpha = 0.5) +
   geom_line(aes(y = TOTAL_TRIPS_PRED)) +
   facet_wrap(vars(STRATA), scales = "free")
@@ -230,7 +235,7 @@ figure_c2 <- ggarrange(figure_c2a, figure_c2b, ncol = 1, heights = c(1, 0.75))
 figure_c2
 
 if(saveoutputs == "YES"){
-  ggsave(filename = "output_figures/figure_c2.png",
+  ggsave(filename = "analyses/effort_prediction/figures/figure_c2.png",
        figure_c2,
        width = 6.5, height = 10, units = "in")
 }
@@ -279,7 +284,7 @@ figure_c3 <- ggarrange(figure_c3a, figure_c3b, ncol = 1, heights = c(1, 0.75))
 figure_c3
 
 if(saveoutputs == "YES"){
-  ggsave(filename = "output_figures/figure_c3.png",
+  ggsave(filename = "analyses/effort_prediction/figures/figure_c3.png",
        figure_c3,
        width = 6.5, height = 10, units = "in")
 }
@@ -312,6 +317,7 @@ current_yr <-
 pred_trips <- rbind(pred_ints, current_yr)
 
 # Visualize
+# Black is actual total trips, light blue is the model fit, and red is model predictions
 figure_c4 <- 
   ggplot(data = pred_trips, aes(x = ADP, y = TOTAL_TRIPS)) +
   geom_ribbon(aes(ymin = lcb, ymax = ucb), alpha = 0.5, color = "black") +
@@ -329,7 +335,7 @@ figure_c4 <-
 figure_c4
 
 if(saveoutputs == "YES"){
-  ggsave(filename = "output_figures/figure_c4.png", plot = figure_c4, width = 5, height = 5, units = "in")
+  ggsave(filename = "analyses/effort_prediction/figures/figure_c4.png", plot = figure_c4, width = 5, height = 5, units = "in")
 }
 
 #==============================#
@@ -345,39 +351,31 @@ if(saveoutputs == "YES"){
 # using the se.fit.  Then, we use the inverse link to convert back to predicted values.
 
 # Calculate link se estimates using model
-pred_ints$mean <- predict(effort_glm, type = "link", se.fit = TRUE,
-                newdata = pred_ints)$fit
-
-pred_ints$sd <- predict(effort_glm, type = "link", se.fit = TRUE,
-                          newdata = pred_ints)$se.fit
+pred_ints[, c("mean", "sd")] <- predict(effort_glm, type = "link", se.fit = TRUE,
+                                        newdata = pred_ints)[c("fit", "se.fit")]
 
 # Peel off last years and use it for this year
 effort_prediction <- pred_ints %>% filter(ADP == max(ADP))
 effort_prediction$ADP <- ADPyear
 effort_prediction$MAX_DATE_TRIPS <- NA
 
-# Get inverse link function
+# Get inverse link function. For a quasipoisson model that uses a log link, the inverse is exp()
 ilink <- family(effort_glm)$linkinv
 
 #Set seed for random numbers and repeatability
 set.seed(102424)
 
 for(i in 1:nrow(effort_prediction)){
-# Start loop - for each stratum
-trip_draws.i <- 
-  merge(
-    effort_prediction[i,], 
-    data.frame(TRIPS = ilink(rnorm(10000, mean = effort_prediction$mean[i], sd = effort_prediction$sd[i])
-                             )
-               ),
-    all = TRUE)
-
-# go to next stratum.
-if(i == 1)
-  trip_draws <- trip_draws.i
-if(i > 1)
-  trip_draws <- rbind(trip_draws, trip_draws.i)
-
+  # Start loop - for each stratum
+  trip_draws.i <- 
+    merge(
+      effort_prediction[i,], 
+      data.frame(TRIPS = ilink(rnorm(10000, mean = effort_prediction$mean[i], sd = effort_prediction$sd[i]))),
+      all = TRUE)
+  
+  # go to next stratum.
+  if(i == 1) trip_draws <- trip_draws.i
+  if(i > 1) trip_draws <- rbind(trip_draws, trip_draws.i)
 }
 
 # Plot the results
@@ -397,7 +395,6 @@ ggplot(data = trip_draws, aes(x = TRIPS)) +
    geom_vline(data = effort_prediction, aes(xintercept = lcb), lty = 2, color = 'red') +
    geom_vline(data = effort_prediction, aes(xintercept = ucb), lty = 2, color = "red") +
   # And compare them to those from the random number draws
-  
    geom_vline(data = trip_draws_summary, aes(xintercept = Median), color = "blue", alpha = 0.5) +
    geom_vline(data = trip_draws_summary, aes(xintercept = lcb), color = "blue", alpha = 0.5) +
    geom_vline(data = trip_draws_summary, aes(xintercept = ucb), color = "blue", alpha = 0.5) +
@@ -409,9 +406,14 @@ ggplot(data = trip_draws, aes(x = TRIPS)) +
 
 # save effort predictions
 if(saveoutputs == "YES"){
-  save(list = c("figure_c1", "figure_c2", "figure_c3", "figure_c4", "trip_draws", "effort_glm", "effort_prediction"),
-       file = paste0("source_data/effort_prediction", ADPyear, ".rdata"))
+  save(list = c("effort_glm", "effort_prediction"),
+       file = paste0("source_data/effort_prediction_", ADPyear, ".rdata"))
 }
+
+gdrive_upload(
+  local_path = paste0("source_data/effort_prediction_", ADPyear, ".rdata"),
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data")
+)
 
 #==============================#
 ## Testing area ----
