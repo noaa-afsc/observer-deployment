@@ -127,7 +127,8 @@ model_table <- data.frame(Model = c("Model 1", "Model 2", "Model 3","Model 3b", 
                                     anova(effort_glm4, effort_glm3b, test = "F")$`Pr(>F)`[2],
                                     anova(effort_glm5, effort_glm4, test = "F")$`Pr(>F)`[2]))
 
-model_table <- model_table %>% mutate(Ftest = round(Ftest, 3),
+model_table <- model_table %>% mutate(Deviance = round(Deviance, 1),
+                                      Ftest = round(Ftest, 3),
                                       p = ifelse(Ftest < 0.001, "<0.001", 
                                                  ifelse(Ftest > 0.001 & Ftest < 0.01, "<0.01", Ftest)))
 model_table
@@ -423,7 +424,7 @@ ggplot(data = trip_draws, aes(x = TRIPS)) +
 
 # save effort predictions
 if(saveoutputs == "YES"){
-  save(list = c("effort_glm", "effort_prediction"),
+  save(list = c("effort_glm", "effort_prediction", "model_table"),
        file = paste0("source_data/effort_prediction_", ADPyear, ".rdata"))
 }
 
