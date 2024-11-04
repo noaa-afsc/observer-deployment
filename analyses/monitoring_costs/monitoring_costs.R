@@ -147,7 +147,8 @@ if(F) {
     ggplot(a3, aes(x = YDAY, y = PORT_NAME)) + facet_grid(YEAR ~ .) + geom_point()
     a3[YDAY >= 200, as.list(range(DATE)), keyby = .(YEAR, PORT_NAME)]
     
-    # It looks like the pollock season wrapped up much sooner this year than last year. Last year it went thorouh Nov 4.
+    # In 2024, the pollock season abruptly ended due to salmon. The B season (C-D) runs mid Aug to mid Oct.
+    # In 2023 it went throuhh Nov 4.
     # This year it looks like it completed Sep-27 in Kodiak, and Sep 19 in False Pass
     
 }
@@ -419,6 +420,47 @@ unique_assigned_days <- rbindlist(assign_dates, idcol = "CRUISE")[
 ][cruise_year, on = .(CRUISE)
 ][, .(DAYS = uniqueN(DATE)), keyby = .(YEAR)]
 unique_assigned_days
+
+# What is the duration of the fishing seasons in 2023 and 2024?
+goa_pollock_seasons <- rbindlist(assign_dates, idcol = "CRUISE")
+setkey(goa_pollock_seasons, DATE)
+goa_pollock_date_range <- seq(min(goa_pollock_seasons$DATE), max(goa_pollock_seasons$DATE))
+# For each day, count how many cruises were assigned
+goa_pollock_date_cruise_count <- sapply(goa_pollock_date_range, function(x) goa_pollock_seasons[DATE == x, length(unique(CRUISE))] )
+# Now determine the duration of each season. if there is a day with no observer assigned, season is 'closed'. Find the breakpoints
+goa_pollock_season_test <- rep(NA, times = length(goa_pollock_date_cruise_count))
+for(i in 1:length(goa_pollock_date_cruise_count) ){
+  if(i == 1) {
+    goa_pollock_season_test[i] <- TRUE
+  } else if(i == length(goa_pollock_date_cruise_count) ){
+    goa_pollock_season_test[i] <- FALSE
+  } else if( (goa_pollock_date_cruise_count[i] > 0) & (goa_pollock_date_cruise_count[i + 1] == 0 ) ) {
+    goa_pollock_season_test[i] <- FALSE 
+  } else if( (goa_pollock_date_cruise_count[i] == 0) & (goa_pollock_date_cruise_count[i + 1] > 0 ) ) {
+    goa_pollock_season_test[i] <- TRUE
+  }
+}
+pollock_season_starts <- which(goa_pollock_season_test == T)
+pollock_season_ends <- which(goa_pollock_season_test == F)
+# Here we can see the start and end date of the pollock seasons.
+pollock_season_ranges <- mapply(
+  FUN = function(start, end) {
+    as.Date(goa_pollock_date_range[c(start, end)])
+  },
+  start = pollock_season_starts, end = pollock_season_ends,
+  SIMPLIFY = F
+)
+pollock_season_ranges
+sapply(pollock_season_ranges, diff)  # The duration of each season. 
+# In 2024, the A season started 9 days earlier but the B season ended over a month earlier.
+pollock_season_date_cruise_count_dt <- data.table(DATE = as.Date(goa_pollock_date_range), CRUISE_COUNT = goa_pollock_date_cruise_count) 
+# We had more cruises assigned to plants in Kodiak in 2024 A season, fewer in B season. Do we expect 2025 to be more like 2024?
+ggplot(pollock_season_date_cruise_count_dt, aes(x = DATE, y = CRUISE_COUNT)) + geom_col(width = 1) +
+  scale_x_date(date_breaks = "1 month", date_labels = "%Y-%b", minor_breaks = NULL) + 
+  theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
+  labs(x = "Date", y = "# Cruises assigned", subtitle = "Count of cruises assigned to Kodiak Plants each day for GOA EM pollock.")
+
+
 
 #' 144 days during 2023 A and B season, 85 days for 2024 A season only since this analysis is occurring mid-Aug.
 goa_season_days <- 144
