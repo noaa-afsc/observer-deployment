@@ -109,18 +109,28 @@ effort_glm5 <- glm(TOTAL_TRIPS ~ poly(ADP, 3) * STRATA * MAX_DATE_TRIPS, data = 
 summary(effort_glm5)
 
 # Compare models
-anova(effort_glm2, effort_glm1, test = "F")
-anova(effort_glm3, effort_glm2, test = "F")
-anova(effort_glm3, effort_glm3b, test = "F")
-anova(effort_glm4, effort_glm3b, test = "F")
-anova(effort_glm5, effort_glm4, test = "F")
+# anova(effort_glm2, effort_glm1, test = "F")
+# anova(effort_glm3, effort_glm2, test = "F")
+# anova(effort_glm3, effort_glm3b, test = "F")
+# anova(effort_glm4, effort_glm3b, test = "F")
+# anova(effort_glm5, effort_glm4, test = "F")
 
 #Make the table
 model_table <- data.frame(Model = c("Model 1", "Model 2", "Model 3","Model 3b", "Model 4", "Model 5"),
                           Df = c(effort_glm1$df.residual, effort_glm2$df.residual, effort_glm3$df.residual, 
                                  effort_glm3b$df.residual, effort_glm4$df.residual, effort_glm5$df.residual),
                           Deviance = c(effort_glm1$deviance, effort_glm2$deviance, effort_glm3$deviance, 
-                          effort_glm3b$deviance, effort_glm4$deviance, effort_glm5$deviance))
+                          effort_glm3b$deviance, effort_glm4$deviance, effort_glm5$deviance),
+                          Ftest = c(NA, anova(effort_glm2, effort_glm1, test = "F")$`Pr(>F)`[2],
+                                    anova(effort_glm3, effort_glm2, test = "F")$`Pr(>F)`[2],
+                                    anova(effort_glm3, effort_glm3b, test = "F")$`Pr(>F)`[2],
+                                    anova(effort_glm4, effort_glm3b, test = "F")$`Pr(>F)`[2],
+                                    anova(effort_glm5, effort_glm4, test = "F")$`Pr(>F)`[2]))
+
+model_table <- model_table %>% mutate(Ftest = round(Ftest, 3),
+                                      p = ifelse(Ftest < 0.001, "<0.001", 
+                                                 ifelse(Ftest > 0.001 & Ftest < 0.01, "<0.01", Ftest)))
+model_table
 
 # Final model based on non-significant F tests for more complicated models.
 effort_glm <- effort_glm3b
