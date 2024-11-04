@@ -89,16 +89,6 @@ em_requests <- dbGetQuery(channel_afsc, paste(
   "
 ))
 
-#' [TODO: This currently reflects what was used in the 2024 ADP. Update for 2025 or remove!]
-# Hardcode EM removals, opt-outs, and approvals
-em_base <- em_base %>% 
-           # removal
-           filter(VESSEL_ID != 90) %>% 
-           # opt-outs
-           filter(!(VESSEL_ID %in% c(792, 32413, 3297, 3102))) %>% 
-           # approvals
-           bind_rows(data.table(VESSEL_ID = c("2084", "3717", "4387"), VESSEL_NAME = c("COMMANDER", "CARLYNN", "TANYA M")))
-  
 # * Trawl EM ----
 
 trawl_em <- read.csv("source_data/efp_list_2023-09-05.csv")
