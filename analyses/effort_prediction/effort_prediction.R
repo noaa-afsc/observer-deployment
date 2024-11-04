@@ -253,7 +253,7 @@ figure_c1
 
 if(saveoutputs == "YES"){
   ggsave(filename = "analyses/effort_prediction/figures/figure_c1.png",
-       figure_c2,
+       figure_c1,
        width = 6.5, height = 10, units = "in")
 }
 
