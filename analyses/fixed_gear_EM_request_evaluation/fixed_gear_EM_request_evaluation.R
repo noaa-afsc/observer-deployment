@@ -78,12 +78,6 @@ gdrive_download(
 ## Load Functions ----
 #====================#
 
-
-#' [FIXME: Some of these funcitons are still in here and can be used for this analysis?] 
-#' Specifically, dmn_interspersion_figs is needed from here. Howver, since the 2024 ADP, I did some different things...
-#source("analyses/allocation_evaluation/functions.R")
-
-
 source("common_functions/allocation_functions.R")
 
 #======================================================================================================================#
@@ -335,8 +329,6 @@ while(length(fgem_vessel_vec) > 0) {
   add_to_fgem <- ob_overall_dt[which.max(RATIO), PERMIT]
   add_fgem_vec <- c(add_fgem_vec, add_to_fgem)
   cat("\n+ Adding vessel :", add_to_fgem, "to fixed-gear EM pool.\n\n")
-  
-  # TODO for first run, when add_fgem_vec is length 0, save INSP_CHANGE object for all vessels as init.insp_change
   
   # Reassign prior.ispn, prior.effort, and fgem_vessel_vec
   prior.effort <- loop_res[[which(fgem_vessel_vec == add_to_fgem)]]$EFFORT
