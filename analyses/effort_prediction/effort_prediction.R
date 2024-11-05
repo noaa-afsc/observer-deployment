@@ -55,22 +55,29 @@ effort_strata.work <- effort_strata
 #==============================#
 ## Modeling ----
 #==============================#
+# Set levels of strata for figures
+effort_strata.work$STRATA <- factor(effort_strata.work$STRATA, 
+                                    levels = c("EM_FIXED-BSAI", "EM_FIXED-GOA",
+                                               "OB_FIXED-BSAI", "OB_FIXED-GOA",
+                                               "OB_TRW-BSAI", "OB_TRW-GOA",
+                                               "ZERO","EM_TRW-GOA"))
+
 
 # Visualize data
 # Trip counts by stratum, using strata definitions of ADPyear
-figure_c1 <- 
+figure_c0 <- 
   ggplot(data = effort_strata.work[ADP < ADPyear - 1]) +
-  geom_col(aes(x = ADP, y = TOTAL_TRIPS)) + facet_wrap(vars(STRATA), scales = "free_y") +
+  geom_col(aes(x = ADP, y = TOTAL_TRIPS)) + facet_wrap(vars(STRATA), scales = "free_y", ncol = 2) +
   scale_x_continuous(breaks = seq(min(effort_strata.work$ADP), ADPyear, by = 5)) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5)) +
   labs(x = "Year",
        y = "Total trips")
 
-figure_c1
+figure_c0
 
 if(saveoutputs == "YES"){
-  ggsave(filename = "analyses/effort_prediction/figures/figure_c1.png", plot = figure_c1, width = 5, height = 5, units = "in")
+  ggsave(filename = "analyses/effort_prediction/figures/figure_c0.png", plot = figure_c0, width = 5, height = 5, units = "in")
 }
 
 # Model using GLM (# of trips is count data)
@@ -85,11 +92,11 @@ effort_glm2 <- glm(TOTAL_TRIPS ~ ADP * STRATA, data = effort_strata.work[ADP < A
                    family = "quasipoisson")
 summary(effort_glm2)
 
-effort_glm3 <- glm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata.work[ADP < ADPyear - 1],
+effort_glm3 <- glm(TOTAL_TRIPS ~ ADP + STRATA * MAX_DATE_TRIPS, data = effort_strata.work[ADP < ADPyear - 1],
                    family = "quasipoisson")
 summary(effort_glm3)
 
-effort_glm3b <- glm(TOTAL_TRIPS ~ ADP + STRATA * MAX_DATE_TRIPS, data = effort_strata.work[ADP < ADPyear - 1],
+effort_glm3b <- glm(TOTAL_TRIPS ~ ADP * STRATA * MAX_DATE_TRIPS, data = effort_strata.work[ADP < ADPyear - 1],
                    family = "quasipoisson")
 summary(effort_glm3b)
 
@@ -102,14 +109,32 @@ effort_glm5 <- glm(TOTAL_TRIPS ~ poly(ADP, 3) * STRATA * MAX_DATE_TRIPS, data = 
 summary(effort_glm5)
 
 # Compare models
-anova(effort_glm2, effort_glm1, test = "F")
-anova(effort_glm3, effort_glm2, test = "F")
-anova(effort_glm3b, effort_glm3, test = "F")
-anova(effort_glm4, effort_glm3, test = "F")
-anova(effort_glm5, effort_glm4, test = "F")
+# anova(effort_glm2, effort_glm1, test = "F")
+# anova(effort_glm3, effort_glm2, test = "F")
+# anova(effort_glm3, effort_glm3b, test = "F")
+# anova(effort_glm4, effort_glm3b, test = "F")
+# anova(effort_glm5, effort_glm4, test = "F")
+
+# Make the table
+model_table <- data.frame(Model = c("Model 1", "Model 2", "Model 3","Model 3b", "Model 4", "Model 5"),
+                          Df = c(effort_glm1$df.residual, effort_glm2$df.residual, effort_glm3$df.residual, 
+                                 effort_glm3b$df.residual, effort_glm4$df.residual, effort_glm5$df.residual),
+                          Deviance = c(effort_glm1$deviance, effort_glm2$deviance, effort_glm3$deviance, 
+                                       effort_glm3b$deviance, effort_glm4$deviance, effort_glm5$deviance),
+                          Ftest = c(NA, anova(effort_glm2, effort_glm1, test = "F")$`Pr(>F)`[2],
+                                    anova(effort_glm3, effort_glm2, test = "F")$`Pr(>F)`[2],
+                                    anova(effort_glm3, effort_glm3b, test = "F")$`Pr(>F)`[2],
+                                    anova(effort_glm4, effort_glm3b, test = "F")$`Pr(>F)`[2],
+                                    anova(effort_glm5, effort_glm4, test = "F")$`Pr(>F)`[2]))
+
+model_table <- model_table %>% mutate(Deviance = round(Deviance, 1),
+                                      Ftest = round(Ftest, 3),
+                                      p = ifelse(Ftest < 0.001, "<0.001", 
+                                                 ifelse(Ftest > 0.001 & Ftest < 0.01, "<0.01", Ftest)))
+model_table
 
 # Final model based on non-significant F tests for more complicated models.
-effort_glm <- effort_glm3
+effort_glm <- effort_glm3b
 
 # Evaluate "best" model
 # 1) Check for overdispersion - (if = 1, then we don't need to use quasipoisson distribution)
@@ -178,7 +203,7 @@ ggplot(preds_out, aes(x = ADP)) +
   geom_point(aes(y = TOTAL_TRIPS), na.rm = T) +
   geom_point(aes(y = MAX_DATE_TRIPS), color = "red", alpha = 0.5) +
   geom_line(aes(y = TOTAL_TRIPS_PRED)) +
-  facet_wrap(vars(STRATA), scales = "free")
+  facet_wrap(vars(STRATA), scales = "free", ncol = 2)
   
 effort_strata.work <- merge(effort_strata.work, preds_out, all.x = TRUE)
 
@@ -189,7 +214,7 @@ effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED] #TODO - useful
 
 # plot retrospective predictions against actuals for ADPyear - 1
 # Dots are sized to their factor(year) to visually give more emphasis on recent years.
-figure_c2a <- 
+figure_c1a <- 
   ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, color = STRATA)) +
   geom_point(aes(y = TOTAL_TRIPS_PRED), 
              size = as.numeric(as.factor(effort_strata.work[!is.na(RESIDUALS)]$ADP))) +
@@ -197,16 +222,65 @@ figure_c2a <-
   theme_bw() +
   theme(legend.position = "bottom") +
   scale_fill_viridis_d(option = "viridis", aesthetics = "color") +
-  guides(color = guide_legend(ncol = 3)) +
+  guides(color = guide_legend(ncol = 4)) +
   labs(x = "True stratum-specific trips in ADPyear - 1",
        y = "Predicted stratum-specific trips in ADPyear - 1",
        color = "Stratum")
 
-figure_c2a
+figure_c1a
 
 # plot retrospective residual histograms for ADPyear - 1 (old p2).  This plot shows the desired mean of zero and normal distribution of residuals based on 
 # the distribution of residuals you got.  Compare this against the mean in blue we got and the density we got in blue.
 # TODO - the text below in the stat_function is cumbersome.
+figure_c1b <- 
+  ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
+  geom_histogram(aes(y = after_stat(density)), fill = "blue", color = "white", alpha = .5, bins = 20) +
+  stat_function(
+    fun = dnorm, 
+    args = list(mean = 0, 
+                sd = sd(effort_strata.work[!is.na(RESIDUALS)]$RESIDUALS)), 
+    lwd = 2, 
+    col = 'black') +
+  geom_density(color = "blue", lwd = 2) +
+  geom_vline(xintercept = 0, color = "black", lwd = 2) +
+  geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "blue", lwd = 2) +
+  theme_bw() +
+  labs(x = "Residuals", y = "Density")
+
+figure_c1b
+
+figure_c1 <- ggarrange(figure_c1a, figure_c1b, ncol = 1, heights = c(1, 0.75))
+figure_c1
+
+if(saveoutputs == "YES"){
+  ggsave(filename = "analyses/effort_prediction/figures/figure_c1.png",
+       figure_c1,
+       width = 6.5, height = 10, units = "in")
+}
+
+# roll predictions forward one year
+# This command increases the number of observations by a year * strata.
+effort_strata.work <- merge(effort_strata.work[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], 
+                            effort_strata.work[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
+                            by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
+ 
+# Gotta recalculate residuals.
+effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
+
+# plot retrospecitve predictions against actuals for ADPyear
+figure_c2a <- 
+  ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
+      geom_point(size = as.numeric(as.factor(effort_strata.work[!is.na(RESIDUALS)]$ADP))) +
+      geom_abline(intercept = 0, slope = 1) +
+      theme_bw() +
+      theme(legend.position = "bottom") +
+      scale_fill_viridis_d(option = "viridis", aesthetics = "color") +
+      guides(color = guide_legend(ncol = 4)) +
+      labs(x = "True stratum-specific trips in ADPyear", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
+
+figure_c2a
+
+# plot retrospective residuals for ADPyear
 figure_c2b <- 
   ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
   geom_histogram(aes(y = after_stat(density)), fill = "blue", color = "white", alpha = .5, bins = 20) +
@@ -230,55 +304,6 @@ figure_c2
 if(saveoutputs == "YES"){
   ggsave(filename = "analyses/effort_prediction/figures/figure_c2.png",
        figure_c2,
-       width = 6.5, height = 10, units = "in")
-}
-
-# roll predictions forward one year
-# This command increases the number of observations by a year * strata.
-effort_strata.work <- merge(effort_strata.work[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], 
-                       effort_strata.work[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
-                       by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
- 
-# Gotta recalculate residuals.
-effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
-
-# plot retrospecitve predictions against actuals for ADPyear
-figure_c3a <- 
-  ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
-      geom_point(size = as.numeric(as.factor(effort_strata.work[!is.na(RESIDUALS)]$ADP))) +
-      geom_abline(intercept = 0, slope = 1) +
-      theme_bw() +
-      theme(legend.position = "bottom") +
-      scale_fill_viridis_d(option = "viridis", aesthetics = "color") +
-      guides(color = guide_legend(ncol = 3)) +
-      labs(x = "True stratum-specific trips in ADPyear", y = "Predicted stratum-specific trips in ADPyear - 1", color = "Stratum")
-
-figure_c3a
-
-# plot retrospective residuals for ADPyear
-figure_c3b <- 
-  ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = RESIDUALS)) +
-  geom_histogram(aes(y = after_stat(density)), fill = "blue", color = "white", alpha = .5, bins = 20) +
-  stat_function(
-    fun = dnorm, 
-    args = list(mean = 0, 
-                sd = sd(effort_strata.work[!is.na(RESIDUALS)]$RESIDUALS)), 
-    lwd = 2, 
-    col = 'black') +
-  geom_density(color = "blue", lwd = 2) +
-  geom_vline(xintercept = 0, color = "black", lwd = 2) +
-  geom_vline(aes(xintercept = mean(RESIDUALS)), lty = 2, color = "blue", lwd = 2) +
-  theme_bw() +
-  labs(x = "Residuals", y = "Density")
-
-figure_c3b
-
-figure_c3 <- ggarrange(figure_c3a, figure_c3b, ncol = 1, heights = c(1, 0.75))
-figure_c3
-
-if(saveoutputs == "YES"){
-  ggsave(filename = "analyses/effort_prediction/figures/figure_c3.png",
-       figure_c3,
        width = 6.5, height = 10, units = "in")
 }
 
@@ -311,13 +336,13 @@ pred_trips <- rbind(pred_ints, current_yr)
 
 # Visualize
 # Black is actual total trips, light blue is the model fit, and red is model predictions
-figure_c4 <- 
+figure_c3 <- 
   ggplot(data = pred_trips, aes(x = ADP, y = TOTAL_TRIPS)) +
   geom_ribbon(aes(ymin = lcb, ymax = ucb), alpha = 0.5, color = "black") +
   geom_point() +
   geom_point(aes(y = pred), color = "cyan", alpha = 0.75) +
   geom_point(data = pred_trips %>% filter(ADP >= ADPyear - 1), aes(y = TOTAL_TRIPS), color = "red") +
-  facet_wrap(vars(STRATA), scales = "free_y") +
+  facet_wrap(vars(STRATA), scales = "free_y", ncol = 2) +
   scale_x_continuous(breaks = seq(min(pred_trips$ADP), ADPyear, by = 3)) +
   theme_bw() +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5),
@@ -325,10 +350,10 @@ figure_c4 <-
   labs(x = "Year",
        y = "Total trips")
 
-figure_c4
+figure_c3
 
 if(saveoutputs == "YES"){
-  ggsave(filename = "analyses/effort_prediction/figures/figure_c4.png", plot = figure_c4, width = 5, height = 5, units = "in")
+  ggsave(filename = "analyses/effort_prediction/figures/figure_c3.png", plot = figure_c3, width = 5, height = 5, units = "in")
 }
 
 #==============================#
@@ -399,7 +424,7 @@ ggplot(data = trip_draws, aes(x = TRIPS)) +
 
 # save effort predictions
 if(saveoutputs == "YES"){
-  save(list = c("effort_glm", "effort_prediction"),
+  save(list = c("effort_glm", "effort_prediction", "model_table"),
        file = paste0("source_data/effort_prediction_", ADPyear, ".rdata"))
 }
 
