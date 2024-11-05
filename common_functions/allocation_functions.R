@@ -1147,6 +1147,141 @@ prox_rates_from_budget <- function(index_res, budget) {
 # Evaluation Functions -------------------------------------------------------------------------------------------------
 #======================================================================================================================#
 
+
+#' *===================*
+#' *Everything below new*
+
+#' This is a wrapper for `calculate_dmn_interspersion()` and `dmn_interspersion_smry` to summarize a variety of 
+#' comparisons (i.e., OB to OB, OB to EM, OB to ZE, EM to EM). Used by `fixed_gear_EM_request_evaluation.R`
+dmn_interspersion_figs <- function(box_def, selection_rates, ob_adl, nonob_adl) {
+  # ob_adl is the acceptor_donor_lst where OB is the donor to all pools (also TRW-EM to itself)
+  # nonob_adl is the acceptor_donor_lst where fixed-gear EM applies to itself
+  
+  # TEST for current
+  if(F) {
+    box_def <- copy(box_sq); selection_rates <- eval_rates$EQUAL.EQUAL; 
+    
+    ob_adl <- c(
+      rep(list(4:5), times = 2),                # 1-2: EM_HAL and EM_POT 
+      list(3),                                  # 3: EM_TRW
+      rep(list(4:5), times = 2),                # 4-5: OB Fixed Gear
+      list(6),                                  # 6: OB Trawl                         
+      list(4:5)                                 # 7: ZERO           
+    )
+    
+    nonob_adl <- c(
+      rep(list(1:2), times = 2),                # 1-2: Fixed-gear EM to itself
+      rep(list(NULL), times = 5)                # 4-7: No other donors
+    )
+  }
+  
+  # TEST for FMP
+  if(F) {
+    box_def <- copy(box_fmp); selection_rates <- eval_rates$FMP.PROX_FMP; 
+    
+    ob_adl <- c(
+      rep(list(6:9), times = 4),                # 1-4:   EM_HAL and EM_POT 
+      list(5),                                  # 5:     EM_TRW
+      rep(list(6:9), times = 4),                # 6-9:   OB Fixed Gear
+      rep(list(10:11), times = 2),              # 10-11: OB Trawl                         
+      rep(list(6:9), times = 2)                 # 12-13: ZERO           
+    )
+    
+    nonob_adl <- c(
+      rep(list(1:4), times = 4),               # 1-4: Fixed-gear EM to itself
+      rep(list(NULL), times = 9)               # 5-13: No other donors
+    )
+  }
+  
+  dmn_insp_plot_theme <- list(
+    scale_x_continuous(limits = c(0,1), breaks = seq(0, 1, 0.2)),
+    scale_y_discrete(limits = rev),
+    theme(
+      legend.position = "none",
+      strip.text.x = element_text(margin = margin(b = 0.1, t = 0.1))),
+    labs(x = "Domain Interspersion", y = "Gear Type")
+  )
+  
+  dmn_insp_OB <- calculate_dmn_interspersion( #' [CHANGED: was calculate_dmn_interspersion4() ]
+    box_def = box_def,
+    selection_rates = selection_rates,
+    acceptor_donor_lst = ob_adl
+  )
+  
+  dmn_insp_nonOB <- calculate_dmn_interspersion( #' [CHANGED: was calculate_dmn_interspersion4() ]
+    box_def = box_def,
+    selection_rates = selection_rates,
+    acceptor_donor_lst = nonob_adl
+  )
+  
+  dmn_smry_OB  <- dmn_interspersion_smry(dmn_insp_OB)
+  dmn_smry_nonOB  <- dmn_interspersion_smry(dmn_insp_nonOB)
+  
+  dmn_smry_OB$OVERALL[, FILL := fcase(
+    POOL == "EM" & GEAR %in% c("HAL", "POT"), "dodgerblue",
+    POOL == "EM" & GEAR == "TRW", "dodgerblue4",
+    POOL == "OB", "chartreuse3",
+    POOL == "ZERO", "darkorchid4"
+  )]
+  
+  dmn_smry_OB$BSAI_GOA[, FILL := fcase(
+    POOL == "EM" & GEAR %in% c("HAL", "POT"), "dodgerblue",
+    POOL == "EM" & GEAR == "TRW", "dodgerblue4",
+    POOL == "OB", "chartreuse3",
+    POOL == "ZERO", "darkorchid4"
+  )]
+  
+  dmn_plot_overall <- ggplot(dmn_smry_OB$OVERALL, aes(y = GEAR, x = POOL_DMN_INTERSPERSION)) + 
+    facet_grid(ADP ~ POOL) + geom_col(aes(fill = I(FILL))) + dmn_insp_plot_theme +
+    geom_point(data = dmn_smry_nonOB$OVERALL, shape = 23, fill = "yellow", stroke = 1) + 
+    geom_text(aes(label = round(BOX_DMN_w)), x = 0.15, hjust = 1, size = 3, color = "white")
+  
+  dmn_plot_fmp <- ggplot(dmn_smry_OB$BSAI_GOA, aes(y = GEAR, x = POOL_DMN_INTERSPERSION)) +
+    facet_grid(ADP ~ POOL + BSAI_GOA) + geom_col(aes(fill = I(FILL))) + dmn_insp_plot_theme + 
+    geom_point(data = dmn_smry_nonOB$BSAI_GOA, shape = 23, fill = "yellow", stroke = 1) + 
+    geom_text(aes(label = round(BOX_DMN_w)), x = 0.3, hjust = 1, size = 3, color = "white")
+  
+  # Final outputs
+  list(
+    DMN_INSP_OB = dmn_insp_OB,
+    DMN_INSP_NONOB = dmn_insp_nonOB,
+    DMN_INSP_OB_SMRY = dmn_smry_OB,
+    DMN_INSP_NONOB_SMRY = dmn_smry_nonOB,
+    DMN_PLOT_OVERALL = dmn_plot_overall,
+    DMN_PLOT_FMP = dmn_plot_fmp
+  )
+  
+}
+
+#' Used by `dmn_interspersion_figs()` to combine comparisons of domain interspersion. 
+dmn_interspersion_smry <- function(dmn_res_pool_dt) {
+  
+  year_col <- dmn_res_pool_dt$params$year_col
+  
+  # Overall within pool
+  overall <- dmn_res_pool_dt$POOLED[
+    , .(BOX_DMN_w = sum(BOX_DMN_w), BOX_DONOR_SAMPLE_PROB = weighted.mean(BOX_DONOR_SAMPLE_PROB, by = BOX_DMN_n)), 
+    by = c(year_col, "POOL", "GEAR", "BOX_ID", "HEX_ID", "TIME")
+  ][, .(BOX_DMN_w = sum(BOX_DMN_w), POOL_DMN_INTERSPERSION = weighted.mean(BOX_DONOR_SAMPLE_PROB, w = BOX_DMN_w)), keyby = c("GEAR", year_col, "POOL")]
+  
+  # Split by BSAI_GOA
+  bsai_goa <- dmn_res_pool_dt$POOLED[
+    , .(BOX_DMN_w = sum(BOX_DMN_w), BOX_DONOR_SAMPLE_PROB = weighted.mean(BOX_DONOR_SAMPLE_PROB, by = BOX_DMN_n)), 
+    by = c(year_col, "POOL", "BSAI_GOA", "GEAR", "BOX_ID", "HEX_ID", "TIME")
+  ][, .(BOX_DMN_w = sum(BOX_DMN_w), POOL_DMN_INTERSPERSION = weighted.mean(BOX_DONOR_SAMPLE_PROB, w = BOX_DMN_w)), keyby = c("GEAR", "BSAI_GOA", year_col, "POOL")]
+  
+  list(
+    OVERALL = overall,
+    BSAI_GOA = bsai_goa,
+    params = dmn_res_pool_dt$params,
+    geom = dmn_res_pool_dt$geom
+  )
+  
+}
+
+#' *Everything above new*
+#' *===================*
+
 # Evaluate the overlap of observed trips to other pools of similar gear type
 calculate_dmn_interspersion <- function(box_def, selection_rates, acceptor_donor_lst) {
   
