@@ -55,7 +55,7 @@ effort_strata.work <- effort_strata
 #==============================#
 ## Modeling ----
 #==============================#
-#Set levels of strata for figures
+# Set levels of strata for figures
 effort_strata.work$STRATA <- factor(effort_strata.work$STRATA, 
                                     levels = c("EM_FIXED-BSAI", "EM_FIXED-GOA",
                                                "OB_FIXED-BSAI", "OB_FIXED-GOA",
@@ -115,12 +115,12 @@ summary(effort_glm5)
 # anova(effort_glm4, effort_glm3b, test = "F")
 # anova(effort_glm5, effort_glm4, test = "F")
 
-#Make the table
+# Make the table
 model_table <- data.frame(Model = c("Model 1", "Model 2", "Model 3","Model 3b", "Model 4", "Model 5"),
                           Df = c(effort_glm1$df.residual, effort_glm2$df.residual, effort_glm3$df.residual, 
                                  effort_glm3b$df.residual, effort_glm4$df.residual, effort_glm5$df.residual),
                           Deviance = c(effort_glm1$deviance, effort_glm2$deviance, effort_glm3$deviance, 
-                          effort_glm3b$deviance, effort_glm4$deviance, effort_glm5$deviance),
+                                       effort_glm3b$deviance, effort_glm4$deviance, effort_glm5$deviance),
                           Ftest = c(NA, anova(effort_glm2, effort_glm1, test = "F")$`Pr(>F)`[2],
                                     anova(effort_glm3, effort_glm2, test = "F")$`Pr(>F)`[2],
                                     anova(effort_glm3, effort_glm3b, test = "F")$`Pr(>F)`[2],
@@ -203,7 +203,7 @@ ggplot(preds_out, aes(x = ADP)) +
   geom_point(aes(y = TOTAL_TRIPS), na.rm = T) +
   geom_point(aes(y = MAX_DATE_TRIPS), color = "red", alpha = 0.5) +
   geom_line(aes(y = TOTAL_TRIPS_PRED)) +
-  facet_wrap(vars(STRATA), scales = "free")
+  facet_wrap(vars(STRATA), scales = "free", ncol = 2)
   
 effort_strata.work <- merge(effort_strata.work, preds_out, all.x = TRUE)
 
@@ -261,8 +261,8 @@ if(saveoutputs == "YES"){
 # roll predictions forward one year
 # This command increases the number of observations by a year * strata.
 effort_strata.work <- merge(effort_strata.work[, !c("TOTAL_TRIPS_PRED", "RESIDUALS")], 
-                       effort_strata.work[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
-                       by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
+                            effort_strata.work[, .(ADP = ADP + 1, STRATA, TOTAL_TRIPS_PRED)], 
+                            by.x = c("ADP", "STRATA"), by.y = c("ADP", "STRATA"), all = TRUE)
  
 # Gotta recalculate residuals.
 effort_strata.work[, RESIDUALS := TOTAL_TRIPS - TOTAL_TRIPS_PRED]
