@@ -442,7 +442,7 @@ plot_fgem_tpy <- ggplot(fgem_tpy, aes(x = N)) + geom_histogram(bins = 30) + face
   geom_text(data = fgem_tpy_mean_median, aes(x = MEAN, y = 30, label = round(MEAN,2)), color = "red", angle = 90, vjust = 1, hjust = 1, size = 3) + 
   geom_vline(data = fgem_tpy_mean_median, aes(xintercept = MEDIAN)) + 
   geom_text(data = fgem_tpy_mean_median, aes(x = MEDIAN, y = 30, label = round(MEDIAN,2)), angle = 90, vjust = 0, hjust = 1, size = 3) +
-  labs(x = "Trips per year", y = "Count of vessels", subtitle = "Using 2023 list of FGEM vessels. Note that 2023 is data to date.")
+  labs(x = "Trips per year", y = "Count of vessels", subtitle = "Mean = red, median = black")
 # Red is mean, black is median
 # Trips per year does fluctuate 
 
@@ -485,7 +485,7 @@ plot_spatial_overlay <- ggplot(a2) +
   geom_sf(data = ak_low_res %>% st_set_crs(st_crs(init.ispn$DMN_INSP_OB$geom))) + 
   geom_sf(aes(fill = BOX_DMN_w)) + facet_grid(ADP ~ PERMIT) + 
   scale_fill_viridis_c(trans = "sqrt") + 
-  geom_sf(data = a3, aes(color = BOX_N), linewidth = 1, fill = NA) + 
+  geom_sf(data = a3, aes(color = BOX_N), linewidth = 0.5, fill = NA) + 
   scale_color_gradient(low = "red4", high = "orange") + 
   labs(subtitle = "Purple cells outlined in orange = bad: Vessel fishes a lot in places where less fishing occurs")
 
@@ -505,7 +505,7 @@ plot_spatial_overlay <- ggplot(a2) +
 #'     35836   CRYSTAL STAR - [bad]  Not cost-efficient. Only 3.67 trips fished per year.
 #'      1877      LADY RUTH - [bad]  Fishes 11.67 trips per year but all in the BSAI, highly likely to cause data gaps.
 
-### Save Objects for RMD ----
+### Save Objects ----
 out_name <- paste0("analyses/fixed_gear_EM_request_evaluation/results/", ADPyear, "_fgem_eval.rdata")
 save(
   # Raw outputs
@@ -516,6 +516,15 @@ save(
   plot_fgem, plot_ob_em_ze_metrics, plot_fgem_tpy, plot_trips_gear,
   plot_spatial_overall, plot_spatial_by_year, plot_spatial_overlay,
   file = out_name)
-
 #' Upload to Gdrive
 gdrive_upload(local_path = out_name, gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data"))
+
+### Save figures to upload to the repo
+ggsave(plot_fgem, file = "analyses/fixed_gear_EM_request_evaluation/results/figures/plot_fgem.png", width = 10, height = 7.5, units = "in")
+ggsave(plot_ob_em_ze_metrics, file = "analyses/fixed_gear_EM_request_evaluation/results/figures/plot_ob_em_ze_metrics.png", width = 10, height = 7.5, units = "in")
+ggsave(plot_fgem_tpy, file = "analyses/fixed_gear_EM_request_evaluation/results/figures/plot_fgem_tpy.png", width = 10, height = 7.5, units = "in")
+ggsave(plot_trips_gear, file = "analyses/fixed_gear_EM_request_evaluation/results/figures/plot_trips_gear.png", width = 10, height = 7.5, units = "in")
+ggsave(plot_spatial_overall, file = "analyses/fixed_gear_EM_request_evaluation/results/figures/plot_spatial_overall.png", width = 10, height = 4.5, units = "in")
+ggsave(plot_spatial_by_year, file = "analyses/fixed_gear_EM_request_evaluation/results/figures/plot_spatial_by_year.png", width = 10, height = 4.5, units = "in")
+ggsave(plot_spatial_overlay, file = "analyses/fixed_gear_EM_request_evaluation/results/figures/plot_spatial_overlay.png", width = 10, height = 4.5, units = "in")
+
