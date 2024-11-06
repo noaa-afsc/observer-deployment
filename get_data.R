@@ -12,7 +12,6 @@ if(!require("FMAtools")) devtools::install_github("Alaska-Fisheries-Monitoring-A
 if(!require("odbc")) install.packages("odbc", repos='http://cran.us.r-project.org')
 #if(!require("ROracle")) install.packages("ROracle", repos='http://cran.us.r-project.org')
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
-#if(!require("lubridate"))   install.packages("lubridate", repos='http://cran.us.r-project.org') # For fixing datetimes - included in tidyverse
 if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.r-project.org') # ggplot2, dplyr, tidyr, readr, purrr, tibble, stringr, forcats, lubridate (for fixing datetimes)  
 
 # Establish channels ------------------------------------------------------
@@ -85,16 +84,14 @@ obs_offloads <- dbGetQuery(channel_afsc, paste(
          REPORT_ID = as.character(REPORT_ID)) %>%
   #' `HARDCODE:` 10128212 and 10129403 vessel ADFG #'s do not match in 2024 (OBS: 31660, AKRO: 69765)
   # Looks like observer used incorrect permit number: 3 vessels named ALASKA DAWN (2 are 90 ft, 1 is 41 ft [31660])
-  mutate(DELIVERY_VESSEL_ADFG = case_when(CRUISE == 26929 & DELIVERY_VESSEL_ADFG == 31660 ~ 69765,
-                                        TRUE ~ DELIVERY_VESSEL_ADFG)) %>%
+  mutate(DELIVERY_VESSEL_ADFG = replace(DELIVERY_VESSEL_ADFG, REPORT_ID %in% c(10128212, 10129403), 69765)) %>%
   # Restrict to only CVs and Tenders that reported EFP offloads
   filter(DELIVERY_VESSEL_ADFG %in% c(akro_offloads$VESSEL_ADFG_NUMBER, akro_offloads$TENDER_VESSEL_ADFG_NUMBER)) %>%
   # Restrict to only Processors that reported EFP offloads
   filter(PROCESSOR_PERMIT_ID %in% akro_offloads$PROCESSOR_PERMIT_ID) %>%
   # Separate Tender ADFG numbers from CV ADFG numbers
   mutate(TENDER_VESSEL_ADFG_NUMBER = case_when(OFFLOAD_TO_TENDER_FLAG == "Y" ~ DELIVERY_VESSEL_ADFG)) %>%
-  mutate(DELIVERY_VESSEL_ADFG = case_when(OFFLOAD_TO_TENDER_FLAG == "Y" ~ NA,
-                                          TRUE ~ DELIVERY_VESSEL_ADFG)) %>%
+  mutate(DELIVERY_VESSEL_ADFG = replace(DELIVERY_VESSEL_ADFG, OFFLOAD_TO_TENDER_FLAG == "Y", NA)) %>%
   # Add TENDER_OFFLOAD_DATE
   mutate(TENDER_OFFLOAD_DATE = case_when(OFFLOAD_TO_TENDER_FLAG == "Y" ~ DELIVERY_END_DATE)) %>%
   # Rename CV ADFG number column to match eLandings
