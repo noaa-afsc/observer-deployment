@@ -71,29 +71,29 @@ rm(list = setdiff(current_adp_items, c("rates_adp_2024_final")))
 
 channel <- open_channel()
 
-#### Kodiak Plant Days ----
+#### Trawl EM Plant Days ----
 
 # Get assignments for observers at Kodiak plants as well as their deliveries
-kodiak_plant_days <- setDT(dbGetQuery(channel, paste(
-  "
-  SELECT 
-    a.*, b.name, b.port_code, EXTRACT(YEAR FROM a.embark_date) AS YEAR,
-    c.delivery_vessel_adfg, c.gear_type_code, c.delivery_end_date, c.nmfs_area, c.landing_report_id
-  FROM norpac.ols_vessel_plant a
-    JOIN norpac.atl_lov_plant b
-      ON a.permit = b.permit
-    LEFT JOIN norpac.atl_offload c
-      ON a.cruise = c.cruise AND b.permit = c.permit
-  WHERE b.port_code = 14 AND EXTRACT(YEAR FROM a.embark_date) >= 2023
-  ORDER BY EMBARK_DATE
-  "
-)))
-# Save the SQL pull
-save(kodiak_plant_days, file = "analyses/monitoring_costs/sql_pulls/kodiak_plant_days.rdata")
-gdrive_upload(
-  local_path = "analyses/monitoring_costs/sql_pulls/kodiak_plant_days.rdata",
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
-)
+# kodiak_plant_days <- setDT(dbGetQuery(channel, paste(
+#   "
+#   SELECT 
+#     a.*, b.name, b.port_code, EXTRACT(YEAR FROM a.embark_date) AS YEAR,
+#     c.delivery_vessel_adfg, c.gear_type_code, c.delivery_end_date, c.nmfs_area, c.landing_report_id
+#   FROM norpac.ols_vessel_plant a
+#     JOIN norpac.atl_lov_plant b
+#       ON a.permit = b.permit
+#     LEFT JOIN norpac.atl_offload c
+#       ON a.cruise = c.cruise AND b.permit = c.permit
+#   WHERE b.port_code = 14 AND EXTRACT(YEAR FROM a.embark_date) >= 2023
+#   ORDER BY EMBARK_DATE
+#   "
+# )))
+# # Save the SQL pull
+# save(kodiak_plant_days, file = "analyses/monitoring_costs/sql_pulls/kodiak_plant_days.rdata")
+# gdrive_upload(
+#   local_path = "analyses/monitoring_costs/sql_pulls/kodiak_plant_days.rdata",
+#   gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
+# )
 
 #' *========================*
 #' [TODO: Pull all plant days?]
@@ -121,36 +121,44 @@ if(F) {
     "
   )))
   
-    # Make sure delivery dates fall between assignment start and end dates (inclusive)
-    a <- trawl_em_plant_days[data.table::between(DELIVERY_END_DATE, EMBARK_DATE, DISEMBARK_DATE )] |> unique()
-    # Get number of unique assigned days by each cruise and port_code
-    a1 <- a[, .(YEAR, CRUISE, PERMIT, EMBARK_DATE, DISEMBARK_DATE, PORT_CODE, PORT_NAME)] |> unique()
-    a1[, c("START", "END") := lapply(.SD, function(x) julian(as.Date(x))), .SDcols = c("EMBARK_DATE", "DISEMBARK_DATE")]
-    calc_plant_days <- function(x) {
-      x1 <- apply(x, 1, function(y) seq(y[1], y[2], 1))
-      length(unique(unlist(x1)))
-    }
-    a2 <- a1[, .(plant_days = calc_plant_days(.SD) ), keyby = .(YEAR, PORT_NAME, CRUISE), .SDcols = c("START", "END")]
-    a2[, .(Cruises = length(unique(CRUISE)), Total_Days = sum(plant_days)), keyby = .(YEAR, PORT_NAME)]  # 
-    
-    # how many unique days did we have observers at each port?
-    a1[, .(Cruise = length(unique(CRUISE)), plant_days = calc_plant_days(.SD) ), keyby = .(YEAR, PORT_NAME), .SDcols = c("START", "END")]
-    # 113 days in 2024, although we had 144 in 2023. In the draft ADP, we rounded 144 up to 150. 
-    
-    # How did the seasons differ?
-    unique_plant_days <- function(x) {
-      x1 <- apply(x, 1, function(y) seq(y[1], y[2], 1))
-      unique(unlist(x1))
-    }
-    a3 <- a1[, .(plant_days = unique_plant_days(.SD) ), keyby = .(YEAR, PORT_NAME), .SDcols = c("START", "END")]
-    a3[, YDAY := yday(as.Date(plant_days))][, DATE := as.Date(plant_days)]
-    ggplot(a3, aes(x = YDAY, y = PORT_NAME)) + facet_grid(YEAR ~ .) + geom_point()
-    a3[YDAY >= 200, as.list(range(DATE)), keyby = .(YEAR, PORT_NAME)]
-    
-    # In 2024, the pollock season abruptly ended due to salmon. The B season (C-D) runs mid Aug to mid Oct.
-    # In 2023 it went throuhh Nov 4.
-    # This year it looks like it completed Sep-27 in Kodiak, and Sep 19 in False Pass
-    
+  # Save the SQL pull
+  trawl_em_sql_name <- paste0("trawl_em_plant_days_", adp_year, ".rdata")
+  save(trawl_em_plant_days, file = paste0("analyses/monitoring_costs/sql_pulls/", trawl_em_sql_name, ".rdata"))
+  gdrive_upload(
+    local_path = paste0("analyses/monitoring_costs/sql_pulls/", trawl_em_sql_name, ".rdata"),
+    gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
+  )
+  
+  # Make sure delivery dates fall between assignment start and end dates (inclusive)
+  a <- trawl_em_plant_days[data.table::between(DELIVERY_END_DATE, EMBARK_DATE, DISEMBARK_DATE )] |> unique()
+  # Get number of unique assigned days by each cruise and port_code
+  a1 <- a[, .(YEAR, CRUISE, PERMIT, EMBARK_DATE, DISEMBARK_DATE, PORT_CODE, PORT_NAME)] |> unique()
+  a1[, c("START", "END") := lapply(.SD, function(x) julian(as.Date(x))), .SDcols = c("EMBARK_DATE", "DISEMBARK_DATE")]
+  calc_plant_days <- function(x) {
+    x1 <- apply(x, 1, function(y) seq(y[1], y[2], 1))
+    length(unique(unlist(x1)))
+  }
+  a2 <- a1[, .(plant_days = calc_plant_days(.SD) ), keyby = .(YEAR, PORT_NAME, CRUISE), .SDcols = c("START", "END")]
+  a2[, .(Cruises = length(unique(CRUISE)), Total_Days = sum(plant_days)), keyby = .(YEAR, PORT_NAME)]  # 
+  
+  # how many unique days did we have observers at each port?
+  a1[, .(Cruise = length(unique(CRUISE)), plant_days = calc_plant_days(.SD) ), keyby = .(YEAR, PORT_NAME), .SDcols = c("START", "END")]
+  # 113 days in 2024, although we had 144 in 2023. In the draft ADP, we rounded 144 up to 150. 
+  
+  # How did the seasons differ?
+  unique_plant_days <- function(x) {
+    x1 <- apply(x, 1, function(y) seq(y[1], y[2], 1))
+    unique(unlist(x1))
+  }
+  a3 <- a1[, .(plant_days = unique_plant_days(.SD) ), keyby = .(YEAR, PORT_NAME), .SDcols = c("START", "END")]
+  a3[, YDAY := yday(as.Date(plant_days))][, DATE := as.Date(plant_days)]
+  ggplot(a3, aes(x = YDAY, y = PORT_NAME)) + facet_grid(YEAR ~ .) + geom_point()
+  a3[YDAY >= 200, as.list(range(DATE)), keyby = .(YEAR, PORT_NAME)]
+  
+  # In 2024, the pollock season abruptly ended due to salmon. The B season (C-D) runs mid Aug to mid Oct.
+  # In 2023 it went through Nov 4.
+  # This year it looks like it completed Sep-27 in Kodiak, and Sep 19 in False Pass
+  
 }
 
 #' *========================*
@@ -372,55 +380,59 @@ emfg_review_cpd           # The cost per review day, which will be multiplied by
 #' [2025Final:]
 #' [JenMondragon: https://docs.google.com/document/d/1uH1HjjAKs9ROgInFkmSCK3QacINTw4aLwmixWbEjffY/edit?tab=t.0#heading=h.jctyds2qk09r],
 #' [LisaThompson: https://docs.google.com/document/d/124sC_W8cvyfH_2sJq1oHvOQxs04RNbwZ3H3tavAqxDI/edit?tab=t.0#heading=h.qu65okam02sc]
-#' Planning to have *6* total observers, *5* in Kodiak and *1* at False pass. Need to estimate the duration of
+#' Planning to have up to *6* total observers, *5* in Kodiak and *1* at False pass. Need to estimate the duration of
 #' the fishing season as total days of the year. Currently assuming there will not be any partial-coverage only 
 #' activity at Sand Point for 2025.
 
-goa_plant_obs <- 6
+#' [TODO: for 2025, we might only have 5 at any one time? We'd have 6 in B season if we needed 3 at APS/OBI/SBS but can probably get away with 2?]
+goa_plant_obs <- 5
 
 #=============================#
 ### Count of GOA Plant Days ----
 #=============================#
 
 date_cols <- c("EMBARK_DATE", "DISEMBARK_DATE", "DELIVERY_END_DATE")
-kodiak_plant_days[, (date_cols) := lapply(.SD, as.Date), .SDcols = date_cols]
-kodiak_assignments <- unique(kodiak_plant_days[, .(YEAR, CRUISE, PERMIT, EMBARK_DATE, DISEMBARK_DATE, NAME)])
+trawl_em_plant_days[, (date_cols) := lapply(.SD, as.Date), .SDcols = date_cols]
+trawl_em_assignments <- unique(trawl_em_plant_days[, .(YEAR, PORT_NAME, CRUISE, PERMIT, EMBARK_DATE, DISEMBARK_DATE, NAME)])
 
 #' [TODO: Need to figure out plant days needed for both Kodiak AND False Pass]
 
-# 2023 A and B season and 2024 A season. 
-fig.kodiak_plant_deliveries <- ggplot(kodiak_assignments, aes(y = as.factor(CRUISE)) ) + 
-  facet_grid(NAME ~ ., scales = "free_y", space = "free_y") + 
+# 2023 A and B season and 2024 A and B season. 
+fig.trawl_em_plant_deliveries <- ggplot(trawl_em_assignments, aes(y = as.factor(CRUISE)) ) + 
+  facet_grid(PORT_NAME + NAME ~ ., scales = "free_y", space = "free_y") + 
   geom_linerange(aes(xmin = EMBARK_DATE, xmax = DISEMBARK_DATE), linewidth = 1) + 
   scale_x_date(date_breaks = "1 month", date_labels = "%b-%y", minor_breaks = NULL) + 
   geom_vline(xintercept = as.Date("2024-01-01")) + 
   labs(
     x = "Month-Year", y = "Cruise", subtitle = "GOA plant assignments (black) and deliveries (blue) 2023-2024") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
-  geom_point(data = kodiak_plant_days, aes(x = DELIVERY_END_DATE), color = "blue", na.rm = T)
-fig.kodiak_plant_deliveries
-#' Note that assignments and deliveries during B season were pretty sparse, but span a 2+ month range.
+  geom_point(data = trawl_em_plant_days, aes(x = DELIVERY_END_DATE), color = "blue", na.rm = T)
+fig.trawl_em_plant_deliveries
+#' [2025ADP: Notes] 
+#' Assignments and deliveries during B season in 2023 were pretty sparse, but span a 2+ month range. In 2024, the GOA
+#' Pollock fishery was closed due to salmon bycatch, so we'll use the 2023 season length to determine the 'full' season
 
 #' Total up assigned plant days each year. Some observers were assigned to multiple plants at the same time, so count 
 #' unique days by CRUISE
-assign_dates <- apply(kodiak_assignments, 1, function(x) data.table(DATE = seq(julian.Date(as.Date(x["EMBARK_DATE"])), julian.Date(as.Date(x["DISEMBARK_DATE"])))), simplify = F)
-names(assign_dates) <- kodiak_assignments$CRUISE
+assign_dates <- apply(trawl_em_assignments, 1, function(x) data.table(DATE = seq(julian.Date(as.Date(x["EMBARK_DATE"])), julian.Date(as.Date(x["DISEMBARK_DATE"])))), simplify = F)
+names(assign_dates) <- trawl_em_assignments$CRUISE
 assign_dates_dt <- rbindlist(assign_dates, idcol = "CRUISE")[, .(DAYS = uniqueN(DATE)), keyby = .(CRUISE)]
-cruise_year <- unique(kodiak_assignments[, .(CRUISE = as.character(CRUISE), YEAR)])
+cruise_year <- unique(trawl_em_assignments[, .(CRUISE = as.character(CRUISE), YEAR)])
 assign_dates_dt <- assign_dates_dt[cruise_year, on = .(CRUISE)]
 assign_dates_dt[, .(CRUISE_N = uniqueN(CRUISE), DAYS = sum(DAYS)), keyby = .(YEAR)]
-
-#' Total of 519 unique CRUISE x days of plant observers assigned in 2023, 627 days in 2024.
-#' In 2024, we had 3 observers assigned to APS, OBI, and SBS in A season and 2 in B Season. AT Trident Kodiak, We had 
-#' 4 observers in A Season and 2 in B season. However, because of changes to sampling protocols, we expect that only 2 
-#' observers will be needed to cover the Trident Plants in A season.
+#' [2025ADP: Notes] 
+#' Total of 519 unique CRUISE x days of plant observers assigned in 2023, 668 days in 2024.
+#' In 2025, we expect we'll only need 2 observers assigned to the Trident Kodiak Plants, 3 to APS/OBI/SBS, and 1 to 
+#' False Pass.
 
 #' How many days were an observer assigned each year?
 unique_assigned_days <- rbindlist(assign_dates, idcol = "CRUISE")[
 ][cruise_year, on = .(CRUISE)
 ][, .(DAYS = uniqueN(DATE)), keyby = .(YEAR)]
 unique_assigned_days
-
+#' [2025ADP: Notes] # Again, 2024 is only shorter due to the pollock season closing early. It does seem that in 2024
+#' A season that Trident-Kodiak has observers assigned for a few weeks in January before any offloads were received.
+ 
 # What is the duration of the fishing seasons in 2023 and 2024?
 goa_pollock_seasons <- rbindlist(assign_dates, idcol = "CRUISE")
 setkey(goa_pollock_seasons, DATE)
@@ -460,25 +472,32 @@ ggplot(pollock_season_date_cruise_count_dt, aes(x = DATE, y = CRUISE_COUNT)) + g
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
   labs(x = "Date", y = "# Cruises assigned", subtitle = "Count of cruises assigned to Kodiak Plants each day for GOA EM pollock.")
 
+#' [2025ADP: hardcoding the expected number of GOA plant days needed based on 2023, not 2024]
+#' We will have 5 observers during A season and 5 observers for 5 for B season (not six!) because it appears that during 
+#' B season, the APS/OBI/SBS plants can get by with 2 observers, not 3. That is, during B season, Kodiak-Trident will 
+#' have 2, APS/OBI/SBS will have 2, and False Pass will have 1.
+goa_A_season_days <- sapply(pollock_season_ranges, diff)[1]
+goa_B_season_days <- sapply(pollock_season_ranges, diff)[2]
 
+goa_plant_ob_days <- (goa_A_season_days * 5) + (goa_B_season_days * 5)
 
-#' 144 days during 2023 A and B season, 85 days for 2024 A season only since this analysis is occurring mid-Aug.
-goa_season_days <- 144
-
-#' Assuming all plant observers are active all days of the season, calculate the number of plant days
-goa_plant_ob_days <- goa_season_days * goa_plant_obs
+#' 143 days during 2023 A and B season, which is a better guess than what happened in 2024
+goa_season_days <- goa_A_season_days + goa_B_season_days
 
 #' [2025 ADP ONLY]
 #' The Trawl EM EFP will run through Dec 31 of 2024, so the partial coverage fee will not be used to fund Trawl EM until
 #' Jan 1 2025. Therefore, there will not be any days already on the contract like there will be for at-sea observers.
 #' However, we will need to being estimating the number of days that will be on the contract starting in 2026.
 
-contract_days <- rbindlist(assign_dates, idcol = "CRUISE")[
-][cruise_year, on = .(CRUISE)][
-][, DATE := as.Date(DATE)
-][, CONTRACT_HALF := ifelse(yday(DATE) <= yday(contract_end), 1, 2)
-][, .(DAYS = uniqueN(DATE)), keyby = .(YEAR, CONTRACT_HALF)
-][, PROP := DAYS / sum(DAYS), keyby = .(YEAR)][]
+contract_days <- rbindlist(assign_dates, idcol = "CRUISE") |>
+  _[cruise_year, on = .(CRUISE)
+    # 2023 is a safer model since 2024 B season was cut short
+  ][YEAR == 2023
+  ][, DATE := as.Date(DATE)
+  ][, CONTRACT_HALF := ifelse(yday(DATE) <= yday(contract_end), 1, 2)
+  ][, .(DAYS = uniqueN(DATE)), keyby = .(YEAR, CONTRACT_HALF)
+    # Calculate the proportion of sea days on the first contract and second contract years
+  ][, PROP := DAYS / sum(DAYS), keyby = .(YEAR)][]
 # Apply the estimated length of the season to the proportions before and after the contract change date
 contract_days[YEAR == adp_year - 2,] 
 
@@ -494,8 +513,8 @@ plant_sea_day_costs[, OPT_COST := (EST_DAYS - 150) * Optional_Plant_Day_Cost]
 trw_em_day_costs <- sum(plant_sea_day_costs[, .(GUA_COST, OPT_COST)])
 
 #' *Summary*
-goa_plant_obs     #' Number of observers during fishing season
-goa_season_days   #' Total number of days in pollock season
+goa_plant_obs     #' Maximum number of observers active during GOA Pollock season
+goa_season_days   #' Total number of days in GOA pollock season
 goa_plant_ob_days #' Total number of sea days, as  number of observers X number of days in season
 trw_em_day_costs  #' Total cost of sea days, accounting for guaranteed and optional days on both contracts
 
@@ -551,24 +570,24 @@ kodiak_per_diem_cost <- goa_plant_per_diem * (goa_season_days * goa_plant_obs)
 #' The 2022 Trawl EM EA-RIR provides an estimate for data and video review costs in [Table- E-1-3]
 #' [https://meetings.npfmc.org/CommentReview/DownloadFile?p=e31b9c56-d3a4-4d1e-b621-b0b4bd892b5a.pdf&fileName=C3%20Trawl%20EM%20Analysis.pdf]
 
-em_trw.data_transmittal <- 5720
-em_trw.data_review <- 101488
-em_trw.data_processing_storage <- 9403
-em_trw.review_days <- 4882
-em_trw_data_cost <- (em_trw.data_transmittal + em_trw.data_review + em_trw.data_processing_storage) / em_trw.review_days
+emtrw.data_transmittal <- 5720
+emtrw.data_review <- 101488
+emtrw.data_processing_storage <- 9403
+emtrw.review_days <- 4882
+emtrw.data_cost <- (emtrw.data_transmittal + emtrw.data_review + emtrw.data_processing_storage) / emtrw.review_days
 # This is an estimate for costs in 2021, so inflation-adjust this to 2025
-em_trw_data_cpd <- em_trw_data_cost * inflation_dt[Calendar == 2021, Infl_Factor]
+emtrw.data_cpd <- emtrw.data_cost * inflation_dt[Calendar == 2021, Infl_Factor]
 
 ### Count of days to review ----
 
 #' This cost assumes the number of review days in `pc_effort_object`, not in any effort predictions
-#' TODO can add this to `emtrw_cost()` function but we wouldn't be estimating the full EM TWR total carve-off here.
-em_trw_review_ND <- unique(pc_effort_st[STRATA == "EM_TRW-GOA", .(ADP, TRIP_ID, DAYS)])[
-][, .(N = uniqueN(TRIP_ID), D = sum(DAYS)), by = .(ADP)]
-em_trw_review_days <- em_trw_review_ND$D
+#' [TODO: can add this to `emtrw_cost()` function but we wouldn't be estimating the full EM TRW total carve-off here.]
+emtrw.review_ND <- unique(pc_effort_st[STRATA == "EM_TRW-GOA", .(ADP, TRIP_ID, DAYS)]) |>
+  _[, .(N = uniqueN(TRIP_ID), D = sum(DAYS)), by = .(ADP)]
+emtrw.review_days <- emtrw.review_ND$D
 
 #' Calculate total cost of review in ADP year
-em_trw_total_data_cost <- em_trw_review_days * em_trw_data_cpd
+emtrw.total_data_cost <- emtrw.review_days * emtrw.data_cpd
 
 #=====================#
 ## Equipment Costs ----
@@ -581,21 +600,79 @@ em_trw_total_data_cost <- em_trw_review_days * em_trw_data_cpd
 #' equipment installs cost *~$15K* and yearly maintenance costs *~$5K* per vessel. 
 equipment_upkeep_per_VY <- 5000
 
+#==============================#
+### GOA-only Tender Vessels ----
+#==============================#
+
+#' [2025ADP: We're only paying for 6 tender vessels in the GOA]. Assuming tender vessel maintenance costs are the same 
+#' as for catcher vessels
+
+goa_only_tender_v <- 6
+goa_tender_cost <- goa_only_tender_v * equipment_upkeep_per_VY
+
 #===============================#
-### Count of GOA-only vessels ----
+### GOA-only Catcher vessels ----
 #===============================#
 
 #' Count the total of GOA-only trawl EM vessels to apply to the maintenance costs.
+
+#' [TODO: Cross-reference the loki results with the spreadsheet, run this in get_data and export from get_data.R!]
+if(F) {
+  #' TODO Can I cross-reference this with what we have in NORPAC?
+  a <- setDT(dbGetQuery(channel, paste0(
+    "
+    SELECT * 
+    FROM loki.em_vessels_by_adp 
+    WHERE adp = ", adp_year, "AND SAMPLE_PLAN_SEQ_DESC = 'EM Pelagic Trawl'
+    ORDER BY VESSEL_ID
+    "
+  )))
+  
+  b <- data.table(
+    readxl::read_xlsx("source_data/EM_TRW 2025 Vessel List for NMFS_July192024.xlsx", col_names = F))
+
+  emtrw.goa_only <- setNames(b[5:46, 7:8], c("Name", "Status"))  # GOA Only
+  emtrw.goa_only[, VESSEL_NAME := toupper(sub("[*]", "", Name))]
+
+  excel_emtrw_list <- rbind(
+    cbind(b[5:58, 1:2], GROUP = "BS"),  # BS only
+    cbind(b[5:21, 4:5], GROUP = "BSGOA"),  # BS/GOA
+    cbind(b[5:46, 7:8], GORUP = "GOA"),  # GOA Only
+    use.names = F) |>
+    setnames(c("Name", "Status", "GROUP")) |>
+    _[, VESSEL_NAME := toupper(sub("[*]", "", Name))][]
+  
+  # Find which vessels were in the previous list not in this year's list
+  setdiff(a$VESSEL_NAME, excel_emtrw_list$VESSEL_NAME)
+  # There are in LOKI but not the excel list. Some are probably typos:
+  excel_emtrw_list[VESSEL_NAME == "STARFISH", VESSEL_NAME := "STAR FISH"]
+  
+  # Find which vessels were in the excel list but not in loki
+  setdiff(excel_emtrw_list$VESSEL_NAME, a$VESSEL_NAME)  
+  #' `ALASKA DEFENDER` didn't renew? BS only
+  #' `FIERCE ALLIEGIENCE` didn't renew? BS only
+  #' `CAPE KIWANDA` didn't renew? BSGOA
+  #' `ALASKAN` didn't renew? *GOA ONLY - did not renew*
+  #' `MISS COURTNEY KIM` didn't renew? *GOA ONLY - did not renew*
+  #' `MISS LEONA` # This one was a maybe and did not join
+  setdiff(excel_emtrw_list[GROUP == "GOA"]$VESSEL_NAME, a$VESSEL_NAME)  
+  
+  a[VESSEL_NAME %in% c("DAWN", "MAR DEL NORTE")]  # These were both maybes and DID join
+
+  excel_emtrw_list[VESSEL_NAME %like% "ANTHEM"]
+ 
+}
 
 emtrw_goa_v <- setnames(
   data.table(
     readxl::read_xlsx("source_data/EM_TRW 2025 Vessel List for NMFS_July192024.xlsx", col_names = F)
   )[-(1:4), 7:8],
   new = c("VESSEL_NAME", "STATUS")
-)[!is.na(VESSEL_NAME)]
-#' [2025 DRAFT] Chelsae Radell listed 3 vessels as 'maybe' for joining trawl EM in 2025. Will not include these in the 
-#' draft and will wait for vessel to formally declare before the Final ADP.
-emtrw_goa_v_count <- emtrw_goa_v[STATUS != "Maybe?", .N]
+)[!is.na(VESSEL_NAME)] |>
+  _[, VESSEL_NAME := toupper(sub("[*]", "", VESSEL_NAME))][]
+#' [2025ADPFinal: ALASKAN and MISS COURTNEY KIM did not renew, MISS LEONA did not apply]
+emtrw_goa_v_count <- emtrw_goa_v[!(VESSEL_NAME %in% c("ALASKAN", "MISS COURTNEY KIM", "MISS LEONA")) , .N]
+goa_cv_cost <- equipment_upkeep_per_VY * emtrw_goa_v_count 
 
 ## [Summary (carve-off)] ---- 
 
@@ -612,7 +689,7 @@ cost_summary.em_trw <- data.table(
   Category = c("Observer Plant Day Costs", "Lodging", "Per Diem", "Equipment Maintenance", "Data"),
   Cost = c(
     trw_em_day_costs, kodiak_lodging_cost, kodiak_per_diem_cost, 
-    equipment_upkeep_per_VY * emtrw_goa_v_count, em_trw_total_data_cost
+    (goa_cv_cost + goa_tender_cost), em_trw_total_data_cost
   )
 )
 sum(cost_summary.em_trw$Cost)   # Total
@@ -642,7 +719,8 @@ cost_params <- list(
     emtrw_total_cost = sum(cost_summary.em_trw$Cost),
     emtrw_summary = cost_summary.em_trw,
     goa_plant_ob_days = goa_plant_ob_days,
-    emtrw_goa_v_count = emtrw_goa_v_count
+    emtrw_goa_v_count = emtrw_goa_v_count,
+    emtrw_data_cpd = emtrw_data_cpd
   )
 )
 
