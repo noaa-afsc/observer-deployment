@@ -12,8 +12,8 @@ if(!require("FMAtools")) devtools::install_github("Alaska-Fisheries-Monitoring-A
 if(!require("odbc")) install.packages("odbc", repos='http://cran.us.r-project.org')
 #if(!require("ROracle")) install.packages("ROracle", repos='http://cran.us.r-project.org')
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
-if(!require("lubridate"))   install.packages("lubridate", repos='http://cran.us.r-project.org') # For fixing datetimes
-if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.r-project.org') # ggplot2, dplyr, tidyr, readr, purrr, tibble, stringr, forcats  
+#if(!require("lubridate"))   install.packages("lubridate", repos='http://cran.us.r-project.org') # For fixing datetimes - included in tidyverse
+if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.r-project.org') # ggplot2, dplyr, tidyr, readr, purrr, tibble, stringr, forcats, lubridate (for fixing datetimes)  
 
 # Establish channels ------------------------------------------------------
 
