@@ -47,7 +47,7 @@ PartialCPs <- data.frame(VESSEL_ID = c(662, 4581, 6039))
 
 # * Fixed-gear EM research ---- 
 
-em_research <- dbGetQuery(channel_afsc, paste(
+fgem_research <- dbGetQuery(channel_afsc, paste(
   "
     SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
     FROM loki.em_vessels_by_adp
@@ -59,7 +59,7 @@ em_research <- dbGetQuery(channel_afsc, paste(
 
 # * Fixed-gear EM approvals ---- 
 
-em_base <- dbGetQuery(channel_afsc, paste(
+fgem_base <- dbGetQuery(channel_afsc, paste(
   "
     SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
     FROM loki.em_vessels_by_adp
@@ -67,33 +67,57 @@ em_base <- dbGetQuery(channel_afsc, paste(
       AND em_request_status = 'A'
       AND sample_plan_seq_desc IN (
         'Electronic Monitoring - Gear Type- Selected Trips',   -- Pre-2024
+        'EM Declared Gear',
         'EM Fixed Gear  - Fishing Area')                       -- 2024 onward
     ORDER BY adp, vessel_id
   "
 ))
 # Remove EM research vessels from em_base
-em_base <- em_base %>% anti_join(select(em_research, ADP, VESSEL_ID), by = c("ADP", "VESSEL_ID"))
+fgem_base <- fgem_base %>% anti_join(select(fgem_research, ADP, VESSEL_ID), by = c("ADP", "VESSEL_ID"))
 
 # * Fixed-gear EM requests ---- 
 
-# Vessels have until November 1st to request. Approvals are typically made shortly thereafter.
-em_requests <- dbGetQuery(channel_afsc, paste(
+# Vessels have until November 1st to request. Approvals are typically made shortly thereafter by FMA Director.
+fgem_requests <- dbGetQuery(channel_afsc, paste(
   "
     SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
     FROM loki.em_vessels_by_adp
     WHERE adp = ", ADPyear,"
       AND em_request_status = 'NEW'
       AND sample_plan_seq_desc IN(
-        'Electronic Monitoring - Gear Type- Selected Trips',   -- Pre-2024
+        'Electronic Monitoring - Gear Type- Selected Trips',
+        'EM Declared Gear',
         'EM Fixed Gear  - Fishing Area')                       -- 2024 onward
   "
 ))
 
+#'[2025ADP: Hardcoding the one additional fixed-gear EM vessel following approval from Lisa Thompson
+setDT(fgem_requests)
+fgem_requests[VESSEL_NAME == "CAPE ST ELIAS", EM_REQUEST_STATUS := 'A']
+fgem_requests[VESSEL_NAME != "CAPE ST ELIAS", EM_REQUEST_STATUS := 'D']
+
+fgem_base <- rbind(fgem_base, fgem_requests[VESSEL_NAME == "CAPE ST ELIAS"]) %>%
+  select(-"SAMPLE_PLAN_SEQ_DESC") %>%
+  distinct()
+fgem_requests <- fgem_requests %>% filter(EM_REQUEST_STATUS != 'A') %>%
+  select(-"SAMPLE_PLAN_SEQ_DESC") %>%
+  distinct()
+
 # * Trawl EM ----
 
-trawl_em <- read.csv("source_data/efp_list_2023-09-05.csv")
-#' [TODO: This file is in the Vision 2024 ADP/Data folder. We should have a more updated version?] 
+# trawl_em <- read.csv("source_data/efp_list_2023-09-05.csv")
+#' [TODO: This file is in the Vision 2024 ADP/Data folder. Now using loki query for trawl EM vessels] 
 # https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
+
+trwem_base <- setDT(dbGetQuery(channel_afsc, paste0(
+  "
+    SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status 
+    FROM loki.em_vessels_by_adp 
+    WHERE adp = ", if(ADP_version == "Draft") (ADPyear - 1) else (ADPyear), "
+      AND SAMPLE_PLAN_SEQ_DESC = 'EM Pelagic Trawl'
+    ORDER BY VESSEL_ID
+    "
+)))
 
 # * Vessel lengths ----
 
@@ -125,8 +149,8 @@ if( year(Sys.Date()) == (ADPyear - 1) & year(max(work.data$RUN_DATE, na.rm = T))
 gc()
 
 # Load data from current year. The AKRO Region will re-run Valhalla for the current year to date (ADPyear - 1).
-gdrive_download("source_data/2024-10-21cas_valhalla.Rdata", ADP_dribble)
-load("source_data/2024-10-21cas_valhalla.Rdata")
+gdrive_download("source_data/2024-11-05cas_valhalla.Rdata", ADP_dribble)
+load("source_data/2024-11-05cas_valhalla.Rdata")
 
 # Append data from current year to data from prior year. Ensure data types match between the old and new datasets.
 date_cols <- c("TRIP_TARGET_DATE", "LANDING_DATE")
@@ -180,7 +204,7 @@ work.data[, ADP := min(ADP), by = .(TRIP_ID)]
 if(nrow(select(work.data, TRIP_ID, ADP) %>% 
         distinct() %>% 
         group_by(TRIP_ID) %>% 
-        filter(n()>1) %>% 
+        filter(n() > 1) %>% 
         data.frame()) > 0){
   work.data$TRIP_ID <- paste(work.data$ADP, work.data$TRIP_ID, sep = ".")
   message("Adding 'year.' to duplicate TRIP_IDs across years")
@@ -241,10 +265,10 @@ distinct(work.data, COVERAGE_TYPE, CVG_NEW, STRATA) %>%
 # Partial coverage strata
 work.data[
   is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA %in% c(
-  "EM", "EM Voluntary", "EM_FIXED_BSAI", "EM_FIXED_GOA", "EM_HAL", "EM_POT", "EM_TRW_EFP", "EM_TRW_GOA", "EM_TenP",
-  "HAL", "OB_FIXED_BSAI", "OB_FIXED_GOA", "OB_TRW_BSAI", "OB_TRW_GOA", "POT", "T", "TRIP", "TRW", "TenH", "TenP",
-  "TenTR", "VESSEL", "ZERO", "ZERO_EM_RESEARCH", "t"
-), CVG_NEW := "PARTIAL"]
+    "EM", "EM Voluntary", "EM_FIXED_BSAI", "EM_FIXED_GOA", "EM_HAL", "EM_POT", "EM_TRW_EFP", "EM_TRW_GOA", "EM_TenP",
+    "HAL", "OB_FIXED_BSAI", "OB_FIXED_GOA", "OB_TRW_BSAI", "OB_TRW_GOA", "POT", "T", "TRIP", "TRW", "TenH", "TenP",
+    "TenTR", "VESSEL", "ZERO", "ZERO_EM_RESEARCH", "t"),
+  CVG_NEW := "PARTIAL"]
 
 # Split trips that fished both full and partial coverage
 work.data |>
@@ -284,13 +308,13 @@ work.data |>
     # Zero coverage
   ][CVG_NEW == "PARTIAL" & STRATA == "ZERO", STRATA_NEW := "ZERO"
     # Fixed-gear EM. Base STRATUM_NEW on gear type and BSAI_GOA
-  ][VESSEL_ID %in% em_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), STRATA_NEW := paste("EM_FIXED", BSAI_GOA, sep = "-")
+  ][VESSEL_ID %in% fgem_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), STRATA_NEW := paste("EM_FIXED", BSAI_GOA, sep = "-")
     # Fixed-gear EM research
-  ][VESSEL_ID %in% em_research$VESSEL_ID, STRATA_NEW := "ZERO"
+  ][VESSEL_ID %in% fgem_research$VESSEL_ID, STRATA_NEW := "ZERO"
     # Trawl EM
-  ][, TRAWL_EM_FLAG := VESSEL_ID %in% trawl_em$PERMIT & all(AGENCY_GEAR_CODE == "PTR") & all(TRIP_TARGET_CODE %in% c("B", "P"))
+  ][, TRAWL_EM_FLAG := VESSEL_ID %in% trwem_base$VESSEL_ID & all(AGENCY_GEAR_CODE == "PTR") & all(TRIP_TARGET_CODE %in% c("B", "P")) & MANAGEMENT_PROGRAM_CODE != "RPP"
     , by = .(TRIP_ID)          
-  ][TRAWL_EM_FLAG == T, STRATA_NEW := paste("EM_TRW", BSAI_GOA, sep = "_")       #' CHANGED FMP TO BSAI_GOA TO GET RID OF EM_TRW_BS record
+  ][TRAWL_EM_FLAG == T, STRATA_NEW := paste("EM_TRW", BSAI_GOA, sep = "_")
   ][STRATA_NEW == "EM_TRW-GOA", CVG_NEW := "PARTIAL"
   ][, TRAWL_EM_FLAG := NULL]
 # Refine STRATA_NEW, fixing labels and defining strata for observer strata
@@ -316,7 +340,7 @@ under_forties
 work.data <- work.data[TRIP_ID %in% under_forties$TRIP_ID, ':=' (CVG_NEW = "PARTIAL", STRATA_NEW = "ZERO")]
 
 # View > 40's without coverage:
-over_forties <- filter(work.data, LENGTH_OVERALL > 39 & AGENCY_GEAR_CODE != "JIG" & STRATA_NEW == "ZERO" & !(VESSEL_ID %in% em_research$VESSEL_ID)) %>% 
+over_forties <- filter(work.data, LENGTH_OVERALL > 39 & AGENCY_GEAR_CODE != "JIG" & STRATA_NEW == "ZERO" & !(VESSEL_ID %in% fgem_research$VESSEL_ID)) %>% 
   distinct(ADP, VESSEL_ID, TRIP_ID, STRATA, STRATA_NEW, AGENCY_GEAR_CODE, MANAGEMENT_PROGRAM_CODE, LENGTH_OVERALL) %>%
   left_join(VL)
 
@@ -324,9 +348,9 @@ over_forties
 
 # Flip STRATA_NEW to gear-based strata for vessels that are > 40
 work.data |>
-  _[TRIP_ID %in% over_forties$TRIP_ID & !(VESSEL_ID %in% em_base$VESSEL_ID), 
+  _[TRIP_ID %in% over_forties$TRIP_ID & !(VESSEL_ID %in% fgem_base$VESSEL_ID), 
     STRATA_NEW := paste0("OB_FIXED-", BSAI_GOA)
-  ][TRIP_ID %in% over_forties$TRIP_ID & VESSEL_ID %in% em_base$VESSEL_ID,
+  ][TRIP_ID %in% over_forties$TRIP_ID & VESSEL_ID %in% fgem_base$VESSEL_ID,
     STRATA_NEW := .SD[any(AGENCY_GEAR_CODE %in% c("HAL", "POT")), paste0("EM_FIXED-", BSAI_GOA)],
     by = .(TRIP_ID)]
 
@@ -524,15 +548,16 @@ if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected 
 
 # * Full Coverage Summary ----
 
-full_efrt <- work.data[
-  CVG_NEW == "FULL", 
-  .(
-    POOL = "FULL", STRATA = STRATA_NEW, FMP, AREA = REPORTING_AREA_CODE, TARGET = TRIP_TARGET_CODE, 
-    AGENCY_GEAR_CODE, PERMIT, MONTH,
-    START = min(TRIP_TARGET_DATE, LANDING_DATE, na.rm = TRUE), 
-    END = max(TRIP_TARGET_DATE, LANDING_DATE, na.rm = TRUE)
-  ),
-  keyby = .(ADP, TRIP_ID)] |>
+full_efrt <- work.data |>
+  _[
+    CVG_NEW == "FULL", 
+    .(
+      POOL = "FULL", STRATA = STRATA_NEW, FMP, AREA = REPORTING_AREA_CODE, TARGET = TRIP_TARGET_CODE, 
+      AGENCY_GEAR_CODE, PERMIT, MONTH,
+      START = min(TRIP_TARGET_DATE, LANDING_DATE, na.rm = TRUE), 
+      END = max(TRIP_TARGET_DATE, LANDING_DATE, na.rm = TRUE)
+    ),
+    keyby = .(ADP, TRIP_ID)] |>
   unique() |>
   # Create GEAR column (i.e. TRW instead of NPT or PTR)
   _[, GEAR := ifelse(AGENCY_GEAR_CODE %in% c("NPT", "PTR"), "TRW", AGENCY_GEAR_CODE)
@@ -542,15 +567,15 @@ full_efrt <- work.data[
 
 unique(full_efrt[, .(TRIP_ID, GEAR)])[, .N, keyby = GEAR]                         # Here is a rough summary of trip counts by gear type without adjusting for EM/COD
 
-# * EM Vessel Summary ----
+# * Fixed-Gear EM Vessel Summary ----
 
-fg_em <- setDT(copy(em_base))[, .(VESSEL_NAME, PERMIT = VESSEL_ID)]
+fg_em <- setDT(copy(fgem_base))[, .(VESSEL_NAME, PERMIT = VESSEL_ID)]
 # Add back EM research vessels
-fg_em <- rbind(fg_em, data.table(VESSEL_NAME = em_research$VESSEL_NAME, PERMIT = em_research$VESSEL_ID))
-fg_em[, FLAG := ifelse(PERMIT %in% em_research$VESSEL_ID, "RESEARCH", "NONE")]
+fg_em <- rbind(fg_em, data.table(VESSEL_NAME = fgem_research$VESSEL_NAME, PERMIT = fgem_research$VESSEL_ID))
+fg_em[, FLAG := ifelse(PERMIT %in% fgem_research$VESSEL_ID, "RESEARCH", "NONE")]
 # Add back EM requesting vessels, then make unique list
-fg_em <- rbind(fg_em, setDT(copy(em_requests))[, .(VESSEL_NAME, PERMIT = VESSEL_ID)], fill = TRUE)
-fg_em[, FLAG := ifelse(PERMIT %in% em_requests$VESSEL_ID, "REQUEST", FLAG)]
+fg_em <- rbind(fg_em, setDT(copy(fgem_requests))[, .(VESSEL_NAME, PERMIT = VESSEL_ID, FLAG = EM_REQUEST_STATUS)], fill = TRUE)
+fg_em[, FLAG := ifelse(PERMIT %in% fgem_requests$VESSEL_ID & FLAG != "A", "REQUEST", FLAG)]
 # Make vessel list unique
 fg_em <- unique(fg_em)
 # Counts of vessels listed in EM
