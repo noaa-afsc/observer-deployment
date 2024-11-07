@@ -64,6 +64,7 @@ stat_area_sf <- st_read(
   select(STAT_AREA) %>%
   st_transform(crs = 3467)
 
+#' [TODO: Move this to allocation_functions]
 # Load the Alaska map sf objects
 load("source_data/ak_shp.rdata")      # shp_land, shp_nmfs, and shp_centroids added to global
 
@@ -71,7 +72,8 @@ load("source_data/ak_shp.rdata")      # shp_land, shp_nmfs, and shp_centroids ad
 ## Load Functions ----
 #====================#
 
-source("common_functions/open_channel.R")
+#' [TODO: Do I need open_channel in this script?]
+# source("common_functions/open_channel.R")
 source("common_functions/allocation_functions.R")
 
 format_dollar <- function(x, digits) paste0("$", formatC(x, digits = digits, big.mark = ",", format = "f"))
@@ -188,7 +190,7 @@ box_params <- list(
 
 #' Set the budget(s) to evaluate. The allocation functions were originally built to handle multiple budgets for the 
 #' 2024 ADP (as a list). Can't be sure if they still can, but either way, the budget should be defined as a list.
-budget_lst <- list(4.4e6)   #' [TODO: UPDATE] *2024 Draft ADP Budget*
+budget_lst <- list(4.4e6)   #' [TODO: UPDATE] *2024 Draft ADP Budget was 4.4e6, may need to adjust based on updated projections*
 
 #======================================================================================================================#
 # Sampling Rates ----
@@ -209,7 +211,7 @@ if (adp_ver == "Draft") {
 } else if(adp_ver == "Final") {
   #' *Final*
   
-  resamp_iter <- 10   # Use 1000 for full Final draft run. 10 is fine for testing.
+  resamp_iter <- 1000   # Use 1000 for full Final draft run. 10 is fine for testing.
   
   # Vary the number of trips in each stratum based on the effort prediction's confidence intervals.
   set.seed(12345)
@@ -239,8 +241,8 @@ if (adp_ver == "Draft") {
 gc()
 boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params, budget_lst)
 
-#' TODO Save the outputs of the bootstrapping and allocation
-if(F) save(boot_lst, file = "results/swor_boot_lst.rdata")
+#' *If desired, manually save the outputs of the bootstrapping and allocation. It will by saved in the final outputs later.*
+if(F) save(boot_lst, file = paste0("results/", adp_year, "_", adp_ver, "_ADP", "resample_results.rdata"))
 
 # Extract the results from each iteration
 boot_dt <- rbindlist(lapply(boot_lst, "[[", "rates"), idcol = "BOOT_ITER")
@@ -267,6 +269,7 @@ rates_adp <- boot_dt[, lapply(.SD, mean), .SDcols = c("STRATA_N", "SAMPLE_RATE",
 #===========================#
 
 # Generate full coverage summary so summary tables can reference it
+#' [TODO: Apply the EM trawl CV-Tender Offloading matching here?]
 full_efrt.smry <- pc_effort_sub[COVERAGE_TYPE == "FULL", .(
   START = min(TRIP_TARGET_DATE, LANDING_DATE, na.rm = T), 
   END = max(TRIP_TARGET_DATE, LANDING_DATE, na.rm = T)),
@@ -289,10 +292,10 @@ full_efrt.smry <- pc_effort_sub[COVERAGE_TYPE == "FULL", .(
 
 if( adp_ver == "Draft") {
 
-  # Set number of bootstrapping simulations for cost estimtes
-  cost_boot_iter <- 10000
+  # Set number of ODDS simulations for cost estimtes
+  odds_iter <- 10000
   # Initialize results list
-  cost_boot_lst <- vector(mode = "list", length = cost_boot_iter)
+  cost_boot_lst <- vector(mode = "list", length = odds_iter)
   # Identify trips and their strata
   cost_boot_trips_dt <- unique(pc_effort_st[, .(ADP, STRATA, TRIP_ID)])
   
@@ -304,10 +307,10 @@ if( adp_ver == "Draft") {
   
   # Begin trip simulation
   set.seed(12345)
-  for(i in seq_len(cost_boot_iter)) {
+  for(i in seq_len(odds_iter)) {
     
-    if(i == 1) cat(paste0(cost_boot_iter, " iterations:\n"))
-    if( (i %% (cost_boot_iter/10)) == 0 ) cat(paste0(i, ", "))
+    if(i == 1) cat(paste0(odds_iter, " iterations:\n"))
+    if( (i %% (odds_iter/10)) == 0 ) cat(paste0(i, ", "))
     
     cost_boot_trips_dt.iter <- copy(cost_boot_trips_dt)
     # Merge in sampling rates. 
@@ -328,97 +331,103 @@ if( adp_ver == "Draft") {
     )
     
   }
-  cost_boot_dt <- rbindlist(cost_boot_lst, idcol = "iter")
-  cost_boot_dt.med <- cost_boot_dt[, median(OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)]
-  cost_boot_dt.95 <- cost_boot_dt[, list(quantile(OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL, c(0.025, .975)))]
+  cost_dt <- rbindlist(cost_boot_lst, idcol = "ODDS_iter")
+  cost_dt.med <- cost_dt[, median(OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)]
+  cost_dt.95 <- cost_dt[, list(quantile(OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL, c(0.025, .975)))]
   
 } else if( adp_ver == "Final") {
   
-  #' [TODO: With only 100 ODDS iterations, this takes a while]
-  #'        A 'for' loop would let us monitor progress. Need to make costs calculate faster... Is it the Julian date that is slow?
+  #' [TODO: With only 100 ODDS iterations, this still takes a while. Need to optimize this! Dates are the slowest part!]
+  #'        A 'for' loop would let us monitor progress. 
+  #'        It took ~ 2 hours with 1000 resamples and 100 ODDS each to run before getting locked up?
   odds_iter <- 100
   
   set.seed(12345)
   
-  cost_boot_dt <- lapply(
-    # Grab the trip IDs from the resampling and recreate
-    lapply(boot_lst, "[[", "resample"),
-    function(x) {
-      # x <- lapply(boot_lst, "[[", "resample")[[1]]
-      
-      # Rebuild the fishing effort using the resampling results from allocation
-      resample_effort <- unique(pc_effort_st[, .(ADP, POOL, STRATA, wd_TRIP_ID, DAYS, TRIP_TARGET_DATE, LANDING_DATE)])[x, on = .(wd_TRIP_ID)]
-      resample_effort[, TRIP_ID := .GRP, keyby = .(ADP, STRATA, wd_TRIP_ID, I)]
-      
-      # Calculate cost of EM_TRW-GOA. This will vary only by nubmer of trips, not via ODDS.
-      em_trw_goa.cost <- unique(resample_effort[STRATA == "EM_TRW-GOA", .(STRATA_N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)])
-      
-      # Apply the final selection rates, simulating ODDS
-      odds_lst <- vector(mode = "list", length = odds_iter)
-      
-      # Calculate costs from each ODDS iteration
-      rbindlist(lapply(1:odds_iter, function(y) {
-
-        cost_boot_trips_dt.iter <- copy(resample_effort)
-        
-        # Merge in sampling rates.
-        cost_boot_trips_dt.iter <- cost_boot_trips_dt.iter[rates_adp[, .(ADP, STRATA, SAMPLE_RATE)], on = .(ADP, STRATA) ]
-        
-        # Assign random numbers
-        cost_boot_trips_dt.trip_id <- unique(cost_boot_trips_dt.iter[, .(TRIP_ID, SAMPLE_RATE)])[, RN := runif(.N)][]
-
-        # Subset the sampled trips, then subset pc_effort_st
-        cost_boot_trips_dt.trip_id_sel <- cost_boot_trips_dt.trip_id[RN < SAMPLE_RATE, ]
-        cost_boot_trips_dt.n <- cost_boot_trips_dt.iter[cost_boot_trips_dt.trip_id_sel, on = .(TRIP_ID)]
-        
-        #' Calculate costs of at-sea observer strata
-        ob_cost_new(rates_adp, cost_params, allo_sub = cost_boot_trips_dt.n, sim = T)
-
-        #' Calculate cost of fixed-gear EM strata
-        em_fg_d <- unique(cost_boot_trips_dt.n[STRATA %like% "EM_FIXED", .(ADP, STRATA, TRIP_ID, DAYS)])[
-        ][, .(d = sum(DAYS)), keyby = .(ADP, STRATA)]
-        
-        cbind(
-          ob_cost_new(rates_adp, cost_params, allo_sub = cost_boot_trips_dt.n, sim = T),
-          emfg_cost(em_fg_d, cost_params = cost_params, sim = T),
-          #' [TODO: EMTRW_TOTAL is hard-coded in cost_params - 
-          #'        EMTRW_DATA should vary slightly with number of trips in simulations! and number of GOA-only vessels?]
-          emtrw_cost_new(em_trw_goa.cost, cost_params = cost_params)
-        )
-        
-      }), idcol = "ODDS_iter")
-    }
-  )
-
-  cost_boot_final <- rbindlist(cost_boot_dt, idcol = "RESAMP_iter")
-  cost_boot_final[, TOTAL_COST := OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL]
+  # Subset what is needed from the ADP rates
+  rates <- rates_adp[, .(ADP, STRATA, SAMPLE_RATE)]
+  cost_lst <- vector(mode = "list", length = length(boot_lst))
   
-  # Costs look pretty normally distributed...
-  ggplot(cost_boot_final, aes(x = TOTAL_COST)) + geom_histogram() + geom_vline(xintercept = mean(cost_boot_final$TOTAL_COST))
+  for(i in seq_along(boot_lst)) {
+    
+    # Return progress every 10%
+    if( i %% ((length(boot_lst)/10))  == 0 ) cat(paste0(i, ", "))
+    
+    x <- lapply(boot_lst, "[[", "resample")[[i]]
+    
+    #' *Rebuild the fishing effort using the resampling results from allocation*
+    resample_effort <- pc_effort_st[, .(ADP, POOL, STRATA, wd_TRIP_ID, DAYS, TRIP_TARGET_DATE, LANDING_DATE)] |>
+      unique() |>
+      _[x, on = .(wd_TRIP_ID)
+      ][, TRIP_ID := .GRP, keyby = .(ADP, STRATA, wd_TRIP_ID, I)][]
+    
+    # Calculate cost of EM_TRW-GOA. This will vary only by number of days, not via ODDS.
+    emtrw_goa_days <- unique(resample_effort[STRATA == "EM_TRW-GOA", .(TRIP_ID, DAYS)])[, sum(DAYS)]
+    
+    # Merge in sampling rates.
+    cost_boot_trips_dt.iter <- copy(resample_effort)[rates, on = .(ADP, STRATA) ]
+    
+    cost_lst[[i]] <- rbindlist(lapply(1:odds_iter, function(y) {
+      
+      # Assign random numbers, determine which trips were selected, and them subset from the fishing effort
+      cost_boot_trips_dt.trip_id <- unique(cost_boot_trips_dt.iter[, .(TRIP_ID, SAMPLE_RATE)])[, RN := runif(.N)][]
+      cost_boot_trips_dt.trip_id_sel <- cost_boot_trips_dt.trip_id[RN < SAMPLE_RATE, -"SAMPLE_RATE"]
+      cost_boot_trips_dt.n <- cost_boot_trips_dt.iter[cost_boot_trips_dt.trip_id_sel, on = .(TRIP_ID)]
+      
+      #' Calculate number of sea days sampled in the fixed-gear EM strata
+      em_fg_d <- cost_boot_trips_dt.n[STRATA %like% "EM_FIXED", .(ADP, STRATA, TRIP_ID, DAYS)] |>
+        unique() |>
+        _[, .(d = sum(DAYS)), keyby = .(ADP, STRATA)]
+      
+      cbind(
+        ob_cost_new(rates, cost_params, allo_sub = cost_boot_trips_dt.n, sim = T),
+        emfg_cost(em_fg_d, cost_params = cost_params, sim = T),
+        #' [TODO: EMTRW_TOTAL is hard-coded in cost_params - 
+        #'        EMTRW_DATA should vary slightly with number of trips in simulations! and number of GOA-only vessels?]
+        emtrw_cost_new(emtrw_goa_days, cost_params = cost_params)
+      )
+      
+    }), idcol = "ODDS_iter")
+    
+  }
   
-  ggplot(cost_boot_final[RESAMP_iter <= 30], aes(x = TOTAL_COST)) + geom_density(aes(fill = as.character(RESAMP_iter)), alpha = 0.5) + 
-    theme(legend.position = "none") + 
-    geom_vline(xintercept = mean(cost_boot_final$TOTAL_COST)) 
+  cost_dt <- rbindlist(cost_lst, idcol = "RESAMP_iter")[, TOTAL_COST := OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL]
   
-   
 }
+
+if(adp_ver == "Final"){
+  # Are the costs normally distributed and centered on the budget?
+  ggplot(cost_dt, aes(x = TOTAL_COST)) + geom_histogram() + geom_vline(xintercept = mean(cost_boot_final$TOTAL_COST))
+  
+  if(odds_iter >= 1) {
+    ggplot(cost_dt[RESAMP_iter <= 50], aes(x = TOTAL_COST)) + geom_density(aes(fill = as.character(RESAMP_iter)), alpha = 0.25) +
+      theme(legend.position = "none") +
+      geom_vline(xintercept = mean(cost_boot_final$TOTAL_COST))
+  }
+  
+  cost_dt.med <- cost_dt[, median(OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)]
+  cost_dt.95 <- cost_dt[, list(quantile(OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL, c(0.025, .975)))]
+}
+
 
 #====================================#
 ## Figure B-2. Cost Distribution  ----
 #====================================#
-figure_b2 <- ggplot(cost_boot_dt, aes(x = OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)) + 
+
+label_y_pos <- 7500
+figure_b2 <- ggplot(cost_dt, aes(x = OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)) + 
   geom_histogram(fill = "gray65", bins = 30) + 
   geom_vline(aes(xintercept = budget_lst[[1]]), color = "purple", linetype = 2, linewidth = 1.1) +
   geom_text(
-    x = budget_lst[[1]], y = cost_boot_iter / 20, label = paste("Budget:", format_dollar(budget_lst[[1]], 0)), 
+    x = budget_lst[[1]], y = label_y_pos, label = paste("Budget:", format_dollar(budget_lst[[1]], 0)), 
     angle = 90, hjust = 1, vjust = 2, color = "purple", check_overlap = T) + 
-  geom_vline(aes(xintercept = cost_boot_dt.med), color = "blue", linetype = 2, linewidth = 1) + 
+  geom_vline(aes(xintercept = cost_dt.med), color = "blue", linetype = 2, linewidth = 1) + 
   geom_text(
-    x = cost_boot_dt.med, y = cost_boot_iter / 20, label = paste("Median:", format_dollar(cost_boot_dt.med, 0)), 
+    x = cost_dt.med, y = label_y_pos, label = paste("Median:", format_dollar(cost_dt.med, 0)), 
     angle = 90, hjust = 1, vjust = -1, color = "blue", check_overlap = T) + 
-  geom_vline(data = cost_boot_dt.95, aes(xintercept = V1), color = "red", linetype = 2, linewidth = 1) + 
+  geom_vline(data = cost_dt.95, aes(xintercept = V1), color = "red", linetype = 2, linewidth = 1) + 
   geom_text(
-    data = cost_boot_dt.95, aes(x = V1, y = cost_boot_iter / 20, label = format_dollar(V1, 0)), 
+    data = cost_dt.95, aes(x = V1, y = label_y_pos, label = format_dollar(V1, 0)), 
     angle = 90, hjust = 1, vjust = c(1.8, -1), color = "red") + 
   scale_x_continuous(labels = function(x) formatC(x / 1e6, digits = 1, format = "f")) + 
   labs(x = "Total cost (millions)", y = "Number of ODDS iterations with this outcome") +
@@ -746,7 +755,7 @@ save(
   pc_effort_st, budget_lst, box_params, 
   ## Allocation products
   boot_lst, rates_adp,      
-  cost_summary, cost_boot_dt,
+  cost_summary, cost_dt,
   ## Raw tables
   table_b1, table_b2, table_b3,
   ## Location
@@ -768,7 +777,7 @@ save(
 
 #' *Figures* 
 
-#'   *Figure B-2.* Summary of `cost_boot_iter` outcomes of simulated sampling in ODDS showing the total costs of the 
+#'   *Figure B-2.* Summary of `cost_iter` outcomes of simulated sampling in ODDS showing the total costs of the 
 #' partial coverage monitoring program expected for 2025. Vertical lines depict the available budget (purple line), 
 #' median expected cost (blue line), and 95% confidence limits (red lines).
 ggsave(filename = "output_figures/figure_b2.png", plot = figure_b2, width = 5, height = 5, units = "in")
