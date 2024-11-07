@@ -91,18 +91,19 @@ spatiotemp_data_prep <- function(valhalla){
   pc_effort_dt
 }
 
-# This function returns a list with each trip's list of unique Julian dates
+# This function returns a list with each trip's list of unique Julian dates. Used by ob_cost_new() and bootstrap_allo()
 trip_dates <- function(x) {
-  # x <- pc_effort_st
-  trip_dates_dt <- x[, .(
-    START = julian.Date(min(TRIP_TARGET_DATE, LANDING_DATE)), END = julian.Date(max(TRIP_TARGET_DATE, LANDING_DATE))
-  ), keyby = .(ADP, STRATA, TRIP_ID)]
-  trip_dates_lst <- apply(trip_dates_dt, 1, function(x) seq(x[["START"]], x[["END"]], 1))
+
+  trip_dates_dt <- x |>
+    _[, c("START", "END") := lapply(.SD, as.integer), .SDcols = c("TRIP_TARGET_DATE", "LANDING_DATE")
+    ][, as.list(range(START, END)), keyby = .(ADP, STRATA, TRIP_ID)]
+  trip_dates_lst <- apply(trip_dates_dt, 1, function(x) seq(x[["V1"]], x[["V2"]], 1))
   names(trip_dates_lst) <- trip_dates_dt$TRIP_ID
   list(
     dt = trip_dates_dt,
     lst = trip_dates_lst
   )
+  
 }
 
 
@@ -1511,7 +1512,7 @@ ob_cost_new <- function(x, cost_params, allo_sub, sim = F) {
     # For each trip, calculate the proportion of dates the occurred BEFORE the contract change date
     ob_contract_calc <- ob_contract_dates$dt[, .(TRIP_ID)]
     ob_contract_calc$PROP <- sapply(
-      ob_contract_dates$lst, function(x) sum(x < julian.Date(cost_params$OB$contract_change_date)) / length(x)
+      ob_contract_dates$lst, function(x) sum(x < as.integer(cost_params$OB$contract_change_date)) / length(x)
     )
     # Merge ADP, STRATA, and DAYS back in
     ob_contract_calc <- unique(allo_sub[STRATA %like% "OB_", .(ADP, STRATA, TRIP_ID, DAYS)])[
@@ -1658,15 +1659,22 @@ emtrw_cost <- function(x, cost_params, sim = F) {
 # Now that it is a carve-off and we total the costs in monitoring_costs.R, this function becomes very simple
 emtrw_cost_new <- function(x, cost_params) {
   #' Note that `x` isn't actually needed, but following the same syntax as other cost functions
+  #' [TODO: Make x an object that gives the number of review days to multiply with EMTRW$emtrw_data_cpd]
   
-  data.table(
-    EMTRW_TOTAL = cost_params$EMTRW$emtrw_total_cost,
-    EMTRW_PLANT_OBS = cost_params$EMTRW$emtrw_summary[
-    ][Category %in% c("Observer Plant Day Costs", "Lodging", "Per Diem"), sum(Cost)],
+  # x <- copy(emtrw_goa_days)
+  
+  # Calculate review costs, based on the cost per review day and the number of days fished
+  emtrw_data_cost <- cost_params$EMTRW$emtrw_data_cpd * x
+
+  out <- data.table(
+    EMTRW_PLANT_OBS = cost_params$EMTRW$emtrw_summary |>
+      _[Category %in% c("Observer Plant Day Costs", "Lodging", "Per Diem"), sum(Cost)],
     EMTRW_BASE = cost_params$EMTRW$emtrw_summary[Category == "Equipment Maintenance", Cost],
-    EMTRW_DATA = cost_params$EMTRW$emtrw_summary[Category == "Data", Cost]
-  )
-  
+    EMTRW_DATA = emtrw_data_cost
+  ) |>
+    _[, EMTRW_TOTAL := cost_params$EMTRW$emtrw_total_cost][]
+  setcolorder(out, c("EMTRW_TOTAL", "EMTRW_PLANT_OBS", "EMTRW_BASE", "EMTRW_DATA"))
+  out
 }
 
 
