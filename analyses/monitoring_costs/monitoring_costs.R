@@ -45,7 +45,7 @@ gdrive_download(
 #====================#
 ### FMA Days Paid ----
 
-#' [2025 Draft] The new PC contract is planned to go into effect October 1st. We can incorporate the day costs for 
+#' [2025ADP:] The new PC contract is planned to go into effect October 1st. We can incorporate the day costs for 
 #' the preliminary winning contract, but will use prior data from the `FMA Days Paid` spreadsheet to estimate travel 
 #' costs. When the contract is finalized, we can update this spreadsheet with new day costs instead of hard-code. 
 #' `This spreadsheet includes day rates for both at-sea and shoreside observers`
@@ -72,107 +72,46 @@ rm(list = setdiff(current_adp_items, c("rates_adp_2024_final")))
 channel <- open_channel()
 
 #### Trawl EM Plant Days ----
+  
+# Enter vector of ports accepting GOA-only catch from EM Trawl Vessels. Must be in camel-case as in norpac.atl_lov_port
+goa_plants <- c("Kodiak", "False Pass")
 
-# Get assignments for observers at Kodiak plants as well as their deliveries
-# kodiak_plant_days <- setDT(dbGetQuery(channel, paste(
-#   "
-#   SELECT 
-#     a.*, b.name, b.port_code, EXTRACT(YEAR FROM a.embark_date) AS YEAR,
-#     c.delivery_vessel_adfg, c.gear_type_code, c.delivery_end_date, c.nmfs_area, c.landing_report_id
-#   FROM norpac.ols_vessel_plant a
-#     JOIN norpac.atl_lov_plant b
-#       ON a.permit = b.permit
-#     LEFT JOIN norpac.atl_offload c
-#       ON a.cruise = c.cruise AND b.permit = c.permit
-#   WHERE b.port_code = 14 AND EXTRACT(YEAR FROM a.embark_date) >= 2023
-#   ORDER BY EMBARK_DATE
-#   "
-# )))
-# # Save the SQL pull
-# save(kodiak_plant_days, file = "analyses/monitoring_costs/sql_pulls/kodiak_plant_days.rdata")
-# gdrive_upload(
-#   local_path = "analyses/monitoring_costs/sql_pulls/kodiak_plant_days.rdata",
-#   gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
-# )
+trawl_em_plant_days <- setDT(dbGetQuery(channel, paste0(
+  "
+  SELECT 
+    a.*, b.name, b.port_code, d.name AS PORT_NAME, EXTRACT(YEAR FROM a.embark_date) AS YEAR,
+    c.delivery_vessel_adfg, c.gear_type_code, c.delivery_end_date, c.nmfs_area, c.landing_report_id
+  FROM norpac.ols_vessel_plant a
+    JOIN norpac.atl_lov_plant b
+      ON a.permit = b.permit
+    LEFT JOIN norpac.atl_offload c
+      ON a.cruise = c.cruise AND b.permit = c.permit
+    LEFT JOIN norpac.atl_lov_port_code d
+      ON b.port_code = d.port_code
+  WHERE d.name IN('", paste0(goa_plants, collapse = "','"), "')  
+    AND EXTRACT(YEAR FROM a.embark_date) >= 2023
+  ORDER BY embark_date, delivery_end_date
+  "
+)))
 
-#' *========================*
-#' [TODO: Pull all plant days?]
-
-if(F) {
-    
-  # Enter vector of ports accepting GOA-only catch from EM Trawl Vessels. Must be in camel-case as in norpac.atl_lov_port
-  goa_plants <- c("Kodiak", "False Pass")
-  
-  trawl_em_plant_days <- setDT(dbGetQuery(channel, paste0(
-    "
-    SELECT 
-      a.*, b.name, b.port_code, d.name AS PORT_NAME, EXTRACT(YEAR FROM a.embark_date) AS YEAR,
-      c.delivery_vessel_adfg, c.gear_type_code, c.delivery_end_date, c.nmfs_area, c.landing_report_id
-    FROM norpac.ols_vessel_plant a
-      JOIN norpac.atl_lov_plant b
-        ON a.permit = b.permit
-      LEFT JOIN norpac.atl_offload c
-        ON a.cruise = c.cruise AND b.permit = c.permit
-      LEFT JOIN norpac.atl_lov_port_code d
-        ON b.port_code = d.port_code
-    WHERE d.name IN('", paste0(goa_plants, collapse = "','"), "')  
-      AND EXTRACT(YEAR FROM a.embark_date) >= 2023
-    ORDER BY embark_date, delivery_end_date
-    "
-  )))
-  
-  # Save the SQL pull
-  trawl_em_sql_name <- paste0("trawl_em_plant_days_", adp_year, ".rdata")
-  save(trawl_em_plant_days, file = paste0("analyses/monitoring_costs/sql_pulls/", trawl_em_sql_name, ".rdata"))
-  gdrive_upload(
-    local_path = paste0("analyses/monitoring_costs/sql_pulls/", trawl_em_sql_name, ".rdata"),
-    gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
-  )
-  
-  # Make sure delivery dates fall between assignment start and end dates (inclusive)
-  a <- trawl_em_plant_days[data.table::between(DELIVERY_END_DATE, EMBARK_DATE, DISEMBARK_DATE )] |> unique()
-  # Get number of unique assigned days by each cruise and port_code
-  a1 <- a[, .(YEAR, CRUISE, PERMIT, EMBARK_DATE, DISEMBARK_DATE, PORT_CODE, PORT_NAME)] |> unique()
-  a1[, c("START", "END") := lapply(.SD, function(x) julian(as.Date(x))), .SDcols = c("EMBARK_DATE", "DISEMBARK_DATE")]
-  calc_plant_days <- function(x) {
-    x1 <- apply(x, 1, function(y) seq(y[1], y[2], 1))
-    length(unique(unlist(x1)))
-  }
-  a2 <- a1[, .(plant_days = calc_plant_days(.SD) ), keyby = .(YEAR, PORT_NAME, CRUISE), .SDcols = c("START", "END")]
-  a2[, .(Cruises = length(unique(CRUISE)), Total_Days = sum(plant_days)), keyby = .(YEAR, PORT_NAME)]  # 
-  
-  # how many unique days did we have observers at each port?
-  a1[, .(Cruise = length(unique(CRUISE)), plant_days = calc_plant_days(.SD) ), keyby = .(YEAR, PORT_NAME), .SDcols = c("START", "END")]
-  # 113 days in 2024, although we had 144 in 2023. In the draft ADP, we rounded 144 up to 150. 
-  
-  # How did the seasons differ?
-  unique_plant_days <- function(x) {
-    x1 <- apply(x, 1, function(y) seq(y[1], y[2], 1))
-    unique(unlist(x1))
-  }
-  a3 <- a1[, .(plant_days = unique_plant_days(.SD) ), keyby = .(YEAR, PORT_NAME), .SDcols = c("START", "END")]
-  a3[, YDAY := yday(as.Date(plant_days))][, DATE := as.Date(plant_days)]
-  ggplot(a3, aes(x = YDAY, y = PORT_NAME)) + facet_grid(YEAR ~ .) + geom_point()
-  a3[YDAY >= 200, as.list(range(DATE)), keyby = .(YEAR, PORT_NAME)]
-  
-  # In 2024, the pollock season abruptly ended due to salmon. The B season (C-D) runs mid Aug to mid Oct.
-  # In 2023 it went through Nov 4.
-  # This year it looks like it completed Sep-27 in Kodiak, and Sep 19 in False Pass
-  
-}
-
-#' *========================*
-
+# Save the SQL pull
+trawl_em_sql_name <- paste0("trawl_em_plant_days_", adp_year, ".rdata")
+save(trawl_em_plant_days, file = paste0("analyses/monitoring_costs/sql_pulls/", trawl_em_sql_name, ".rdata"))
+gdrive_upload(
+  local_path = paste0("analyses/monitoring_costs/sql_pulls/", trawl_em_sql_name, ".rdata"),
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
+)
 
 #======================================================================================================================#
 # AT-SEA OBSERVER COSTS ----
 #======================================================================================================================#
 
 #==================================================================================#
-#' [2025 Draft]  *Remove this hard-coding once FMA Days Paid is updated for 2025 Fiscal Year* ----
+#' *Remove this hard-coding once FMA Days Paid is updated for 2025 Fiscal Year* 
+#' As of the 2025 Final ADP, FMA Days Paid has not been updated with updated contract values.
 
 #' Option Year 4 (the current contract) was extended to September 30. 
-#' *However, Lisa is currently negotiating new day rates for the Aug-Sep range with AIS for this extension*
+#' The new contracts values are hard-coded below.
 FMA_days_paid$Sea_Day_Costs[Contract == "Aug23Aug24", Dates := "8/17/23 - 9/30/24"]
 #' Add values for the preliminary winner for the PC observer contract
 FMA_days_paid$Sea_Day_Costs <- rbind(
@@ -191,7 +130,7 @@ FMA_days_paid$Sea_Day_Costs <- rbind(
 )
 #==================================================================================#
 
-#' Identify the contracts pertinent to the ADP year
+#' Identify the contract years pertinent to the ADP year
 adp_contract_day_rates <- copy(FMA_days_paid$Sea_Day_Costs)[
 ][grepl(paste0("[[:alpha:]]{3}", substr(adp_year, 3, 4)), Contract)]
 # Get the final day of the contract that is ending during the ADP year
@@ -211,10 +150,11 @@ travel_costs <- FMA_days_paid$Days_Paid[!is.na(Contract), .(
 travel_costs[, Travel_CPD := Travel_Dollars / Sea_Days]
 
 # Apply an inflation adjustment for 2025 dollars
-#' [https://www.statista.com/statistics/244983/projected-inflation-rate-in-the-united-states/]
+#' [https://www.macrotrends.net/global-metrics/countries/usa/united-states/inflation-rate-cpi] # higher resolution
+#' [https://www.statista.com/statistics/244983/projected-inflation-rate-in-the-united-states/] # for projection
 inflation_dt <- data.table(
   Calendar = 2017:adp_year,
-  Inflation_Pct = c(2.13, 2.44, 1.81, 1.25, 4.69, 8, 4.5, 2.3, 2.1)
+  Inflation_Pct = c(2.13, 2.44, 1.81, 1.23, 4.70, 8, 4.12, 2.9, 2.0)
 )
 # Calculate the cumulative inflation percentages, then convert percentage to multiplication factor
 inflation_dt[
@@ -330,13 +270,12 @@ emfg_review_cpd <- emfg_review[, sum(Infl_REVIEW_COST) / sum(REVIEWED_DAYS)]
 ## Non-Amortized Costs ----
 #=========================#
 
-#' There are sunken costs in fixed-gear EM for program management and equipment that recurr each year and are assumed to
-#' scale with the number of vessels in the fixed-gear EM pool.  These cost were compiled between 2015 and 2021, 
+#' There are sunken costs in fixed-gear EM for program management and equipment that recur each year and are assumed to
+#' scale with the number of vessels in the fixed-gear EM pool. These cost were compiled between 2015 and 2021, 
 #' removing any data-related costs or 'amortized costs' from equipment installation inflation-adjusted, and divided by 
 #' the number of fixed-gear EM vessels each year. 
 
-#' TODO Have not gotten confirmation from [Jenn Ferdidnand] that the fee was used to equip new EM vessels in recent 
-#' years. Will we assume any new fixed-gear EM vessels in 2025 will be paid via Murkowski funds?
+#' Will we assume any new fixed-gear EM vessels will be paid via Murkowski funds, not the fees
 
 # ' Note that year 2017 below is actually the sum of 2015, 2016, and 2017. The program was much smaller those years.
 emfg_nonamortized <- data.table(
@@ -384,7 +323,11 @@ emfg_review_cpd           # The cost per review day, which will be multiplied by
 #' the fishing season as total days of the year. Currently assuming there will not be any partial-coverage only 
 #' activity at Sand Point for 2025.
 
-#' [TODO: for 2025, we might only have 5 at any one time? We'd have 6 in B season if we needed 3 at APS/OBI/SBS but can probably get away with 2?]
+#' Contact *Sarah Neumeyeyer* to chat about observer needs at plants at different times of year.
+
+#' [TODO: for 2025, we might only have 5 at any one time?] Currently assuming we'll have:
+#'   5 in A Season (2 Trident, 3 APS/SBS/OBI)
+#'   5 in B Season (2 Trident, 2 APS/SBS/OBI, 1 False Pass)
 goa_plant_obs <- 5
 
 #=============================#
@@ -672,7 +615,7 @@ emtrw_goa_v <- setnames(
   _[, VESSEL_NAME := toupper(sub("[*]", "", VESSEL_NAME))][]
 #' [2025ADPFinal: ALASKAN and MISS COURTNEY KIM did not renew, MISS LEONA did not apply]
 emtrw_goa_v_count <- emtrw_goa_v[!(VESSEL_NAME %in% c("ALASKAN", "MISS COURTNEY KIM", "MISS LEONA")) , .N]
-goa_cv_cost <- equipment_upkeep_per_VY * emtrw_goa_v_count 
+goa_cv_cost <- emtrw_goa_v_count * equipment_upkeep_per_VY
 
 ## [Summary (carve-off)] ---- 
 
@@ -689,10 +632,10 @@ cost_summary.em_trw <- data.table(
   Category = c("Observer Plant Day Costs", "Lodging", "Per Diem", "Equipment Maintenance", "Data"),
   Cost = c(
     trw_em_day_costs, kodiak_lodging_cost, kodiak_per_diem_cost, 
-    (goa_cv_cost + goa_tender_cost), em_trw_total_data_cost
+    (goa_cv_cost + goa_tender_cost), emtrw.total_data_cost
   )
 )
-sum(cost_summary.em_trw$Cost)   # Total
+sum(cost_summary.em_trw$Cost)   # Total, assuming review days based on previous 1 year.
 cost_summary.em_trw             # Broken up by cost category
 
 #======================================================================================================================#
@@ -720,7 +663,7 @@ cost_params <- list(
     emtrw_summary = cost_summary.em_trw,
     goa_plant_ob_days = goa_plant_ob_days,
     emtrw_goa_v_count = emtrw_goa_v_count,
-    emtrw_data_cpd = emtrw_data_cpd
+    emtrw_data_cpd = emtrw.data_cpd
   )
 )
 
