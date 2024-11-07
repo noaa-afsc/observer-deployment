@@ -219,6 +219,8 @@ figure_c1a <-
   geom_point(aes(y = TOTAL_TRIPS_PRED), 
              size = as.numeric(as.factor(effort_strata.work[!is.na(RESIDUALS)]$ADP))) +
   geom_abline(intercept = 0, slope = 1) +
+  geom_abline(intercept = 0, slope = 1.1, lty = 2) +
+  geom_abline(intercept = 0, slope = 0.9, lty = 2) +
   theme_bw() +
   theme(legend.position = "bottom") +
   scale_fill_viridis_d(option = "viridis", aesthetics = "color") +
@@ -272,6 +274,8 @@ figure_c2a <-
   ggplot(effort_strata.work[!is.na(RESIDUALS)], aes(x = TOTAL_TRIPS, y = TOTAL_TRIPS_PRED, color = STRATA)) +
       geom_point(size = as.numeric(as.factor(effort_strata.work[!is.na(RESIDUALS)]$ADP))) +
       geom_abline(intercept = 0, slope = 1) +
+      geom_abline(intercept = 0, slope = 1.1, lty = 2) +
+      geom_abline(intercept = 0, slope = 0.9, lty = 2) +
       theme_bw() +
       theme(legend.position = "bottom") +
       scale_fill_viridis_d(option = "viridis", aesthetics = "color") +
