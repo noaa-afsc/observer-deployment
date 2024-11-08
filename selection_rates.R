@@ -16,6 +16,7 @@ adp_ver  <- "Final"  #' `Draft` or `Final`, which is case-sensitive!
 
 library(data.table)         # Data wrangling
 library(ggplot2)            # Plotting
+
 library(sf)                 # Spatial analyses
 library(ggh4x)              # For facets with nested labels
 library(waffle)             # For waffle plots of coverage/tonnage summaries
@@ -25,7 +26,6 @@ library(readxl)             # For read_xlsx
 library(odbc)               # For database connectivity
 library(flextable)          # For print-ready tables
 library(officer)            # For additional flextable formatting options such as fp_border
-googledrive::drive_auth()   # Refresh authorization for googldrive package
 
 #===============#
 ## Load data ----
@@ -64,16 +64,30 @@ stat_area_sf <- st_read(
   select(STAT_AREA) %>%
   st_transform(crs = 3467)
 
-#' [TODO: Move this to allocation_functions]
+#' [TODO: Move this to allocation_functions?]
 # Load the Alaska map sf objects
 load("source_data/ak_shp.rdata")      # shp_land, shp_nmfs, and shp_centroids added to global
+
+
+#'*==================================*
+
+### WHAT-IF ----
+#' *Instead of 5 observers in both A and B season, what if we had a 6th observer in B season?* 
+if(F) {
+  # Hard-coding for an additional observer at False Pass B season 
+  # Getting the average per-day observer cost and multiplying by the duration of B season, 67 days
+  cost_params$EMTRW$emtrw_summary[1:3, Cost := Cost + (Cost/cost_params$EMTRW$goa_plant_ob_days * 67)]
+  cost_params$EMTRW$emtrw_total_cost <- cost_params$EMTRW$emtrw_summary[, sum(Cost)]
+  cost_params$EMTRW$goa_plant_ob_days <- cost_params$EMTRW$goa_plant_ob_days + 67
+}
+#'*==================================*
+
 
 #====================#
 ## Load Functions ----
 #====================#
 
-#' [TODO: Do I need open_channel in this script?]
-# source("common_functions/open_channel.R")
+# load allocation functions
 source("common_functions/allocation_functions.R")
 
 format_dollar <- function(x, digits) paste0("$", formatC(x, digits = digits, big.mark = ",", format = "f"))
@@ -90,7 +104,7 @@ set_flextable_defaults(font.family = "Times New Roman", font.size = 10)
 pc_effort_sub <- work.data.recent |>
   # Use at least 2 full years. We'll trim this down to 1 year after a bit of wrangling
   _[ADP >= adp_year - 2
-#' Use the STRATA_NEW column to define stratum and CVG_NEW to define coverage category
+    # Use the STRATA_NEW column to define stratum and CVG_NEW to define coverage category
   ][, STRATA := STRATA_NEW
   ][, COVERAGE_TYPE := CVG_NEW][]
 
@@ -105,61 +119,12 @@ pc_prev_year_trips <- pc_effort_st |>
 pc_effort_st <- pc_effort_st[TRIP_ID %in% pc_prev_year_trips]
 range(pc_effort_st$TRIP_TARGET_DATE)
 
-#' [TODO:] I've assigned stratum definitions as wanted in get_Data, but I still need the DAYS column added
-if(F) {
-  
-  #' *Assigning strata to 2024/2025 definitions. Do this in get_data.R for 2025.* 
-  unique(pc_effort_st$STRATA) 
-  #' [get_data.R:  EM_FIXED_GOA   EM_FIXED_BSAI   EM_TRW_GOA   TRW   HAL   POT   ZERO]
-  #' [2025_strata: EM_FIXED-GOA   EM_FIXED-BSAI   EM_TRW-GOA   OB_TRW-GOA   OB_TRW-BSAI   OB_FIXED-GOA   OB_FIXED-BSAI   ZERO]
-  #' TODO The NEW_STRATA labels in get_data.R are still different from how we used them in 2024 or will for 2025
-  #' Rename STRATA to reflect monitoring method only
-  pc_effort_st[
-  ][STRATA == "EM_FIXED_GOA", STRATA := "EM_FIXED"
-  ][STRATA == "EM_FIXED_BSAI", STRATA := "EM_FIXED"
-  ][STRATA == "EM_TRW_GOA", STRATA := "EM_TRW"
-  ][STRATA %in% c("HAL", "POT"), STRATA := "FIXED"
-  ][STRATA %in% c("FIXED", "TRW"), STRATA := paste0("OB_", STRATA)
-  #' Now apply FMP, separating monitoring method and FMP with a hyphen. Using BSAI_GOA, which determines FMP based on 
-  #' which had the most total retained catch
-  ][, STRATA := ifelse(STRATA != "ZERO", paste0(STRATA, "-", BSAI_GOA), STRATA)]
-  unique(pc_effort_st$STRATA)
-  
-  #' TODO *Assign DAYS column. Do this in get_data.R!*
-  #' Get actual days observed, otherwise apply model.
-  channel <- open_channel()
-  #' Match observed ODDS and Valhalla records. This creates `mod_dat` object
-  td_mod <- model_trip_duration(work.data, use_mod = "DAYS ~ RAW + ADP * AGENCY_GEAR_CODE", channel = channel)
-  # Occasionally we have multiple ODDS records assigned to the same Valhalla trip. In such cases, sum the sea days.
-  actual_ob_days <- unique(mod_dat[, .(TRIP_ID, ODDS_SEQ, DAYS)])[, .(DAYS = sum(DAYS)), keyby = .(TRIP_ID)]
-  # Merge in actual days observed
-  pc_effort_st[, DAYS := actual_ob_days[pc_effort_st, DAYS, on = c(TRIP_ID = "wd_TRIP_ID")]]
-  # For other observer strata trips that were not observed, use the modeled estimates
-  ob_trips_predict_days <- unique(pc_effort_st[STRATA %like% "OB" & is.na(DAYS), .(
-    ADP = as.factor(ADP), AGENCY_GEAR_CODE,
-    RAW = as.numeric(max(LANDING_DATE, TRIP_TARGET_DATE) - min(TRIP_TARGET_DATE, LANDING_DATE), units = "days")
-  ), keyby = .(TRIP_ID)])
-  # Apply the model, rounding to the nearest half day
-  ob_trips_predict_days[, DAYS := round(predict(td_mod$TD_MOD, newdata = ob_trips_predict_days)/0.5) * 0.5]
-  # For trips with multiple gear types, take the average 
-  ob_trips_predict_days <- ob_trips_predict_days[, .(DAYS = mean(DAYS)), keyby = .(TRIP_ID)]
-  # Merge in predictions
-  pc_effort_st[, MOD_DAYS := ob_trips_predict_days[pc_effort_st, DAYS, on = .(TRIP_ID)]]
-  pc_effort_st[, DAYS := fcase(!is.na(DAYS), DAYS, !is.na(MOD_DAYS), MOD_DAYS)][, MOD_DAYS := NULL]
-  # For non-observer strata, simply use the end - start + 1 method
-  pc_effort_st[
-    is.na(DAYS), DAYS := as.numeric(
-      1 + max(TRIP_TARGET_DATE, LANDING_DATE) - min(TRIP_TARGET_DATE, LANDING_DATE), units = "days"
-    ), by = .(TRIP_ID
-  )]
-  if(nrow(pc_effort_st[is.na(DAYS)])) stop("Some records are still missing DAYS")
-}
-
-# Re-assign the ADP Year
-pc_effort_st[, ADP := adp_year]
-# Modify the trip dates to match the ADP Year
-pc_effort_st[, TRIP_TARGET_DATE := TRIP_TARGET_DATE + (adp_year - year(TRIP_TARGET_DATE)) * 365]
-pc_effort_st[, LANDING_DATE := LANDING_DATE + (adp_year - year(LANDING_DATE)) * 365]
+# Re-assign the ADP Year. This tacks the Oct-Dec trips of current year - 1 onto the Jan-Oct trips of the current year.
+pc_effort_st |>
+  _[, ADP := adp_year
+    # Modify the trip dates to match the ADP Year
+  ][, TRIP_TARGET_DATE := TRIP_TARGET_DATE + (adp_year - year(TRIP_TARGET_DATE)) * 365
+  ][, LANDING_DATE := LANDING_DATE + (adp_year - year(LANDING_DATE)) * 365]
 setkey(pc_effort_st, STRATA)
 
 #' Save and Upload pc_effort_st to the shared google drive 
@@ -190,7 +155,7 @@ box_params <- list(
 
 #' Set the budget(s) to evaluate. The allocation functions were originally built to handle multiple budgets for the 
 #' 2024 ADP (as a list). Can't be sure if they still can, but either way, the budget should be defined as a list.
-budget_lst <- list(4.4e6)   #' [TODO: UPDATE] *2024 Draft ADP Budget was 4.4e6, may need to adjust based on updated projections*
+budget_lst <- list(4.19e6)   #' [2025FinalADP: Reduced the $4.4M budget from the draft to $4.19M given reduced revenue]
 
 #======================================================================================================================#
 # Sampling Rates ----
@@ -216,6 +181,7 @@ if (adp_ver == "Draft") {
   # Vary the number of trips in each stratum based on the effort prediction's confidence intervals.
   set.seed(12345)
   setDT(effort_prediction)
+  effort_prediction[, STRATA := as.character(STRATA)]
   sample_N <- unname(split(
     rbindlist(
       # For each stratum, sample a number of trips based on a distribution of our fishing effort estimate
@@ -234,9 +200,6 @@ if (adp_ver == "Draft") {
 #=================================#
 ## Partial Coverage Allocation ----
 #=================================#
-
-#' [TODO: I've made sample_N a list, so allo_prox won't have to do the N sampling itself].
-#'In draft, there will be no variation, but in the final, it will parameterize the random stratum N.
 
 gc()
 boot_lst <- bootstrap_allo(pc_effort_st, sample_N, box_params, cost_params, budget_lst)
@@ -283,13 +246,10 @@ full_efrt.smry <- pc_effort_sub[COVERAGE_TYPE == "FULL", .(
 #' Now that rates are determined, simulate sampling to create a distribution of expected costs, where variance is caused 
 #' only by the random selection of trips in the at-sea observer and fixed-gear EM strata.
 
-#' [TODO: In the draft, we did this to simulate trip selection 10K times for our one fishing effort prediction]
-#' In the final, we will want to simulate trip selection and costs for each resampling iteration. Ideally, do 1K ODDS
-#' simulations per each 1000 resampling iterations for 1 million total? This migh take forever?
-
 #' [DRAFT:] For the Draft ADP, we will not simulate fishing effort, so `pc_effort_st` can be used as-is.
 #' [FINAL:] For the Final ADP, we will bootstrap fishing effort using outputs of `effort_prediction.R`
 
+#' [TODO: better to make a copy of cost_params here rather than modifying the original]
 if( adp_ver == "Draft") {
 
   # Set number of ODDS simulations for cost estimtes
@@ -311,6 +271,11 @@ if( adp_ver == "Draft") {
     
     if(i == 1) cat(paste0(odds_iter, " iterations:\n"))
     if( (i %% (odds_iter/10)) == 0 ) cat(paste0(i, ", "))
+    
+    cost_params$EMTRW$emtrw_sea_days <- pc_effort_st |>
+      _[STRATA == "EM_TRW-GOA", .(TRIP_ID, DAYS)] |> 
+      unique() |>
+      _[, sum(DAYS)]
     
     cost_boot_trips_dt.iter <- copy(cost_boot_trips_dt)
     # Merge in sampling rates. 
@@ -337,9 +302,6 @@ if( adp_ver == "Draft") {
   
 } else if( adp_ver == "Final") {
   
-  #' [TODO: With only 100 ODDS iterations, this still takes a while. Need to optimize this! Dates are the slowest part!]
-  #'        A 'for' loop would let us monitor progress. 
-  #'        It took ~ 2 hours with 1000 resamples and 100 ODDS each to run before getting locked up?
   odds_iter <- 100
   
   set.seed(12345)
@@ -367,6 +329,12 @@ if( adp_ver == "Draft") {
     # Merge in sampling rates.
     cost_boot_trips_dt.iter <- copy(resample_effort)[rates, on = .(ADP, STRATA) ]
     
+    cost_params$EMTRW$emtrw_sea_days <- resample_effort |>
+      _[STRATA == "EM_TRW-GOA", .(TRIP_ID, DAYS)] |> 
+      unique() |>
+      _[, sum(DAYS)]
+    
+    #' *Simulate ODDS selection and calculate the realized costs*
     cost_lst[[i]] <- rbindlist(lapply(1:odds_iter, function(y) {
       
       # Assign random numbers, determine which trips were selected, and them subset from the fishing effort
@@ -381,10 +349,8 @@ if( adp_ver == "Draft") {
       
       cbind(
         ob_cost_new(rates, cost_params, allo_sub = cost_boot_trips_dt.n, sim = T),
-        emfg_cost(em_fg_d, cost_params = cost_params, sim = T),
-        #' [TODO: EMTRW_TOTAL is hard-coded in cost_params - 
-        #'        EMTRW_DATA should vary slightly with number of trips in simulations! and number of GOA-only vessels?]
-        emtrw_cost_new(emtrw_goa_days, cost_params = cost_params)
+        emfg_cost(em_fg_d, cost_params, sim = T),
+        emtrw_cost_new(cost_params = cost_params)
       )
       
     }), idcol = "ODDS_iter")
@@ -395,7 +361,7 @@ if( adp_ver == "Draft") {
   
 }
 
-if(adp_ver == "Final"){
+ if(adp_ver == "Final"){
   # Are the costs normally distributed and centered on the budget?
   ggplot(cost_dt, aes(x = TOTAL_COST)) + geom_histogram() + geom_vline(xintercept = mean(cost_boot_final$TOTAL_COST))
   
@@ -439,10 +405,25 @@ figure_b2 <- ggplot(cost_dt, aes(x = OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)) +
 # Monitoring Costs ----
 #======================================================================================================================#
 
-# Extract the cost summary used in the allocation.
-#' [DRAFT: Grabbing attributes from the only iteration]
-cost_summary <- attr(boot_lst[[1]]$rates, "cost_summary")
-#' [FINAL: Average across attributes from all iterations]
+# Extract the cost summaries used in the sampling simulations.
+if(adp_ver == "Draft") {
+  #' [DRAFT: Grabbing attributes from the only iteration]
+  cost_summary <- attr(boot_lst[[1]]$rates, "cost_summary")
+  # Get totals, rounding to the nearest $1K
+  cost_totals <- round(
+    unlist(cost_summary[, .(TOTAL = sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL), OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL)]), -3
+  )
+  
+} else if(adp_ver == "Final") {
+  #' [FINAL: Average across attributes from all iterations]
+  cost_summary <- lapply(lapply(boot_lst, "[[", "rates"), function(x) attr(x, "cost_summary"))
+  # Get totals, rounding to the nearest $1K
+  cost_totals <- rbindlist(cost_summary)[, .(
+    TOTAL = sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL) / .N,
+    OB_TOTAL = mean(OB_TOTAL), EMFG_TOTAL = mean(EMFG_TOTAL), EMTRW = mean(EMTRW_TOTAL))] |>
+    round(-3) |> unlist()
+}
+
 
 #===================================#
 ## Table B-1. Budget and Vessels ----
@@ -450,10 +431,7 @@ cost_summary <- attr(boot_lst[[1]]$rates, "cost_summary")
 
 #' Cost summary
 
-# Get totals, rounding to the nearest $1K
-cost_totals <- round(
-  unlist(cost_summary[, .(TOTAL = sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL), OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL)]), -3
-)
+
 #' Naming the monitoring method 'strata' here for the sake of keeping the same header as the vessel counts below. The 
 #' final table's column names will be named manually
 cost_totals.pc <- data.table("STRATA" = names(cost_totals), data.table("value" = format_dollar(cost_totals, 0)))
@@ -486,16 +464,23 @@ setorder(vessel_totals.fc, -STRATA)
 vessel_totals.fc <- rbind(data.table(STRATA = "Vessels Participating (Full Coverage)"), vessel_totals.fc, fill = T)
 
 table_b1 <- rbind(cost_totals.pc, vessel_totals.pc, vessel_totals.fc)
-table_b1.flex <- table_b1 %>% 
-  flextable() %>%
-  compose(i = ~ !is.na(value), value = as_paragraph("\t", .), use_dot = T) %>%
-  set_header_labels(values = c("", paste0("Draft ", adp_year, " ADP"))) %>%
-  align(j = 2, align = "right", part = "all") %>%
-  bold(i = ~ is.na(value)) %>%
-  bold(part = "header") %>%
-  hline(i = ~ STRATA == "") %>%
-  hline(i = 5) %>%
-  autofit()
+
+if(adp_ver == "Draft") {
+  table_b1.flex <- table_b1 %>% 
+    flextable() %>%
+    compose(i = ~ !is.na(value), value = as_paragraph("\t", .), use_dot = T) %>%
+    set_header_labels(values = c("", paste0("Draft ", adp_year, " ADP"))) %>%
+    align(j = 2, align = "right", part = "all") %>%
+    bold(i = ~ is.na(value)) %>%
+    bold(part = "header") %>%
+    hline(i = ~ STRATA == "") %>%
+    hline(i = 5) %>%
+    autofit()
+} else if(adp_ver == "Final") {
+  
+  table_b1.final <- copy(table_b1)
+  #' [TODO: Load the draft adp outputs!]
+}
 
 #======================================================================================================================#
 # Sampling Summaries ----
