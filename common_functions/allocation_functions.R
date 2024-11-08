@@ -648,8 +648,6 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
       function(prior, strata_N) {
         # prior <- pc_effort_lst[[5]]; strata_N <-  split(sample_N[[k]], by = "STRATA")[[5]]
         
-        #' [TODO: Here is where we would incorporate variance into N]
-        
         # Create vector of TRIP_IDs
         trip_ids <- unique(prior$TRIP_ID)
         # How many times does prior effort go into future effort?
@@ -673,7 +671,7 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
       prior = pc_effort_lst,
       strata_N = split(sample_N[[k]], by = "STRATA")
     ))
-
+    
     # Re-assign trip_id so that we can differentiate trips sampled multiple times
     swor_bootstrap.effort[, TRIP_ID := .GRP, keyby = .(ADP, STRATA, BSAI_GOA, TRIP_ID, I)]
     if(uniqueN(swor_bootstrap.effort$TRIP_ID) != sum(sample_N[[k]]$N)) stop("Count of TRIP_IDs doesn't match!")
@@ -711,14 +709,17 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
     # Merge in contract proportions
     swor_bootstrap.allo_lst$effort <- ob_contract_calc[swor_bootstrap.allo_lst$effort, on = .(ADP, STRATA)]
     
-    # Calculate rates afforded with the specified budget.
+    # Calculate the number of sea days in Trawl EM and shuttle this to cost_params
+    cost_params$EMTRW$emtrw_sea_days <-  swor_bootstrap.effort |>
+      _[STRATA == "EM_TRW-GOA", .(TRIP_ID, DAYS)] |> 
+      unique() |>
+      _[, sum(DAYS)]
     
+    # Calculate rates afforded with the specified budget.
     #' [NOTE:] The `allo_prox()` function currently excludes the "EM_TRW" strata by default.
-    #' [NOTE:] This part of the function is a bit slow thanks to the roundabout way we have to calculate costs. Can 
-    #' probably code this to be more efficient...
     swor_bootstrap.rates <- allo_prox(
       swor_bootstrap.box, swor_bootstrap.allo_lst, cost_params, 
-      budget_lst[[1]], max_budget = 7e6, index_interval = 0.0001
+      budget_lst[[1]], max_budget = 6e6, index_interval = 0.0001
     )
     # Capture results of iteration
     swor_boot_lst[[k]] <- list(
@@ -726,7 +727,6 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
       strata_N = sample_N[[k]],
       resample = unique(swor_bootstrap.effort[, .(wd_TRIP_ID, I)])
     )
-    
   }
   
   time_end <- Sys.time()
@@ -737,9 +737,6 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
   
   swor_boot_lst
 }
-
-
-
 
 #' This was the version used inthe 2024 Final ADP in the final_rates.R script. Used `calculate_prox`
 #' and `calculate_cost`
@@ -767,7 +764,9 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
   
   for(i in year_vec) {
     
-    box_def_sub.prox.range <- calculate_prox(box_def, sample_rate_vec = c(0.0001, seq(0.05, 1, by = 0.001)), omit_strata = "ZERO" )$prox_dt[ADP == i]
+    box_def_sub.prox.range <- calculate_prox(
+      box_def, sample_rate_vec = c(0.0001, seq(0.05, 1, by = 0.001)), omit_strata = "ZERO" 
+    )$prox_dt[ADP == i]
     # Calculate index for each stratum
     box_def_sub.prox.range[
     ][, n := SAMPLE_RATE * STRATA_N
@@ -810,6 +809,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
     # Get all stratum names
     strata_dt <- unique(box_def$strata_n_dt[, ..stratum_cols])
     prox_by_stratum_lst <- vector(mode = "list", length = nrow(strata_dt))
+    
     # Calculate proximity for each stratum using a focused range of sample rates
     for(k in 1:nrow(strata_dt)) {
       # k <- 1
@@ -823,10 +823,10 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
       )
       # Find the stratum's range of sample rates
       sample_range <- sapply(
-        index_vec_rates_costs[c(index_near_budget - range_var, index_near_budget + 1)],             # FIXME I have to do +2 instead of +1. findInterval always underestimates?
+        index_vec_rates_costs[c(index_near_budget - range_var, index_near_budget + 1)],
         function(x) x[strata_dt[k], on = c(box_def$params$stratum_cols), SAMPLE_RATE]
       )
-      # box_res <- copy(box_stratum); omit_strata <- NULL; sample_rate_vec <- seq(0.5, 575, by = 0.0001)
+
       # Now, we go back calculating rates ever 0.0001 here.
       prox_by_stratum <- calculate_prox(box_stratum, sample_rate_vec = seq(sample_range[1], sample_range[2], by = 0.0001))$prox_dt
       prox_by_stratum[
@@ -839,7 +839,6 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
     }
     prox_by_list_dt <- rbindlist(prox_by_stratum_lst)
     
-    # find the common range of indices
     # Find range if INDEX that is common to all strata x ADP
     prox_by_list_dt[, as.list(setNames(range(INDEX), c("MIN", "MAX"))), by = c(stratum_cols)]
     
@@ -858,9 +857,8 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
       x2$STRATUM_COL <- stratum_column
       x2
     })
+    
     # Calculate the cost of each index
-    #' *TODO `calculate_cost()` now takes much longer to run for each index than before. *
-    # Generate the cost summaries for each index
     index_cost_lst <- lapply(index_costs2, function(x) {
       calculate_cost(x, cost_params, allo_lst, max_budget)
     })
@@ -885,6 +883,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
   
 }
 
+
 # Proximity
 calculate_cost <- function(index_rates, cost_params, allo_lst, max_budget) {
   
@@ -898,24 +897,21 @@ calculate_cost <- function(index_rates, cost_params, allo_lst, max_budget) {
   out <- rbindlist(lapply(
     split(index_rates_copy, by = "ADP"),
     function(x) {
-      
       index_vec <- unique(x$I)
       index_rates_lst <- vector(mode = "list", length = uniqueN(index_vec))
       
       for(i in 1:length(index_vec)) {
         index_rates_sub <- x[I == index_vec[i]]
         index_rates_sub_res <- cbind(
-          
           ob_cost_new(index_rates_sub[STRATA %like% "OB_"], cost_params, allo_lst$effort[STRATA %like% "OB_"]),
-          
           emfg_cost( index_rates_sub[STRATA %like% "EM_HAL|EM_POT|EM_FIXED"], cost_params),
-          emtrw_cost_new( index_rates_sub[STRATA %like% "EM_TRW"], cost_params)
+          emtrw_cost_new(cost_params)
         )
         index_rates_sub_res[, INDEX_COST := sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL, na.rm = T)]
         # If the cost exceeds the specified maximum budget, don't bother continuing cost calculations
         if(index_rates_sub_res$INDEX_COST > max_budget) break 
         else (index_rates_lst[[i]] <- cbind(index_rates_sub_res, unique(index_rates_sub[, .(ADP, INDEX, I)])))
-      }  #how long does this take? Around 2 minutes?
+      }
       rbindlist(index_rates_lst)
     }
   ))
@@ -925,6 +921,7 @@ calculate_cost <- function(index_rates, cost_params, allo_lst, max_budget) {
   out
   
 }
+
 
 #' Calculate interspersion  * RENAME TO PROXIMITY*
 calculate_prox <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
@@ -1506,7 +1503,7 @@ ob_cost_new <- function(x, cost_params, allo_sub, sim = F) {
     #' *If simulating trip selection, allo_sub must be subset to selected trips*
     
     #' *=====================================================*
-    #' *TAKEN FROM* `bootstrap_allo()` Should probably make this a function
+    #' [TODO: Modified from* `bootstrap_allo()` *Should probably make this a function]
     
     ob_contract_dates <- trip_dates(allo_sub[STRATA %like% "OB_"])
     # For each trip, calculate the proportion of dates the occurred BEFORE the contract change date
@@ -1657,15 +1654,11 @@ emtrw_cost <- function(x, cost_params, sim = F) {
 }
 
 # Now that it is a carve-off and we total the costs in monitoring_costs.R, this function becomes very simple
-emtrw_cost_new <- function(x, cost_params) {
-  #' Note that `x` isn't actually needed, but following the same syntax as other cost functions
-  #' [TODO: Make x an object that gives the number of review days to multiply with EMTRW$emtrw_data_cpd]
-  
-  # x <- copy(emtrw_goa_days)
-  
+emtrw_cost_new <- function(cost_params) {
   # Calculate review costs, based on the cost per review day and the number of days fished
-  emtrw_data_cost <- cost_params$EMTRW$emtrw_data_cpd * x
-
+  
+  emtrw_data_cost <- cost_params$EMTRW$emtrw_data_cpd * cost_params$EMTRW$emtrw_sea_days
+  
   out <- data.table(
     EMTRW_PLANT_OBS = cost_params$EMTRW$emtrw_summary |>
       _[Category %in% c("Observer Plant Day Costs", "Lodging", "Per Diem"), sum(Cost)],
@@ -1676,6 +1669,7 @@ emtrw_cost_new <- function(x, cost_params) {
   setcolorder(out, c("EMTRW_TOTAL", "EMTRW_PLANT_OBS", "EMTRW_BASE", "EMTRW_DATA"))
   out
 }
+
 
 
 
