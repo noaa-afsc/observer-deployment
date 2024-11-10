@@ -72,7 +72,7 @@ rm(list = setdiff(current_adp_items, c("rates_adp_2024_final")))
 channel <- open_channel()
 
 #### Trawl EM Plant Days ----
-  
+
 # Enter vector of ports accepting GOA-only catch from EM Trawl Vessels. Must be in camel-case as in norpac.atl_lov_port
 goa_plants <- c("Kodiak", "False Pass")
 
@@ -323,12 +323,11 @@ emfg_review_cpd           # The cost per review day, which will be multiplied by
 #' the fishing season as total days of the year. Currently assuming there will not be any partial-coverage only 
 #' activity at Sand Point for 2025.
 
-#' Contact *Sarah Neumeyeyer* to chat about observer needs at plants at different times of year.
-
-#' [TODO: for 2025, we might only have 5 at any one time?] Currently assuming we'll have:
+#' [2025FinalADP: Currently assuming we'll have:] 
 #'   5 in A Season (2 Trident, 3 APS/SBS/OBI)
-#'   5 in B Season (2 Trident, 2 APS/SBS/OBI, 1 False Pass)
-goa_plant_obs <- 5
+#'   6 in B Season (2 Trident, 2 APS/SBS/OBI, 1 False Pass)
+goa_plant_obs.A <- 5
+goa_plant_obs.B <- 6
 
 #=============================#
 ### Count of GOA Plant Days ----
@@ -338,7 +337,7 @@ date_cols <- c("EMBARK_DATE", "DISEMBARK_DATE", "DELIVERY_END_DATE")
 trawl_em_plant_days[, (date_cols) := lapply(.SD, as.Date), .SDcols = date_cols]
 trawl_em_assignments <- unique(trawl_em_plant_days[, .(YEAR, PORT_NAME, CRUISE, PERMIT, EMBARK_DATE, DISEMBARK_DATE, NAME)])
 
-#' [TODO: Need to figure out plant days needed for both Kodiak AND False Pass]
+#' [2025ADP: Need to figure out plant days needed for both Kodiak AND False Pass]
 
 # 2023 A and B season and 2024 A and B season. 
 fig.trawl_em_plant_deliveries <- ggplot(trawl_em_assignments, aes(y = as.factor(CRUISE)) ) + 
@@ -365,8 +364,7 @@ assign_dates_dt <- assign_dates_dt[cruise_year, on = .(CRUISE)]
 assign_dates_dt[, .(CRUISE_N = uniqueN(CRUISE), DAYS = sum(DAYS)), keyby = .(YEAR)]
 #' [2025ADP: Notes] 
 #' Total of 519 unique CRUISE x days of plant observers assigned in 2023, 668 days in 2024.
-#' In 2025, we expect we'll only need 2 observers assigned to the Trident Kodiak Plants, 3 to APS/OBI/SBS, and 1 to 
-#' False Pass.
+#' Even though CGOA pollock closed in late Septer 25, still had more assignment days in 2024 than 2023.
 
 #' How many days were an observer assigned each year?
 unique_assigned_days <- rbindlist(assign_dates, idcol = "CRUISE")[
@@ -415,14 +413,13 @@ ggplot(pollock_season_date_cruise_count_dt, aes(x = DATE, y = CRUISE_COUNT)) + g
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
   labs(x = "Date", y = "# Cruises assigned", subtitle = "Count of cruises assigned to Kodiak Plants each day for GOA EM pollock.")
 
-#' [2025ADP: hardcoding the expected number of GOA plant days needed based on 2023, not 2024]
-#' We will have 5 observers during A season and 5 observers for 5 for B season (not six!) because it appears that during 
-#' B season, the APS/OBI/SBS plants can get by with 2 observers, not 3. That is, during B season, Kodiak-Trident will 
-#' have 2, APS/OBI/SBS will have 2, and False Pass will have 1.
+#' [2025ADP: hardcoding the expected number of GOA plant days needed based on 2023 season duration, not 2024]
+
+#' We will have 5 observers during A season (all in Kodiak) and 6 observers for for B season (5 in Kodiak, 1 in False Pass).
 goa_A_season_days <- sapply(pollock_season_ranges, diff)[1]
 goa_B_season_days <- sapply(pollock_season_ranges, diff)[2]
 
-goa_plant_ob_days <- (goa_A_season_days * 5) + (goa_B_season_days * 5)
+goa_plant_ob_days <- (goa_A_season_days * goa_plant_obs.A) + (goa_B_season_days * goa_plant_obs.B)
 
 #' 143 days during 2023 A and B season, which is a better guess than what happened in 2024
 goa_season_days <- goa_A_season_days + goa_B_season_days
@@ -447,7 +444,7 @@ contract_days[YEAR == adp_year - 2,]
 plant_sea_day_costs <- adp_contract_day_rates[
 ][, .(CONTRACT_HALF = 1:2, Plant_Day_Cost, Optional_Plant_Day_Cost)
 ][contract_days[YEAR == adp_year - 2,], on = .(CONTRACT_HALF)]
-plant_sea_day_costs[, EST_DAYS := PROP * goa_season_days * goa_plant_obs]
+plant_sea_day_costs[, EST_DAYS := PROP * goa_plant_ob_days]
 # The PC contract has 150 guaranteed plant days. These will all occur before the contract  year changes
 plant_sea_day_costs[, GUA_COST := 150 * Plant_Day_Cost]
 # Calculate the cost of the number of optional days purchased before the contract change date
@@ -456,7 +453,6 @@ plant_sea_day_costs[, OPT_COST := (EST_DAYS - 150) * Optional_Plant_Day_Cost]
 trw_em_day_costs <- sum(plant_sea_day_costs[, .(GUA_COST, OPT_COST)])
 
 #' *Summary*
-goa_plant_obs     #' Maximum number of observers active during GOA Pollock season
 goa_season_days   #' Total number of days in GOA pollock season
 goa_plant_ob_days #' Total number of sea days, as  number of observers X number of days in season
 trw_em_day_costs  #' Total cost of sea days, accounting for guaranteed and optional days on both contracts
@@ -487,14 +483,16 @@ year_date_period <- unique(cruise_date[YEAR == adp_year - 2, .(YEAR, DATE)])[
 ][, PERIOD := ifelse(
   (yday(DATE) >= yday(as.Date(paste0(adp_year, "-03-01")))) & (yday(DATE) < yday(as.Date(paste0(adp_year, "-10-01")))),
   1, 2
-)][, .(DAYS = uniqueN(DATE)), keyby = .(YEAR, PERIOD)
+)][, SEASON := fcase(month(DATE) <= 8, "A", month(DATE) >= 9, "B" )
+][, .(DAYS = uniqueN(DATE)), keyby = .(YEAR, PERIOD, SEASON)
 ][, PROP := DAYS / sum(DAYS)
   # merge in lodging rates by period
-][kodiak_lodging_dt, on = .(PERIOD)]
+][kodiak_lodging_dt, on = .(PERIOD)
+][SEASON == "A", PLANT_OBS := goa_plant_obs.A
+][SEASON == "B",PLANT_OBS := goa_plant_obs.B][]
 
-#' Again, assuming we have 5 observers, and assuming you can put 2 observers in each room
-kodiak_lodging_cost <- year_date_period[, sum(goa_season_days * PROP * (COST_PER_NIGHT * (goa_plant_obs/2)))]
-
+#' Assuming you can put 2 observers in each room
+kodiak_lodging_cost <- year_date_period[, sum(goa_season_days * PROP * (COST_PER_NIGHT * (PLANT_OBS/2)))]
 
 ### Per Diem ----
 
@@ -503,8 +501,7 @@ kodiak_lodging_cost <- year_date_period[, sum(goa_season_days * PROP * (COST_PER
 goa_plant_per_diem <- 109
 
 #' Total per-diem, number of season days X number of plant observers X per diem rate
-kodiak_per_diem_cost <- goa_plant_per_diem * (goa_season_days * goa_plant_obs)
-
+kodiak_per_diem_cost <- goa_plant_per_diem * goa_plant_ob_days
 
 #=================================#
 ## Data and Video Review Costs ---- 
@@ -524,7 +521,6 @@ emtrw.data_cpd <- emtrw.data_cost * inflation_dt[Calendar == 2021, Infl_Factor]
 ### Count of days to review ----
 
 #' This cost assumes the number of review days in `pc_effort_object`, not in any effort predictions
-#' [TODO: can add this to `emtrw_cost()` function but we wouldn't be estimating the full EM TRW total carve-off here.]
 emtrw.review_ND <- unique(pc_effort_st[STRATA == "EM_TRW-GOA", .(ADP, TRIP_ID, DAYS)]) |>
   _[, .(N = uniqueN(TRIP_ID), D = sum(DAYS)), by = .(ADP)]
 emtrw.review_days <- emtrw.review_ND$D
@@ -559,7 +555,9 @@ goa_tender_cost <- goa_only_tender_v * equipment_upkeep_per_VY
 
 #' Count the total of GOA-only trawl EM vessels to apply to the maintenance costs.
 
-#' [TODO: Cross-reference the loki results with the spreadsheet, run this in get_data and export from get_data.R!]
+#' [2025ADP: Cross-reference the loki results with the spreadsheet.]
+#' In the future, we should insteada run this in get_data and export from get_data.R, but we'll need to somehow
+#' track which vessels are GOA-only vessels! Is this something we can get from VMPs?
 if(F) {
   #' TODO Can I cross-reference this with what we have in NORPAC?
   a <- setDT(dbGetQuery(channel, paste0(
@@ -638,11 +636,7 @@ cost_summary.em_trw <- data.table(
 sum(cost_summary.em_trw$Cost)   # Total, assuming review days based on previous 1 year.
 cost_summary.em_trw             # Broken up by cost category
 
-#======================================================================================================================#
-# ***TODO*** Upload outputs to Shared Google Drive ----
-#======================================================================================================================#
-
-#' Compile costs into `cost_params` object
+# Compile costs into cost_params object ----
 
 cost_params <- list(
   OB = list(
