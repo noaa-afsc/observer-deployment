@@ -16,7 +16,6 @@ adp_ver  <- "Final"  #' `Draft` or `Final`, which is case-sensitive!
 
 library(data.table)         # Data wrangling
 library(ggplot2)            # Plotting
-
 library(sf)                 # Spatial analyses
 library(ggh4x)              # For facets with nested labels
 library(waffle)             # For waffle plots of coverage/tonnage summaries
@@ -67,21 +66,6 @@ stat_area_sf <- st_read(
 #' [TODO: Move this to allocation_functions?]
 # Load the Alaska map sf objects
 load("source_data/ak_shp.rdata")      # shp_land, shp_nmfs, and shp_centroids added to global
-
-
-#'*==================================*
-
-### WHAT-IF ----
-#' *Instead of 5 observers in both A and B season, what if we had a 6th observer in B season?* 
-if(F) {
-  # Hard-coding for an additional observer at False Pass B season 
-  # Getting the average per-day observer cost and multiplying by the duration of B season, 67 days
-  cost_params$EMTRW$emtrw_summary[1:3, Cost := Cost + (Cost/cost_params$EMTRW$goa_plant_ob_days * 67)]
-  cost_params$EMTRW$emtrw_total_cost <- cost_params$EMTRW$emtrw_summary[, sum(Cost)]
-  cost_params$EMTRW$goa_plant_ob_days <- cost_params$EMTRW$goa_plant_ob_days + 67
-}
-#'*==================================*
-
 
 #====================#
 ## Load Functions ----
@@ -290,9 +274,9 @@ if( adp_ver == "Draft") {
     ][, .(d = sum(DAYS)), keyby = .(ADP, STRATA)]
     
     cost_boot_lst[[i]] <- cbind(
-      ob_cost_new(cost_boot_rates, cost_params = cost_params, allo_sub = cost_boot_trips_dt.n, sim = T),
-      emfg_cost(em_fg_d, cost_params = cost_params, sim = T),
-      emtrw_cost_new(cost_boot_trips_dt.n, cost_params = cost_params)
+      ob_cost_new(cost_boot_rates, cost_params, allo_sub = cost_boot_trips_dt.n, sim = T),
+      emfg_cost(em_fg_d, cost_params, sim = T),
+      emtrw_cost_new(cost_params)
     )
     
   }
@@ -350,7 +334,7 @@ if( adp_ver == "Draft") {
       cbind(
         ob_cost_new(rates, cost_params, allo_sub = cost_boot_trips_dt.n, sim = T),
         emfg_cost(em_fg_d, cost_params, sim = T),
-        emtrw_cost_new(cost_params = cost_params)
+        emtrw_cost_new(cost_params)
       )
       
     }), idcol = "ODDS_iter")
@@ -363,12 +347,12 @@ if( adp_ver == "Draft") {
 
  if(adp_ver == "Final"){
   # Are the costs normally distributed and centered on the budget?
-  ggplot(cost_dt, aes(x = TOTAL_COST)) + geom_histogram() + geom_vline(xintercept = mean(cost_boot_final$TOTAL_COST))
+  ggplot(cost_dt, aes(x = TOTAL_COST)) + geom_histogram() + geom_vline(xintercept = mean(cost_dt$TOTAL_COST))
   
   if(odds_iter >= 1) {
     ggplot(cost_dt[RESAMP_iter <= 50], aes(x = TOTAL_COST)) + geom_density(aes(fill = as.character(RESAMP_iter)), alpha = 0.25) +
       theme(legend.position = "none") +
-      geom_vline(xintercept = mean(cost_boot_final$TOTAL_COST))
+      geom_vline(xintercept = mean(cost_dt$TOTAL_COST))
   }
   
   cost_dt.med <- cost_dt[, median(OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)]
@@ -411,7 +395,7 @@ if(adp_ver == "Draft") {
   cost_summary <- attr(boot_lst[[1]]$rates, "cost_summary")
   # Get totals, rounding to the nearest $1K
   cost_totals <- round(
-    unlist(cost_summary[, .(TOTAL = sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL), OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL)]), -3
+    unlist(cost_summary[, .(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL, TOTAL = sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL))]), -3
   )
   
 } else if(adp_ver == "Final") {
@@ -419,8 +403,8 @@ if(adp_ver == "Draft") {
   cost_summary <- lapply(lapply(boot_lst, "[[", "rates"), function(x) attr(x, "cost_summary"))
   # Get totals, rounding to the nearest $1K
   cost_totals <- rbindlist(cost_summary)[, .(
-    TOTAL = sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL) / .N,
-    OB_TOTAL = mean(OB_TOTAL), EMFG_TOTAL = mean(EMFG_TOTAL), EMTRW = mean(EMTRW_TOTAL))] |>
+    OB_TOTAL = mean(OB_TOTAL), EMFG_TOTAL = mean(EMFG_TOTAL), EMTRW_TOTAL = mean(EMTRW_TOTAL),
+    TOTAL = sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL) / .N)] |>
     round(-3) |> unlist()
 }
 
@@ -437,10 +421,10 @@ if(adp_ver == "Draft") {
 cost_totals.pc <- data.table("STRATA" = names(cost_totals), data.table("value" = format_dollar(cost_totals, 0)))
 # Rename the pools
 cost_totals.pc[, STRATA := fcase(
-  STRATA == "TOTAL", "Total",
   STRATA == "OB_TOTAL", "At-sea Observer",
   STRATA == "EMFG_TOTAL", "EM Fixed-Gear",
-  STRATA == "EMTRW_TOTAL", "EM Trawl GOA"
+  STRATA == "EMTRW_TOTAL", "EM Trawl GOA",
+  STRATA == "TOTAL", "Total"
 )]
 cost_totals.pc <- rbind(data.table(STRATA = "Partial Coverage Monitoring Budget ($)"), cost_totals.pc, fill = T)
 
@@ -457,7 +441,7 @@ vessel_totals.pc <- rbind(data.table(STRATA = "Vessels Participating (Partial Co
 
 vessel_totals.fc <- full_efrt.smry[, .(value = uniqueN(VESSEL_ID)), keyby = .(STRATA)]
 vessel_totals.fc[, STRATA := fcase(
-  STRATA == "EM_TRW_BSAI", "EM Trawl BSAI",
+  STRATA == "EM_TRW-BSAI", "EM Trawl BSAI",
   STRATA == "FULL", "Full Coverage"
 )]
 setorder(vessel_totals.fc, -STRATA)
@@ -479,7 +463,38 @@ if(adp_ver == "Draft") {
 } else if(adp_ver == "Final") {
   
   table_b1.final <- copy(table_b1)
-  #' [TODO: Load the draft adp outputs!]
+  
+  #' Load the Draft outputs and re-assign them
+  draft_tables_name <- paste0("results/", adp_year, "_Draft_ADP_tables.rdata")
+  gdrive_download(
+    local_path =  draft_tables_name,
+    gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output")
+  )
+  (load(draft_tables_name))
+  table_b1.draft <- copy(table_b1)
+  table_b2.draft <- copy(table_b2)
+  table_b3.draft <- copy(table_b3)
+  rm(table_b1, table_b2, table_b3)
+  
+  #' [2025Final: After creating these objects for the Draft we rearranged in the document, apply those changes here]
+  
+  table_b1.groups <- data.table(group = c(rep("costs", 5), rep("vessels", 12)))
+  table_b1.draft <- cbind(table_b1.groups, table_b1.draft)
+  table_b1.final <- cbind(table_b1.groups, table_b1.final)
+  table_b1 <- table_b1.draft[table_b1.final, on = .(group, STRATA)]
+  table_b1[, group := NULL]
+  
+  table_b1.flex <- table_b1 %>% 
+    flextable() %>%
+    compose(i = ~ !is.na(value), value = as_paragraph("\t", .), use_dot = T) %>%
+    set_header_labels(values = c("", paste0("Draft ", adp_year, " ADP"), paste0("Final ", adp_year, " ADP"))) %>%
+    align(j = 2, align = "right", part = "all") %>%
+    bold(i = ~ is.na(value)) %>%
+    bold(part = "header") %>%
+    hline(i = ~ STRATA == "") %>%
+    hline(i = 5) %>%
+    autofit()
+  
 }
 
 #======================================================================================================================#
@@ -554,14 +569,17 @@ rates_trips_days.pc[, SAMPLE_RATE := SAMPLE_RATE * 100]
 # Round off estimates
 round_cols <- c("STRATA_N", "n", "d")
 rates_trips_days.pc[, (round_cols) := lapply(.SD, round), .SDcols = round_cols]
+rates_trips_days.pc[, SAMPLE_RATE := round(SAMPLE_RATE, 2)]
 setnames(rates_trips_days.pc, new = c("Stratum", "r", "n", "Pool", "N", "d"))
 setcolorder(rates_trips_days.pc, c("Pool", "Stratum", "N", "n", "d", "r"))
 # Get list of strata 
 rates_trips_days.pc.strata <- unique(rates_trips_days.pc$Stratum)
 # Create totals by POOL when there is more than one stratum
-rates_trips_days.pc.total <- rates_trips_days.pc[, .(
-  Stratum = "Total", N = sum(N), n = sum(n), d = sum(d), r = round(sum(n)/sum(N) * 100, 2), STRATA_COUNT = .N
-), keyby = .(Pool)][STRATA_COUNT > 1][, STRATA_COUNT := NULL]
+rates_trips_days.pc.total <- rates_trips_days.pc |>
+  _[, .(Stratum = "Total", N = sum(N), n = sum(n), d = sum(d), r = round(sum(n)/sum(N) * 100, 2), STRATA_COUNT = .N), 
+    keyby = .(Pool)
+  ][STRATA_COUNT > 1
+  ][, STRATA_COUNT := NULL][]
 # Add totals in
 rates_trips_days.pc <- rbind(
   rates_trips_days.pc,
@@ -578,7 +596,7 @@ rates_trips_days.fc <- full_efrt.smry[, .(
   keyby = .(STRATA)]
 # Refine strata names
 rates_trips_days.fc[, STRATA := fcase(
-  STRATA == "EM_TRW_BSAI", "EM Trawl BSAI",
+  STRATA == "EM_TRW-BSAI", "EM Trawl BSAI",
   STRATA == "FULL", "Full"
 )]
 # Create totals by POOL
@@ -599,23 +617,49 @@ table_b3 <- rbind(
   rates_trips_days.pc,
   rates_trips_days.fc
 )
+if(adp_ver == "Draft") {
 
-# Now that totals are made for pool, remove pool column
-table_b3.flex <- table_b3[, -"Pool"] %>% 
-  flextable() %>%
-  autofit() %>%
-  compose(i = 1, j = 1, part = "header", value = as_paragraph(., " (", as_i("h"), ")" ), use_dot = T) %>%
-  compose(i = 1, j = 2:4, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
-  compose(i = 1, j = 5, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") ), " (%)"), use_dot = T) %>%
-  bold(i = ~ Stratum == "Total", part = "body") %>%
-  bold(i = c(9,10), j = 2:5, part = "body") %>%
-  hline(i = ~ Stratum == "Total") %>%
-  hline(i = c(9, 10)) %>%
-  compose(i = ~ Stratum == "Total", j = 1, value = as_paragraph("\t", .), use_dot = T) %>%
-  add_header_row(top = F, values = c(paste0("Draft ", adp_year, " ADP"), ""), colwidths = c(1, 4)) %>%
-  bold(i = 2, j = 1, part = "header") %>%
-  fix_border_issues()
-# Note that the rates for EM_TRW-GOA are for shoreside monitoring only and that 'n' is an approximation
+  # Now that totals are made for pool, remove pool column
+  table_b3.flex <- table_b3[, -"Pool"] %>% 
+    flextable() %>%
+    autofit() %>%
+    compose(i = 1, j = 1, part = "header", value = as_paragraph(., " (", as_i("h"), ")" ), use_dot = T) %>%
+    compose(i = 1, j = 2:4, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
+    compose(i = 1, j = 5, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") ), " (%)"), use_dot = T) %>%
+    bold(i = ~ Stratum == "Total", part = "body") %>%
+    bold(i = c(9,10), j = 2:5, part = "body") %>%
+    hline(i = ~ Stratum %in% c("Total", "EM Trawl GOA", "Zero")) %>%
+    compose(i = ~ Stratum == "Total", j = 1, value = as_paragraph("\t", .), use_dot = T) %>%
+    add_header_row(top = F, values = c(paste0("Draft ", adp_year, " ADP"), ""), colwidths = c(1, 4)) %>%
+    bold(i = 2, j = 1, part = "header") %>%
+    fix_border_issues()
+  # Note that the rates for EM_TRW-GOA are for shoreside monitoring only and that 'n' is an approximation
+
+} else if(adp_ver == "Final") {
+  
+  #' [TODO: Add new columns for total # of offloads and sampled offloads? 'O' and 'o'? for EM_TRW strata?]
+  table_b3.final <- copy(table_b3)
+  table_b3 <- rbind(
+    table_b3.draft, 
+    rbind(data.table(Stratum = paste(adp_ver, adp_year, "ADP")), table_b3.final, fill = T))
+  
+  table_b3.flex <- table_b3[, -"Pool"] %>% 
+    flextable() %>%
+    autofit() %>%
+    compose(i = 1, j = 1, part = "header", value = as_paragraph(., " (", as_i("h"), ")" ), use_dot = T) %>%
+    compose(i = 1, j = 2:4, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
+    compose(i = 1, j = 5, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") ), " (%)"), use_dot = T) %>%
+    bold(i = ~ Stratum == "Total", part = "body") %>%
+    bold(i = c(9,10), j = 2:5, part = "body") %>%
+    hline(i = ~ Stratum %in% c("Total", "EM Trawl GOA", "Zero")) %>%
+    hline(i = nrow(table_b3.draft) + 1) %>%
+    compose(i = ~ Stratum == "Total", j = 1, value = as_paragraph("\t", .), use_dot = T) %>%
+    add_header_row(top = F, values = c(paste0("Draft ", adp_year, " ADP"), ""), colwidths = c(1, 4)) %>%
+    bold(i = 2, j = 1, part = "header") %>%
+    bold(i = nrow(table_b3.draft) + 1, j = 1, part = "body") %>%
+    padding(i = ~ Stratum != paste(adp_ver, adp_year, "ADP"), part = "body", padding.top = 2, padding.bottom = 2) %>%
+    fix_border_issues()
+}
 
 
 #======================================================================================================================#
@@ -735,6 +779,7 @@ mon_catch.long[SECTOR == "PARTIAL", .(PERC_MON = 100 * sum(value[variable == "MO
 
 #' *Allocation Objects*
 #' Upload all allocation inputs and outputs to the shared google drive.
+results_name <- paste0("results/", adp_year, "_", adp_ver, "_ADP_results.rdata")
 save(
   ## Allocation inputs
   pc_effort_st, budget_lst, box_params, 
@@ -744,20 +789,25 @@ save(
   ## Raw tables
   table_b1, table_b2, table_b3,
   ## Location
-  file = paste0("results/draft_adp_", adp_year, "_results.rdata")
+  file = results_name
 )
 gdrive_upload(
-  local_path = paste0("results/draft_adp_", adp_year, "_results.rdata"),
+  local_path = results_name,
   gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output")
 )
 
 #' *Tables*
 #' Save table outputs for `tables.Rmd` to knit to docx format
+tables_name <- paste0("results/", adp_year, "_", adp_ver, "_ADP_tables.rdata")
 save(
   table_b1, table_b1.flex,
   table_b2, table_b2.flex,
   table_b3, table_b3.flex,
-  file = "tables.rdata"
+  file = tables_name
+)
+gdrive_upload(
+  local_path = tables_name,
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output")
 )
 
 #' *Figures* 
