@@ -73,7 +73,7 @@ channel <- open_channel()
 
 #### Trawl EM Plant Days ----
 
-# Enter vector of ports accepting GOA-only catch from EM Trawl Vessels. Must be in camel-case as in norpac.atl_lov_port
+# Enter vector of ports accepting GOA-only catch from EM Trawl Vessels. Must be in camel-case as in norpac.atl_lov_port_code
 goa_plants <- c("Kodiak", "False Pass")
 
 trawl_em_plant_days <- setDT(dbGetQuery(channel, paste0(
@@ -193,11 +193,11 @@ contract_change_date <- as.Date("2025-10-01")
 
 ### Number of guaranteed days on contract  ----
 
-#' The ADP year start mid-contract, so there will be some guaranteed sea days already on the contract. We will estimate
-#' this using the previous year's fishing effort. Given that the contract changes no October 1st, it is not likely we 
+#' The ADP year starts mid-contract, so there will be some guaranteed sea days already on the contract. We will estimate
+#' this using the previous year's fishing effort. Given that the contract changes on October 1st, it is not likely we 
 #' will have any actual data in time for the Draft ADP, and the Final ADP may only have actual day counts for October. 
 
-#' Identify trips that start after the contract change date. This will result in a underestimate of the number of 
+#' Identify trips that start after the contract change date. This will result in an underestimate of the number of 
 #' guaranteed days on the contract, which is a more conservative approach for budgeting purposes than using end date.
 #' This is an underestimate because trips that start before or on the contract change date may have fishing days after
 #' the new contract begins.
@@ -230,10 +230,10 @@ travel_cpd               #' [Estimated cost of travel per sea day]
 
 #' Fixed-gear EM costs generally fall into three categories:
 
-#' - Costs that scale with the size of the fixed-gear EM pool, such as equipment maintenance and project management. 
+#' 1) Costs that scale with the size of the fixed-gear EM pool, such as equipment maintenance and project management. 
 #' These are generally recurring costs. 
-#' - Equipment installation costs, commonly referred to as 'amortized' costs, that are large one-time payments. 
-#' - Data review and storage costs, that scale with the number of monitored sea days
+#' 2) Equipment installation costs, commonly referred to as 'amortized' costs, that are large one-time payments. 
+#' 3) Data review and storage costs, that scale with the number of monitored sea days
  
 #' For the purpose of estimating costs, we will assume that equipment installation costs will be funded via the 
 #' Murkowski dollars, and the fee will only be used to pay for the equipment maintenance, project management, and data
@@ -271,7 +271,7 @@ emfg_review_cpd <- emfg_review[, sum(Infl_REVIEW_COST) / sum(REVIEWED_DAYS)]
 #=========================#
 
 #' There are sunken costs in fixed-gear EM for program management and equipment that recur each year and are assumed to
-#' scale with the number of vessels in the fixed-gear EM pool. These cost were compiled between 2015 and 2021, 
+#' scale with the number of vessels in the fixed-gear EM pool. These costs were compiled between 2015 and 2021, 
 #' removing any data-related costs or 'amortized costs' from equipment installation inflation-adjusted, and divided by 
 #' the number of fixed-gear EM vessels each year. 
 
@@ -305,7 +305,7 @@ emfg_nonamortized_cpv <- emfg_nonamortized[, sum(Infl_TOTAL_VESSEL_COST) / sum(P
 
 #' emfg_v                 # The number of fixed-gear EM vessels will be specified by the outputs of `get_data.R`
 emfg_nonamortized_cpv     # The recurring cost per vessel for maintenance in the fixed-gear EM pool
-emfg_review_cpd           # The cost per review day, which will be multiplied by the trip duration * monitoring rate 
+emfg_review_cpd           # The cost per review day, which will be multiplied by the trip duration × monitoring rate 
 #' amortized_cpv          # The equipment installation/replacement costs. Assumed to be covered by Murkowski funds.
 
 #==================================================================================#
@@ -363,10 +363,10 @@ cruise_year <- unique(trawl_em_assignments[, .(CRUISE = as.character(CRUISE), YE
 assign_dates_dt <- assign_dates_dt[cruise_year, on = .(CRUISE)]
 assign_dates_dt[, .(CRUISE_N = uniqueN(CRUISE), DAYS = sum(DAYS)), keyby = .(YEAR)]
 #' [2025ADP: Notes] 
-#' Total of 519 unique CRUISE x days of plant observers assigned in 2023, 668 days in 2024.
-#' Even though CGOA pollock closed in late Septer 25, still had more assignment days in 2024 than 2023.
+#' Total of 519 unique CRUISE × days of plant observers assigned in 2023, 668 days in 2024.
+#' Even though CGOA pollock closed in late Sep-25, still had more assignment days in 2024 than 2023.
 
-#' How many days were an observer assigned each year?
+#' How many days was an observer assigned each year?
 unique_assigned_days <- rbindlist(assign_dates, idcol = "CRUISE")[
 ][cruise_year, on = .(CRUISE)
 ][, .(DAYS = uniqueN(DATE)), keyby = .(YEAR)]
@@ -427,7 +427,7 @@ goa_season_days <- goa_A_season_days + goa_B_season_days
 #' [2025 ADP ONLY]
 #' The Trawl EM EFP will run through Dec 31 of 2024, so the partial coverage fee will not be used to fund Trawl EM until
 #' Jan 1 2025. Therefore, there will not be any days already on the contract like there will be for at-sea observers.
-#' However, we will need to being estimating the number of days that will be on the contract starting in 2026.
+#' However, we will need to be estimating the number of days that will be on the contract starting in 2026.
 
 contract_days <- rbindlist(assign_dates, idcol = "CRUISE") |>
   _[cruise_year, on = .(CRUISE)
@@ -454,7 +454,7 @@ trw_em_day_costs <- sum(plant_sea_day_costs[, .(GUA_COST, OPT_COST)])
 
 #' *Summary*
 goa_season_days   #' Total number of days in GOA pollock season
-goa_plant_ob_days #' Total number of sea days, as  number of observers X number of days in season
+goa_plant_ob_days #' Total number of sea days, as  number of observers × number of days in season
 trw_em_day_costs  #' Total cost of sea days, accounting for guaranteed and optional days on both contracts
 
 #==================#
@@ -500,7 +500,7 @@ kodiak_lodging_cost <- year_date_period[, sum(goa_season_days * PROP * (COST_PER
 #' we are obligated to pay per-diem rates of $109 per day.
 goa_plant_per_diem <- 109
 
-#' Total per-diem, number of season days X number of plant observers X per diem rate
+#' Total per-diem, number of season days × number of plant observers × per diem rate
 kodiak_per_diem_cost <- goa_plant_per_diem * goa_plant_ob_days
 
 #=================================#
@@ -556,7 +556,7 @@ goa_tender_cost <- goa_only_tender_v * equipment_upkeep_per_VY
 #' Count the total of GOA-only trawl EM vessels to apply to the maintenance costs.
 
 #' [2025ADP: Cross-reference the loki results with the spreadsheet.]
-#' In the future, we should insteada run this in get_data and export from get_data.R, but we'll need to somehow
+#' In the future, we should instead run this in get_data and export from get_data.R, but we'll need to somehow
 #' track which vessels are GOA-only vessels! Is this something we can get from VMPs?
 if(F) {
   #' TODO Can I cross-reference this with what we have in NORPAC?
@@ -578,7 +578,7 @@ if(F) {
   excel_emtrw_list <- rbind(
     cbind(b[5:58, 1:2], GROUP = "BS"),  # BS only
     cbind(b[5:21, 4:5], GROUP = "BSGOA"),  # BS/GOA
-    cbind(b[5:46, 7:8], GORUP = "GOA"),  # GOA Only
+    cbind(b[5:46, 7:8], GROUP = "GOA"),  # GOA Only
     use.names = F) |>
     setnames(c("Name", "Status", "GROUP")) |>
     _[, VESSEL_NAME := toupper(sub("[*]", "", Name))][]
