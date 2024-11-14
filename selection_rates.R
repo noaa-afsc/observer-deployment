@@ -206,7 +206,7 @@ if(uniqueN(boot_dt$BOOT_ITER) > 1) {
 }
 
 # Calculate the rates to use as the mean across iterations. Also calculate average proximity (PROX) and cv_scaling metrics
-#' [NOTE:] Here are calculating the mean of STRATA_N, SAMPLE_RATE, and n across resampling iterations, but they will
+#' [NOTE:] Here we are calculating the mean of STRATA_N, SAMPLE_RATE, and n across resampling iterations, but they will
 #' no longer be mathematically related. The only important thing we will be using here is the SAMPLE_RATE
 rates_adp <- boot_dt[, lapply(.SD, mean), .SDcols = c("STRATA_N", "SAMPLE_RATE", "n", "PROX", "CV_SCALING", "INDEX"), keyby = .(ADP, STRATA)]
 
@@ -723,7 +723,7 @@ mon_catch.long <- melt(
   id.vars = c("SECTOR", "FMP", "FIXED_TRW", "MON"),
   measure.vars = c("UNMON_CATCH", "MON_CATCH")
 ) |>
-  # Divide tonnage into 800 units. With 800, each box represents .25% of catch, each colum represents 5%
+  # Divide tonnage into 800 units. With 800, each box represents .25% of catch, each column represents 5%
   _[, unit_count := round(value/sum(value) * 800)
     # Define groupings based on sector, monitoring method, and whether catch was expected to be monitored.
   ][, GROUP := fcase(
