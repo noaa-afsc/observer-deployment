@@ -48,7 +48,7 @@ spatiotemp_data_prep <- function(valhalla){
   #   stop("Something went wrong making 'fmp_bs_ai_goa'")
   # }
   
-  # Simplify the output, keeping only the column that are needed
+  # Simplify the output, keeping only the columns that are needed
   pc_effort_dt <- pc_effort_dt[, .(
     PERMIT, TARGET = TRIP_TARGET_CODE, AREA = as.integer(REPORTING_AREA_CODE), AGENCY_GEAR_CODE, BSAI_GOA,
     GEAR = ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", AGENCY_GEAR_CODE), STRATA, OBSERVED_FLAG,
@@ -112,7 +112,7 @@ trip_dates <- function(x) {
 #======================================================================================================================#
 
 # Converts ADFG Stat Area to an iso-area hexagon grid. Specify the cell size in meters as the width of each hex cell.
-# cell size. The output is a dataframe with corresponding ADFG_STAT_AREA_CODEs and HEX_IDs, as well as the
+# The output is a dataframe with corresponding ADFG_STAT_AREA_CODEs and HEX_IDs, as well as the
 # simple feature object (class sf) of the hex cell polygons.
 stat_area_to_hex <- function(cell_size, stat_area_sf){
   
@@ -126,7 +126,7 @@ stat_area_to_hex <- function(cell_size, stat_area_sf){
   # Get centroids of statistical areas
   stat_area_centroid_sf <- suppressWarnings(st_centroid(stat_area_sf))  
   
-  # Generate a hex cell grid using the projection and boundaries from stat_area_centroid_sf, will cell size specified by
+  # Generate a hex cell grid using the projection and boundaries from stat_area_centroid_sf, with cell size specified by
   # 'cell_size'. Subset this using stat_area_centroid_sf so only cells overlapping with it are retained.
   hex_grid_sf <- st_make_grid(
     x = stat_area_centroid_sf, 
@@ -163,7 +163,7 @@ stat_area_to_hex <- function(cell_size, stat_area_sf){
 #' Applies a box definition to fishing effort prepared by spatiotemp_data_prep(), defined by `space`: width of hex cell 
 #' in km and the radius of its neighborhood) as well as `time`: the function (currently only tested with 'week') and the 
 #' number of time units. `year_col`. In allocation, `stratum_cols` is used to specify the columns used in stratification
-#' and optionally, `ps_cols` is used to define the columns used in post-stratification, such a gear type to split HAL 
+#' and optionally, `ps_cols` is used to define the columns used in post-stratification, such as gear type to split HAL 
 #' and POT trips within the fixed-gear strata. Optionally, `dmn_cols` is used in evaluation to specify attributes to 
 #' allow neighboring across strata  and is given as a list where the `nst` item is a vector of non-spatiotemporal
 #' columns such as gear type and `st` is a vector of spatial columns such as BSAI_GOA.
@@ -276,7 +276,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
   week_vec <- sapply(date_vec, get(time[[1]]))         # Identify the week of each date
   dates_mtx <- cbind(date_vec, week_vec)               # Combine date vector and week vector
   
-  dates_start <- min(dates_mtx[, 1]) - 1  # Get first date and subtract 1. T
+  dates_start <- min(dates_mtx[, 1]) - 1  # Get first date and subtract 1.
   dates_mtx[, 1] <- dates_mtx[, 1] - dates_start  # This makes it so matrix can be reference by row index, much faster
   # TODO Check behavior of neighboring at ADP year thresholds
   
@@ -288,7 +288,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
   # Convert to matrix and split by TRIP_ID and HEX_ID
   time_lst <- as.matrix(cbind(time_int - dates_start, data_int[, .(GRP)]))
   time_lst <- lapply(split(time_lst, time_lst[, "GRP"], drop = F), matrix, ncol = 3)
-  # For each TRIP_ID x HEX_ID, identify unique weeks
+  # For each TRIP_ID × HEX_ID, identify unique weeks
   time_lst <- lapply(time_lst, function(x) {
     dates_int <- unique(unlist(apply(x, 1, function(y) y[1] : y[2], simplify = F)))  # get unique days
     unique(dates_mtx[dates_int, 2, drop = F])                     # Identify week using dates_mtx
@@ -355,7 +355,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
     X = split(x = subset(data, select = c(group_cols, "BOX_ID", "TRIP_ID", "PS_ID")), by = group_cols, keep.by = F),
     FUN = as.matrix)
   
-  # Make the frequency table of each TRIP_ID (so that trips are properly split by HEX_ID, TIME, and if present, ps_cols
+  # Make the frequency table of each TRIP_ID (so that trips are properly split by HEX_ID, TIME, and if present, ps_cols)
   trip_id_mat <- do.call(rbind, lapply(
     data_lst,
     function(p) {
@@ -393,7 +393,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
         x2 <- do.call(rbind, lapply(x1, function(y) {
           # y <- x1[1]   # Box 5749
           
-          trip_id_centered <- x[x[,1] == y, 2]    # Identify number of trips actually  the box
+          trip_id_centered <- x[x[,1] == y, 2]    # Identify number of trips actually in the box
           # There shouldn't ever be the same trip counted twice in the same box.
           if( length(trip_id_centered) != length(unique(trip_id_centered)) ) stop("There is a duplicate trip_id!")
           
@@ -518,13 +518,13 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
           as.data.table(do.call(rbind, lapply(nst_dmn_boxes, function(z1) {
             # z1 <- nst_dmn_boxes[1]
             
-            # Identify all trips in the domain x stratum in this box
+            # Identify all trips in the domain × stratum in this box
             trip_id_centered <- unique(z[z[, "BOX_ID"] == z1, "TRIP_ID"])
             c(
               BOX_ID = z1,
               BOX_DMN_n = length(trip_id_centered),
               BOX_DMN_w = sum(1 / trip_id_dmn_vec[trip_id_centered]),
-              # count number of neighboring trips in the nst_dmn X stratum ()
+              # count number of neighboring trips in the nst_dmn × stratum ()
               BOX_DMN_nbr = length(unique(y[y[, "BOX_ID"] %in% nbr_lst[[z1]], "TRIP_ID"]))
             )
             
@@ -549,7 +549,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
     dmn_nbr_dt <- box_id_details[dmn_nbr_dt, on = .(BOX_ID)]
     setcolorder(dmn_nbr_dt, c(year_col, stratum_cols, dmn_cols, "BOX_ID", "BOX_DMN_n", "BOX_DMN_w", "BOX_DMN_nbr"))
     
-    # Calculate Number of trips in each STRATA x dmn_cols. Note that trips that have multiple 
+    # Calculate Number of trips in each STRATA × dmn_cols. Note that trips that have multiple 
     # 'dmn_cols' were split here!
     strata_dmn_N_dt <- dmn_nbr_dt[, .(STRATA_DMN_N = sum(BOX_DMN_w)), by = c(year_col, stratum_cols, dmn_cols)]
     
@@ -738,7 +738,7 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
   swor_boot_lst
 }
 
-#' This was the version used inthe 2024 Final ADP in the final_rates.R script. Used `calculate_prox`
+#' This was the version used in the 2024 Final ADP in the final_rates.R script. Used `calculate_prox`
 #' and `calculate_cost`
 allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_interval = 0.001, range_var = 1) { 
   
@@ -827,7 +827,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
         function(x) x[strata_dt[k], on = c(box_def$params$stratum_cols), SAMPLE_RATE]
       )
 
-      # Now, we go back calculating rates ever 0.0001 here.
+      # Now, we go back calculating rates every 0.0001 here.
       prox_by_stratum <- calculate_prox(box_stratum, sample_rate_vec = seq(sample_range[1], sample_range[2], by = 0.0001))$prox_dt
       prox_by_stratum[
       ][, n := SAMPLE_RATE * STRATA_N
@@ -839,7 +839,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
     }
     prox_by_list_dt <- rbindlist(prox_by_stratum_lst)
     
-    # Find range if INDEX that is common to all strata x ADP
+    # Find range if INDEX that is common to all strata × ADP
     prox_by_list_dt[, as.list(setNames(range(INDEX), c("MIN", "MAX"))), by = c(stratum_cols)]
     
     index_range_afforded <- prox_by_list_dt[
@@ -848,7 +848,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
     
     prox_by_list_dt <- prox_by_list_dt[, .SD[between(INDEX, index_range_afforded$MIN, index_range_afforded$MAX )], by = c(stratum_cols)]
     
-    # I can set index_interval to 0.0001 to really get the closes to affording the budget. Does take 10x longer...
+    # I can set index_interval to 0.0001 to really get the closest to affording the budget. Does take 10× longer...
     prox_index_search <- seq(round(index_range_afforded$MIN,3), round(index_range_afforded$MAX,3), by = index_interval)
     index_costs2 <- lapply(prox_index_search, function(x) {
       x1 <- data.table(INDEX = x)
@@ -940,7 +940,7 @@ calculate_prox <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
     keep_strata <- rep(T, times = length(box_res$box_smry))
   }
   
-  # For for a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
+  # For a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
   # (0-1), and then multiply it by that post-stratum's total weight of component trips centered on the post-stratum.
   
   # For each sample rate...
@@ -1030,7 +1030,7 @@ calculate_proximity_old <- function(box_res, sample_rate_vec, omit_strata = c(NU
     keep_strata <- rep(T, times = length(box_res$box_smry))
   }
   
-  # For for a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
+  # For a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
   # (0-1), and then multiply it by that post-stratum's total weight of component trips centered on the post-stratum.
   
   # For each sample rate...
@@ -1098,7 +1098,7 @@ calculate_index <- function(prox_res, trip_cost_dt) {
   ][, CV_SCALING := sqrt(FPC * (1/n))
   ][, INDEX := PROX / CV_SCALING][]
   
-  # Find range if INDEX that is common to all strata x ADP
+  # Find range of INDEX that is common to all strata × ADP
   x2 <- x1[
   ][, .(MIN = min(INDEX), MAX = max(INDEX)), by = group_cols
   ][, .(MIN = max(MIN),  MAX = min(MAX)), by = year_col]
@@ -1368,7 +1368,7 @@ dmn_insp_percentile <- function(realized_insp, prog_sim, real_sim){
     
     # Subset the data for each group
     dat_sub <- realized_insp[i,]
-    # Define functions to calculate percentiles (feed in all simulated interspersion values from both distributions
+    # Define functions to calculate percentiles (feed in all simulated interspersion values from both distributions)
     ecdf_fun.prog <- ecdf(prog_sim$dim_insp.pool[dat_sub[, ..year_pool_domains], on = (year_pool_domains), INSP])
     ecdf_fun.real <- ecdf(real_sim$dim_insp.pool[dat_sub[, ..year_pool_domains], on = (year_pool_domains), INSP])
     # Calculate the percentiles and send to output list
@@ -1425,7 +1425,7 @@ calculate_density <- function(sim_res, fill_color, adjust = NULL) {
     
     # Extract the cutoffs of each group
     cutoffs <- dmn_density[, .SD[c(1, .N),], keyby = c(year_strata_domains, "quant", "FILL")]
-    # For the lower , add the x values of the tails 0 and 3
+    # For the lower, add the x values of the tails 0 and 3
     quant_1.min <- cutoffs[quant == 0][.N][, ':=' (FILL = fill_color, quant = 1)][]
     quant_1.max <- cutoffs[quant == 2][1][, ':=' (FILL = fill_color, quant = 1)][]
     
@@ -1492,7 +1492,7 @@ ob_cost <- function(x, cost_params, sim = F) {
   
 }
 
-# This version was created for the 2025 ADP to handle new PC  contract information
+# This version was created for the 2025 ADP to handle new PC contract information
 ob_cost_new <- function(x, cost_params, allo_sub, sim = F) {
 
   x1 <- x[STRATA %like% "OB_"]
@@ -1506,7 +1506,7 @@ ob_cost_new <- function(x, cost_params, allo_sub, sim = F) {
     #' [TODO: Modified from* `bootstrap_allo()` *Should probably make this a function]
     
     ob_contract_dates <- trip_dates(allo_sub[STRATA %like% "OB_"])
-    # For each trip, calculate the proportion of dates the occurred BEFORE the contract change date
+    # For each trip, calculate the proportion of dates that occurred BEFORE the contract change date
     ob_contract_calc <- ob_contract_dates$dt[, .(TRIP_ID)]
     ob_contract_calc$PROP <- sapply(
       ob_contract_dates$lst, function(x) sum(x < as.integer(cost_params$OB$contract_change_date)) / length(x)
@@ -1542,8 +1542,8 @@ ob_cost_new <- function(x, cost_params, allo_sub, sim = F) {
   
   # Account for days already on the contract
   day_costs.contract[PERIOD == 1, DAYS_ON_CONTRACT := cost_params$OB$current_contract_days]
-  #' Count number of base days and guaranteed days on each contract. Check to see if we allocated the minimum number
-  #' of base days on contract 1
+  # Count number of base days and guaranteed days on each contract. Check to see if we allocated the minimum number
+  # of base days on contract 1
   min_days_met <- day_costs.contract[PERIOD == 1, OB_DAYS + DAYS_ON_CONTRACT] >= cost_params$OB$contract_day_min
   
   day_costs.contract[
@@ -1615,8 +1615,8 @@ emtrw_cost <- function(x, cost_params, sim = F) {
   
   emtrw_goa_v                <- cost_params$EMTRW$emtrw_goa_v
   trip_to_plant_factor       <- cost_params$EMTRW$trip_to_plant_factor   # Used to predict plant days from trips
-  amortized_equipment_per_VY <- cost_params$EMTRW$amortized_equipment_per_VY   # Per (Vessel x Year) amortized EM equipment install costs for GOA-only vessels
-  equipment_upkeep_per_VY    <- cost_params$EMTRW$equipment_upkeep_per_VY      # Per (Vessel x Year) EM equipment maintenance cost for GOA-only vessels
+  amortized_equipment_per_VY <- cost_params$EMTRW$amortized_equipment_per_VY   # Per (Vessel × Year) amortized EM equipment install costs for GOA-only vessels
+  equipment_upkeep_per_VY    <- cost_params$EMTRW$equipment_upkeep_per_VY      # Per (Vessel × Year) EM equipment maintenance cost for GOA-only vessels
   review_day_rate            <- cost_params$EMTRW$review_day_rate      # Per sea day cost for EM compliance review
   plant_day_rate             <- cost_params$EMTRW$plant_day_rate    # Per plant day cost for shoreside monitoring by observers
   
@@ -1701,7 +1701,7 @@ rates_to_costs <- function(allo_lst_effort, rate_vec, cost_params, max_budget, c
     total_col <- which(colnames(cost_res) %like% "_TOTAL")
     
     # If all year have totals above out max, stop the loop.
-    # FIXME The ob_cost() model should be made logistic so CPD doesn't become low at extremely high volumns
+    # FIXME The ob_cost() model should be made logistic so CPD doesn't become low at extremely high volumes
     if(all(cost_res[[total_col]] > max_budget)) break() 
     else{
       out_lst[[i]] <- cbind(MON_RATE = rate_vec[i], cost_res)
@@ -1711,7 +1711,7 @@ rates_to_costs <- function(allo_lst_effort, rate_vec, cost_params, max_budget, c
   
 }
 
-# These functions would work a lot faster with matrices rather than data.frames! A lot if simple calculations...
+# These functions would work a lot faster with matrices rather than data.frames! A lot of simple calculations...
 # TODO VECTORIZE THIS: Will go much faster once vectorized
 # TODO Make it return an object like allo_lst that includes trip durations!
 rates_to_costs_all <- function(allo_lst, rate_vec, cost_params, max_budget, cost_fun_vec = c("ob_cost", "emfg_cost", "emtrw_cost")) {
