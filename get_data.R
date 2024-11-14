@@ -12,7 +12,6 @@ if(!require("FMAtools")) devtools::install_github("Alaska-Fisheries-Monitoring-A
 if(!require("odbc")) install.packages("odbc", repos='http://cran.us.r-project.org')
 #if(!require("ROracle")) install.packages("ROracle", repos='http://cran.us.r-project.org')
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
-if(!require("lubridate"))   install.packages("lubridate", repos='http://cran.us.r-project.org') # For fixing datetimes
 if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.r-project.org') # ggplot2, dplyr, tidyr, readr, purrr, tibble, stringr, forcats  
 
 # Establish channels ------------------------------------------------------
@@ -93,6 +92,7 @@ fgem_requests <- dbGetQuery(channel_afsc, paste(
 
 #'[2025ADP: Hardcoding the one additional fixed-gear EM vessel following approval from Lisa Thompson
 setDT(fgem_requests)
+
 fgem_requests[VESSEL_NAME == "CAPE ST ELIAS", EM_REQUEST_STATUS := 'A']
 fgem_requests[VESSEL_NAME != "CAPE ST ELIAS", EM_REQUEST_STATUS := 'D']
 
@@ -339,14 +339,14 @@ under_forties
 # Flip STRATA_NEW to ZERO for vessels that are < 40 (according to FMA)
 work.data <- work.data[TRIP_ID %in% under_forties$TRIP_ID, ':=' (CVG_NEW = "PARTIAL", STRATA_NEW = "ZERO")]
 
-# View > 40's without coverage:
+# View >= 40's without coverage:
 over_forties <- filter(work.data, LENGTH_OVERALL > 39 & AGENCY_GEAR_CODE != "JIG" & STRATA_NEW == "ZERO" & !(VESSEL_ID %in% fgem_research$VESSEL_ID)) %>% 
   distinct(ADP, VESSEL_ID, TRIP_ID, STRATA, STRATA_NEW, AGENCY_GEAR_CODE, MANAGEMENT_PROGRAM_CODE, LENGTH_OVERALL) %>%
   left_join(VL)
 
 over_forties
 
-# Flip STRATA_NEW to gear-based strata for vessels that are > 40
+# Flip STRATA_NEW to gear-based strata for vessels that are >= 40
 work.data |>
   _[TRIP_ID %in% over_forties$TRIP_ID & !(VESSEL_ID %in% fgem_base$VESSEL_ID), 
     STRATA_NEW := paste0("OB_FIXED-", BSAI_GOA)
@@ -760,7 +760,7 @@ if(ADPyear == 2025) {
   
   # Replacing 2024 CGOA trawl effort with 2023 CGOA trawl effort ----
   
-  #' Because the 2024 B season in the CGOA was shorted, even if we adjust the expected number of trips we think would
+  #' Because the 2024 B season in the CGOA was shortened, even if we adjust the expected number of trips we think would
   #' have occurred in the stratum, during resampling, there wouldn't be any trips to populate that time/space from 2024
   #' trips. Therefore, we will assume that the CGOA trawl trips fished in 2023 will be a decent representation of the 
   #' kinds of trips we would have seen had in 2024 had the fishery not closed.
