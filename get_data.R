@@ -676,7 +676,7 @@ if(ADPyear == 2025) {
     ][, c("TRIP_TARGET_DATE", "LANDING_DATE") := NULL
     ][, MONTH := month(START)
       # Label the pollock seasons as A or B
-    ][, SEASON := fcase(MONTH <= 8, "A", MONTH > 5, "B")
+    ][, SEASON := fcase(MONTH < 5, "A", MONTH > 5, "B")
     ][, MONTH := factor(MONTH, levels = as.character(1:12))] |> 
     unique() |>
     # Recode old strata so it's easier to compare between ADP years
