@@ -90,7 +90,7 @@ fgem_requests <- dbGetQuery(channel_afsc, paste(
   "
 ))
 
-#'[2025ADP: Hardcoding the one additional fixed-gear EM vessel following approval from Lisa Thompson
+#'[2025ADP: Hardcoding the one additional fixed-gear EM vessel following approval from Lisa Thompson]
 setDT(fgem_requests)
 
 fgem_requests[VESSEL_NAME == "CAPE ST ELIAS", EM_REQUEST_STATUS := 'A']
