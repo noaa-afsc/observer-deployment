@@ -73,7 +73,7 @@ channel <- open_channel()
 
 #### Trawl EM Plant Days ----
 
-# Enter vector of ports accepting GOA-only catch from EM Trawl Vessels. Must be in camel-case as in norpac.atl_lov_port_code
+# Enter vector of ports accepting GOA-only catch from EM Trawl Vessels.
 goa_plants <- c("Kodiak", "False Pass")
 
 trawl_em_plant_days <- setDT(dbGetQuery(channel, paste0(
