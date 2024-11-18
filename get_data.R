@@ -32,126 +32,6 @@ load(paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", s
 
 # Data queries ------------------------------------------------------------
 
-#'* TESTING ---------------------------------------------------------------*
-
-# * GOA Trawl EM Tender Offloads ----
-
-#   TENDER_OFFLOAD_DATE needed to match CV deliveries to Tender deliveries
-#   Did not exist prior to 2021
-#   Not a required field in eLandings
-
-#'[TODO: Separate the queries from the wrangling]
-
-akro_offloads <- dbGetQuery(channel_afsc, paste(
-  "SELECT report_id, processor_permit_id, processor_name, vessel_id, vessel_name, vessel_adfg_number, landing_date,
-          agency_gear_code, tender_vessel_adfg_number,
-          trunc(o.tender_offload_date) AS tender_offload_date
-  FROM norpac_views.atl_landing_id o
-  WHERE o.year >= 2021 AND o.report_id IN (
-    SELECT m.report_id 
-    FROM norpac_views.atl_landing_mgm_id m
-    WHERE m.management_program_modifier = 'TEM' AND m.fmp_area_code = 'GOA')"
-)) %>%
-  mutate(TENDER_VESSEL_ADFG_NUMBER = as.numeric(TENDER_VESSEL_ADFG_NUMBER),
-         REPORT_ID = as.character(REPORT_ID),
-         VESSEL_ADFG_NUMBER = as.numeric(VESSEL_ADFG_NUMBER),
-         PROCESSOR_PERMIT_ID = as.numeric(PROCESSOR_PERMIT_ID)) %>%
-  # Add unique REPORT_ID to connect tender deliveries to observer data
-  mutate(OBS_REPORT_ID = case_when(!is.na(TENDER_OFFLOAD_DATE) & !is.na(TENDER_VESSEL_ADFG_NUMBER) ~ paste0(TENDER_VESSEL_ADFG_NUMBER, "_", TENDER_OFFLOAD_DATE),
-                                   TRUE ~ REPORT_ID)) %>%
-  relocate(OBS_REPORT_ID)
-# Missing matches for records near max_date of work.data
-
-# Create dataframe that only contains fish tickets associated with tender deliveries
-tender <- filter(akro_offloads, !is.na(TENDER_OFFLOAD_DATE))
-
-#'* Connecting observer data to EM offloads*
-
-# Observer recorded offload data
-obs_offloads <- dbGetQuery(channel_afsc, paste(
-    "SELECT o.landing_report_id AS report_id, o.cruise, o.permit AS processor_permit_id,
-            o.delivery_vessel_adfg, o.delivery_end_date, o.offload_to_tender_flag, o.pgm_code,
-            --Idenitifes where salmon counts were done (proxy for observer workload)
-            CASE WHEN EXISTS (
-              SELECT 1 FROM norpac.atl_salmon WHERE cruise = o.cruise AND permit = o.permit AND offload_seq = o.offload_seq)
-            THEN 'Y' ELSE 'N' END AS obs_salmon_cnt_flag
-    FROM norpac.atl_offload o
-    WHERE extract(year FROM delivery_end_date) >= 2021"
-    )
-  ) %>%
-  mutate(DELIVERY_VESSEL_ADFG = as.numeric(DELIVERY_VESSEL_ADFG),
-         PROCESSOR_PERMIT_ID = as.numeric(PROCESSOR_PERMIT_ID),
-         REPORT_ID = as.character(REPORT_ID)) %>%
-  #' `HARDCODE:` 10128212 and 10129403 vessel ADFG #'s do not match in 2024 (OBS: 31660, AKRO: 69765)
-  # Looks like observer used incorrect permit number: 3 vessels named ALASKA DAWN (2 are 90 ft, 1 is 41 ft [31660])
-  mutate(DELIVERY_VESSEL_ADFG = replace(DELIVERY_VESSEL_ADFG, REPORT_ID %in% c(10128212, 10129403), 69765)) %>%
-  # Restrict to only CVs and Tenders that reported EFP offloads
-  filter(DELIVERY_VESSEL_ADFG %in% c(akro_offloads$VESSEL_ADFG_NUMBER, akro_offloads$TENDER_VESSEL_ADFG_NUMBER)) %>%
-  # Restrict to only Processors that reported EFP offloads
-  filter(PROCESSOR_PERMIT_ID %in% akro_offloads$PROCESSOR_PERMIT_ID) %>%
-  # Separate Tender ADFG numbers from CV ADFG numbers
-  mutate(TENDER_VESSEL_ADFG_NUMBER = case_when(OFFLOAD_TO_TENDER_FLAG == "Y" ~ DELIVERY_VESSEL_ADFG)) %>%
-  mutate(DELIVERY_VESSEL_ADFG = replace(DELIVERY_VESSEL_ADFG, OFFLOAD_TO_TENDER_FLAG == "Y", NA)) %>%
-  # Add TENDER_OFFLOAD_DATE
-  mutate(TENDER_OFFLOAD_DATE = case_when(OFFLOAD_TO_TENDER_FLAG == "Y" ~ DELIVERY_END_DATE)) %>%
-  # Rename CV ADFG number column to match eLandings
-  rename(VESSEL_ADFG_NUMBER = DELIVERY_VESSEL_ADFG) %>%
-  # Add year column
-  mutate(YEAR = year(DELIVERY_END_DATE)) %>%
-  #' `HARDCODE:` Correct mismatch between Observer delivery date and eLandings delivery data
-  mutate(TENDER_OFFLOAD_DATE = case_when(TENDER_VESSEL_ADFG_NUMBER == 59109 & CRUISE == 26929 & TENDER_OFFLOAD_DATE == ymd("2024-09-19") ~ ymd("2024-09-18"),
-                                       TRUE ~ TENDER_OFFLOAD_DATE)) %>%
-  # Add unique REPORT_ID to connect tender deliveries to observer data
-  mutate(OBS_REPORT_ID = case_when(OFFLOAD_TO_TENDER_FLAG == "Y" ~ paste0(TENDER_VESSEL_ADFG_NUMBER, "_", TENDER_OFFLOAD_DATE),
-                                   TRUE ~ REPORT_ID)) %>%
-  # Restrict to OBS_REPORT_IDs in eLandings data
-  filter(OBS_REPORT_ID %in% akro_offloads$OBS_REPORT_ID)
-
-# Check for missing connections between datasets
-obs <- select(obs_offloads, OBS_REPORT_ID)
-ten <- akro_offloads %>% select(OBS_REPORT_ID) %>% distinct()
-
-compare <- anti_join(ten, obs)
-
-filter(akro_offloads, OBS_REPORT_ID %in% compare$OBS_REPORT_ID)
-# Missing CV fish tickets do not exist in norpac.atl_offload
-
-obs_EM_offloads <- obs_offloads %>%
-  select(OBS_REPORT_ID, OBS_SALMON_CNT_FLAG, YEAR)
-
-# Connect observer data to eLandings
-# Need to separate tender and CV landings to connect to observer data
-GOA_EM_tender <-
-  akro_offloads %>%
-  select(!c(REPORT_ID, LANDING_DATE, VESSEL_ADFG_NUMBER, VESSEL_NAME, VESSEL_ID)) %>%
-  filter(!is.na(TENDER_VESSEL_ADFG_NUMBER)) %>%
-  distinct() %>%
-  left_join(obs_EM_offloads, by = join_by(OBS_REPORT_ID))
-
-GOA_EM_cv <-
-  akro_offloads %>%
-  filter(is.na(TENDER_VESSEL_ADFG_NUMBER)) %>%
-  select(!c(TENDER_OFFLOAD_DATE, TENDER_VESSEL_ADFG_NUMBER)) %>%
-  left_join(obs_EM_offloads, by = join_by(OBS_REPORT_ID))
-# There are offloads here where we have no observer data
-
-# Exploratory plots
-ggplot(GOA_EM_tender, aes(x = PROCESSOR_NAME)) +
-  geom_bar() +
-  facet_grid(YEAR ~ .) +
-  theme(axis.text.x = element_text(angle = 90))
-
-CV <- GOA_EM_cv %>% mutate(type = "CV") %>% select(!c(REPORT_ID, LANDING_DATE, VESSEL_ID, VESSEL_NAME, VESSEL_ADFG_NUMBER))
-TEN <- GOA_EM_tender %>% mutate(type = "Tender") %>% select(!c(TENDER_OFFLOAD_DATE, TENDER_VESSEL_ADFG_NUMBER))
-
-combo <- rbind(CV, TEN)
-
-ggplot(combo, aes(x = PROCESSOR_NAME, fill = type)) +
-  geom_bar() +
-  facet_grid(YEAR ~ .) +
-  theme(axis.text.x = element_text(angle = 90))
-
-#'*------------------------------------------------------------------------*
 
 # * Partial Coverage CPs ----
 
@@ -226,6 +106,127 @@ AKROVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT ID AS vessel_id, length_over
 
 FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT AS vessel_id, length AS fmavl 
                     FROM norpac.atl_lov_vessel")
+
+#'* TESTING ---------------------------------------------------------------*
+
+# * GOA Trawl EM Tender Offloads ----
+
+#   TENDER_OFFLOAD_DATE needed to match CV deliveries to Tender deliveries
+#   Did not exist prior to 2021
+#   Not a required field in eLandings
+
+#'[TODO: Separate the queries from the wrangling]
+
+akro_offloads <- dbGetQuery(channel_afsc, paste(
+  "SELECT report_id, processor_permit_id, processor_name, vessel_id, vessel_name, vessel_adfg_number, landing_date,
+          agency_gear_code, tender_vessel_adfg_number,
+          trunc(o.tender_offload_date) AS tender_offload_date
+  FROM norpac_views.atl_landing_id o
+  WHERE o.year >= 2021 AND o.report_id IN (
+    SELECT m.report_id 
+    FROM norpac_views.atl_landing_mgm_id m
+    WHERE m.management_program_modifier = 'TEM' AND m.fmp_area_code = 'GOA')"
+)) %>%
+  mutate(TENDER_VESSEL_ADFG_NUMBER = as.numeric(TENDER_VESSEL_ADFG_NUMBER),
+         REPORT_ID = as.character(REPORT_ID),
+         VESSEL_ADFG_NUMBER = as.numeric(VESSEL_ADFG_NUMBER),
+         PROCESSOR_PERMIT_ID = as.numeric(PROCESSOR_PERMIT_ID)) %>%
+  # Add unique REPORT_ID to connect tender deliveries to observer data
+  mutate(OBS_REPORT_ID = case_when(!is.na(TENDER_OFFLOAD_DATE) & !is.na(TENDER_VESSEL_ADFG_NUMBER) ~ paste0(TENDER_VESSEL_ADFG_NUMBER, "_", TENDER_OFFLOAD_DATE),
+                                   TRUE ~ REPORT_ID)) %>%
+  relocate(OBS_REPORT_ID)
+# Missing matches for records near max_date of work.data
+
+# Create dataframe that only contains fish tickets associated with tender deliveries
+tender <- filter(akro_offloads, !is.na(TENDER_OFFLOAD_DATE))
+
+#'* Connecting observer data to EM offloads*
+
+# Observer recorded offload data
+obs_offloads <- dbGetQuery(channel_afsc, paste(
+  "SELECT o.landing_report_id AS report_id, o.cruise, o.permit AS processor_permit_id,
+            o.delivery_vessel_adfg, o.delivery_end_date, o.offload_to_tender_flag, o.pgm_code,
+            --Idenitifes where salmon counts were done (proxy for observer workload)
+            CASE WHEN EXISTS (
+              SELECT 1 FROM norpac.atl_salmon WHERE cruise = o.cruise AND permit = o.permit AND offload_seq = o.offload_seq)
+            THEN 'Y' ELSE 'N' END AS obs_salmon_cnt_flag
+    FROM norpac.atl_offload o
+    WHERE extract(year FROM delivery_end_date) >= 2021"
+)
+) %>%
+  mutate(DELIVERY_VESSEL_ADFG = as.numeric(DELIVERY_VESSEL_ADFG),
+         PROCESSOR_PERMIT_ID = as.numeric(PROCESSOR_PERMIT_ID),
+         REPORT_ID = as.character(REPORT_ID)) %>%
+  #' `HARDCODE:` 10128212 and 10129403 vessel ADFG #'s do not match in 2024 (OBS: 31660, AKRO: 69765)
+  # Looks like observer used incorrect permit number: 3 vessels named ALASKA DAWN (2 are 90 ft, 1 is 41 ft [31660])
+  mutate(DELIVERY_VESSEL_ADFG = replace(DELIVERY_VESSEL_ADFG, REPORT_ID %in% c(10128212, 10129403), 69765)) %>%
+  # Restrict to only CVs and Tenders that reported EFP offloads
+  filter(DELIVERY_VESSEL_ADFG %in% c(akro_offloads$VESSEL_ADFG_NUMBER, akro_offloads$TENDER_VESSEL_ADFG_NUMBER)) %>%
+  # Restrict to only Processors that reported EFP offloads
+  filter(PROCESSOR_PERMIT_ID %in% akro_offloads$PROCESSOR_PERMIT_ID) %>%
+  # Separate Tender ADFG numbers from CV ADFG numbers
+  mutate(TENDER_VESSEL_ADFG_NUMBER = case_when(OFFLOAD_TO_TENDER_FLAG == "Y" ~ DELIVERY_VESSEL_ADFG)) %>%
+  mutate(DELIVERY_VESSEL_ADFG = replace(DELIVERY_VESSEL_ADFG, OFFLOAD_TO_TENDER_FLAG == "Y", NA)) %>%
+  # Add TENDER_OFFLOAD_DATE
+  mutate(TENDER_OFFLOAD_DATE = case_when(OFFLOAD_TO_TENDER_FLAG == "Y" ~ DELIVERY_END_DATE)) %>%
+  # Rename CV ADFG number column to match eLandings
+  rename(VESSEL_ADFG_NUMBER = DELIVERY_VESSEL_ADFG) %>%
+  # Add year column
+  mutate(YEAR = year(DELIVERY_END_DATE)) %>%
+  #' `HARDCODE:` Correct mismatch between Observer delivery date and eLandings delivery data
+  mutate(TENDER_OFFLOAD_DATE = case_when(TENDER_VESSEL_ADFG_NUMBER == 59109 & CRUISE == 26929 & TENDER_OFFLOAD_DATE == ymd("2024-09-19") ~ ymd("2024-09-18"),
+                                         TRUE ~ TENDER_OFFLOAD_DATE)) %>%
+  # Add unique REPORT_ID to connect tender deliveries to observer data
+  mutate(OBS_REPORT_ID = case_when(OFFLOAD_TO_TENDER_FLAG == "Y" ~ paste0(TENDER_VESSEL_ADFG_NUMBER, "_", TENDER_OFFLOAD_DATE),
+                                   TRUE ~ REPORT_ID)) %>%
+  # Restrict to OBS_REPORT_IDs in eLandings data
+  filter(OBS_REPORT_ID %in% akro_offloads$OBS_REPORT_ID)
+
+# Check for missing connections between datasets
+obs <- select(obs_offloads, OBS_REPORT_ID)
+ten <- akro_offloads %>% select(OBS_REPORT_ID) %>% distinct()
+
+compare <- anti_join(ten, obs)
+
+filter(akro_offloads, OBS_REPORT_ID %in% compare$OBS_REPORT_ID)
+# Missing CV fish tickets do not exist in norpac.atl_offload
+
+obs_EM_offloads <- obs_offloads %>%
+  select(OBS_REPORT_ID, OBS_SALMON_CNT_FLAG, YEAR)
+
+# Connect observer data to eLandings
+# Need to separate tender and CV landings to connect to observer data
+GOA_EM_tender <-
+  akro_offloads %>%
+  select(!c(REPORT_ID, LANDING_DATE, VESSEL_ADFG_NUMBER, VESSEL_NAME, VESSEL_ID)) %>%
+  filter(!is.na(TENDER_VESSEL_ADFG_NUMBER)) %>%
+  distinct() %>%
+  left_join(obs_EM_offloads, by = join_by(OBS_REPORT_ID))
+
+GOA_EM_cv <-
+  akro_offloads %>%
+  filter(is.na(TENDER_VESSEL_ADFG_NUMBER)) %>%
+  select(!c(TENDER_OFFLOAD_DATE, TENDER_VESSEL_ADFG_NUMBER)) %>%
+  left_join(obs_EM_offloads, by = join_by(OBS_REPORT_ID))
+# There are offloads here where we have no observer data
+
+# Exploratory plots
+ggplot(GOA_EM_tender, aes(x = PROCESSOR_NAME)) +
+  geom_bar() +
+  facet_grid(YEAR ~ .) +
+  theme(axis.text.x = element_text(angle = 90))
+
+CV <- GOA_EM_cv %>% mutate(type = "CV") %>% select(!c(REPORT_ID, LANDING_DATE, VESSEL_ID, VESSEL_NAME, VESSEL_ADFG_NUMBER))
+TEN <- GOA_EM_tender %>% mutate(type = "Tender") %>% select(!c(TENDER_OFFLOAD_DATE, TENDER_VESSEL_ADFG_NUMBER))
+
+combo <- rbind(CV, TEN)
+
+ggplot(combo, aes(x = PROCESSOR_NAME, fill = type)) +
+  geom_bar() +
+  facet_grid(YEAR ~ .) +
+  theme(axis.text.x = element_text(angle = 90))
+
+#'*------------------------------------------------------------------------*
 
 # * Valhalla ----
 
@@ -645,6 +646,11 @@ trips_melt <- trips_melt %>%
 if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected in trips_melt")}
 
 # Summaries -------------------------------------------------------------------------------------------------------
+
+
+#'* LIKELY AREA TO DEAL WITH TRAWL EM TENDERS ---------------------------------*
+#'*----------------------------------------------------------------------------*
+
 
 # * Full Coverage Summary ----
 
