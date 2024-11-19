@@ -16,12 +16,16 @@ spatiotemp_data_prep <- function(valhalla){
   #' This function is used for the Annual Report, and therefore uses STRATA to define strata, not STRATA_NEW, which is 
   #' used for the Annual Deployment Plans.
   
-  # Subset to partial coverage trips only
-  pc_effort_dt <- valhalla[COVERAGE_TYPE == "PARTIAL"]
-  # Change TRIP_ID to integer class, keeping original TRIP_ID for posterity as (wd_TRIP_ID, or 'work.data TRIP_ID')
-  pc_effort_dt[, wd_TRIP_ID := TRIP_ID][, TRIP_ID := NULL][, TRIP_ID := .GRP, keyby = .(wd_TRIP_ID)]
-  # Change VESSEL_ID to integer class and use it to replace PERMIT (some years don't have PERMIT!)
-  pc_effort_dt[, PERMIT := NULL][, PERMIT := as.integer(VESSEL_ID)]
+  pc_effort_dt <- valhalla |>
+    # Subset to partial coverage trips only
+    _[COVERAGE_TYPE == "PARTIAL"
+      # Change TRIP_ID to integer class, keeping original TRIP_ID for posterity as (wd_TRIP_ID, or 'work.data TRIP_ID')
+    ][, wd_TRIP_ID := TRIP_ID
+    ][, TRIP_ID := NULL
+    ][, TRIP_ID := .GRP, keyby = .(wd_TRIP_ID)
+      # Change VESSEL_ID to integer class and use it to replace PERMIT (some years don't have PERMIT!)
+    ][, PERMIT := NULL
+    ][, PERMIT := as.integer(VESSEL_ID)]
   # Count total of partial coverage trips
   pc_trip_id_count <- uniqueN(pc_effort_dt$TRIP_ID)
   
@@ -44,13 +48,13 @@ spatiotemp_data_prep <- function(valhalla){
   #   stop("Something went wrong making 'fmp_bs_ai_goa'")
   # }
   
-  # Simplify the output
-  pc_effort_dt <- unique(
-    pc_effort_dt[, .(
-      PERMIT, TARGET = TRIP_TARGET_CODE, AREA = as.integer(REPORTING_AREA_CODE), AGENCY_GEAR_CODE, BSAI_GOA,
-      GEAR = ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", AGENCY_GEAR_CODE), STRATA, OBSERVED_FLAG,
-      TRIP_TARGET_DATE, LANDING_DATE, ADFG_STAT_AREA_CODE = as.integer(ADFG_STAT_AREA_CODE), wd_TRIP_ID),
-      keyby = .(ADP = as.integer(ADP), TRIP_ID)])
+  # Simplify the output, keeping only the columns that are needed
+  pc_effort_dt <- pc_effort_dt[, .(
+    PERMIT, TARGET = TRIP_TARGET_CODE, AREA = as.integer(REPORTING_AREA_CODE), AGENCY_GEAR_CODE, BSAI_GOA,
+    GEAR = ifelse(AGENCY_GEAR_CODE %in% c("PTR", "NPT"), "TRW", AGENCY_GEAR_CODE), STRATA, OBSERVED_FLAG,
+    TRIP_TARGET_DATE, LANDING_DATE, ADFG_STAT_AREA_CODE = as.integer(ADFG_STAT_AREA_CODE), DAYS, wd_TRIP_ID
+    ), keyby = .(ADP = as.integer(ADP), TRIP_ID)] |>
+    unique()
   
   #' Merge in FMP classifications, only if you want to add "BS_AI_GOA" 
   # pc_effort_dt <- pc_effort_dt[fmp_bs_ai_goa, on = .(TRIP_ID)]
@@ -67,20 +71,19 @@ spatiotemp_data_prep <- function(valhalla){
   # Make sure no full coverage trips are still in the dataset.
   if(any(unique(pc_effort_dt$STRATA) == "FULL")) stop("There are some FULL coverage trips in the partial coverage dataset!")
   
-  # Replace spaces in STRATA with underscores
-  pc_effort_dt[, STRATA := gsub(" ", "_", STRATA)]
-  
-  # Set the order of columns
-  setcolorder(pc_effort_dt, neworder = c(
-    "ADP", "POOL", "PERMIT", "TRIP_ID", "STRATA", "AGENCY_GEAR_CODE", "GEAR", "TRIP_TARGET_DATE", "LANDING_DATE", "AREA", 
-    "ADFG_STAT_AREA_CODE", "BSAI_GOA", "TARGET", "wd_TRIP_ID", "OBSERVED_FLAG"
-  ))
-  setorder(pc_effort_dt, ADP, POOL, PERMIT, TRIP_TARGET_DATE)
-  
-  # For some reason, my shapefiles don't include ADFG STAT AREA 515832. Seem like it was merged into 515831. 
-  pc_effort_dt[ADFG_STAT_AREA_CODE == 515832, ADFG_STAT_AREA_CODE := 515831]
-  pc_effort_dt <- unique(pc_effort_dt)
-  
+  # Finalize formatting
+  pc_effort_dt <- pc_effort_dt |>
+    # Set the order of columns
+    setcolorder(neworder = c(
+      "ADP", "POOL", "PERMIT", "TRIP_ID", "STRATA", "AGENCY_GEAR_CODE", "GEAR", "TRIP_TARGET_DATE", "LANDING_DATE", "AREA", 
+      "ADFG_STAT_AREA_CODE", "BSAI_GOA", "TARGET", "wd_TRIP_ID", "OBSERVED_FLAG"
+    )) |>
+    # Arrange trips by key columns
+    setorder(ADP, POOL, PERMIT, TRIP_TARGET_DATE) |>
+    # For some reason, my shapefiles don't include ADFG STAT AREA 515832. Seem like it was merged into 515831. 
+    _[ADFG_STAT_AREA_CODE == 515832, ADFG_STAT_AREA_CODE := 515831] |>
+    unique()
+
   # Double-check that all trips have a non-NA for STRATA
   if(nrow(pc_effort_dt[is.na(STRATA)])) stop("Some trips don't have a non-NA STRATA")
   
@@ -88,18 +91,19 @@ spatiotemp_data_prep <- function(valhalla){
   pc_effort_dt
 }
 
-# This function returns a list with each trip's list of unique Julian dates
+# This function returns a list with each trip's list of unique Julian dates. Used by ob_cost_new() and bootstrap_allo()
 trip_dates <- function(x) {
-  # x <- pc_effort_st
-  trip_dates_dt <- x[, .(
-    START = julian.Date(min(TRIP_TARGET_DATE, LANDING_DATE)), END = julian.Date(max(TRIP_TARGET_DATE, LANDING_DATE))
-  ), keyby = .(ADP, STRATA, TRIP_ID)]
-  trip_dates_lst <- apply(trip_dates_dt, 1, function(x) seq(x[["START"]], x[["END"]], 1))
+
+  trip_dates_dt <- x |>
+    _[, c("START", "END") := lapply(.SD, as.integer), .SDcols = c("TRIP_TARGET_DATE", "LANDING_DATE")
+    ][, as.list(range(START, END)), keyby = .(ADP, STRATA, TRIP_ID)]
+  trip_dates_lst <- apply(trip_dates_dt, 1, function(x) seq(x[["V1"]], x[["V2"]], 1))
   names(trip_dates_lst) <- trip_dates_dt$TRIP_ID
   list(
     dt = trip_dates_dt,
     lst = trip_dates_lst
   )
+  
 }
 
 
@@ -108,7 +112,7 @@ trip_dates <- function(x) {
 #======================================================================================================================#
 
 # Converts ADFG Stat Area to an iso-area hexagon grid. Specify the cell size in meters as the width of each hex cell.
-# cell size. The output is a dataframe with corresponding ADFG_STAT_AREA_CODEs and HEX_IDs, as well as the
+# The output is a dataframe with corresponding ADFG_STAT_AREA_CODEs and HEX_IDs, as well as the
 # simple feature object (class sf) of the hex cell polygons.
 stat_area_to_hex <- function(cell_size, stat_area_sf){
   
@@ -122,7 +126,7 @@ stat_area_to_hex <- function(cell_size, stat_area_sf){
   # Get centroids of statistical areas
   stat_area_centroid_sf <- suppressWarnings(st_centroid(stat_area_sf))  
   
-  # Generate a hex cell grid using the projection and boundaries from stat_area_centroid_sf, will cell size specified by
+  # Generate a hex cell grid using the projection and boundaries from stat_area_centroid_sf, with cell size specified by
   # 'cell_size'. Subset this using stat_area_centroid_sf so only cells overlapping with it are retained.
   hex_grid_sf <- st_make_grid(
     x = stat_area_centroid_sf, 
@@ -159,7 +163,7 @@ stat_area_to_hex <- function(cell_size, stat_area_sf){
 #' Applies a box definition to fishing effort prepared by spatiotemp_data_prep(), defined by `space`: width of hex cell 
 #' in km and the radius of its neighborhood) as well as `time`: the function (currently only tested with 'week') and the 
 #' number of time units. `year_col`. In allocation, `stratum_cols` is used to specify the columns used in stratification
-#' and optionally, `ps_cols` is used to define the columns used in post-stratification, such a gear type to split HAL 
+#' and optionally, `ps_cols` is used to define the columns used in post-stratification, such as gear type to split HAL 
 #' and POT trips within the fixed-gear strata. Optionally, `dmn_cols` is used in evaluation to specify attributes to 
 #' allow neighboring across strata  and is given as a list where the `nst` item is a vector of non-spatiotemporal
 #' columns such as gear type and `st` is a vector of spatial columns such as BSAI_GOA.
@@ -272,7 +276,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
   week_vec <- sapply(date_vec, get(time[[1]]))         # Identify the week of each date
   dates_mtx <- cbind(date_vec, week_vec)               # Combine date vector and week vector
   
-  dates_start <- min(dates_mtx[, 1]) - 1  # Get first date and subtract 1. T
+  dates_start <- min(dates_mtx[, 1]) - 1  # Get first date and subtract 1.
   dates_mtx[, 1] <- dates_mtx[, 1] - dates_start  # This makes it so matrix can be reference by row index, much faster
   # TODO Check behavior of neighboring at ADP year thresholds
   
@@ -284,7 +288,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
   # Convert to matrix and split by TRIP_ID and HEX_ID
   time_lst <- as.matrix(cbind(time_int - dates_start, data_int[, .(GRP)]))
   time_lst <- lapply(split(time_lst, time_lst[, "GRP"], drop = F), matrix, ncol = 3)
-  # For each TRIP_ID x HEX_ID, identify unique weeks
+  # For each TRIP_ID × HEX_ID, identify unique weeks
   time_lst <- lapply(time_lst, function(x) {
     dates_int <- unique(unlist(apply(x, 1, function(y) y[1] : y[2], simplify = F)))  # get unique days
     unique(dates_mtx[dates_int, 2, drop = F])                     # Identify week using dates_mtx
@@ -351,7 +355,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
     X = split(x = subset(data, select = c(group_cols, "BOX_ID", "TRIP_ID", "PS_ID")), by = group_cols, keep.by = F),
     FUN = as.matrix)
   
-  # Make the frequency table of each TRIP_ID (so that trips are properly split by HEX_ID, TIME, and if present, ps_cols
+  # Make the frequency table of each TRIP_ID (so that trips are properly split by HEX_ID, TIME, and if present, ps_cols)
   trip_id_mat <- do.call(rbind, lapply(
     data_lst,
     function(p) {
@@ -389,7 +393,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
         x2 <- do.call(rbind, lapply(x1, function(y) {
           # y <- x1[1]   # Box 5749
           
-          trip_id_centered <- x[x[,1] == y, 2]    # Identify number of trips actually  the box
+          trip_id_centered <- x[x[,1] == y, 2]    # Identify number of trips actually in the box
           # There shouldn't ever be the same trip counted twice in the same box.
           if( length(trip_id_centered) != length(unique(trip_id_centered)) ) stop("There is a duplicate trip_id!")
           
@@ -514,13 +518,13 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
           as.data.table(do.call(rbind, lapply(nst_dmn_boxes, function(z1) {
             # z1 <- nst_dmn_boxes[1]
             
-            # Identify all trips in the domain x stratum in this box
+            # Identify all trips in the domain × stratum in this box
             trip_id_centered <- unique(z[z[, "BOX_ID"] == z1, "TRIP_ID"])
             c(
               BOX_ID = z1,
               BOX_DMN_n = length(trip_id_centered),
               BOX_DMN_w = sum(1 / trip_id_dmn_vec[trip_id_centered]),
-              # count number of neighboring trips in the nst_dmn X stratum ()
+              # count number of neighboring trips in the nst_dmn × stratum ()
               BOX_DMN_nbr = length(unique(y[y[, "BOX_ID"] %in% nbr_lst[[z1]], "TRIP_ID"]))
             )
             
@@ -545,7 +549,7 @@ define_boxes <- function(data, space, time, year_col, stratum_cols, dmn_lst = NU
     dmn_nbr_dt <- box_id_details[dmn_nbr_dt, on = .(BOX_ID)]
     setcolorder(dmn_nbr_dt, c(year_col, stratum_cols, dmn_cols, "BOX_ID", "BOX_DMN_n", "BOX_DMN_w", "BOX_DMN_nbr"))
     
-    # Calculate Number of trips in each STRATA x dmn_cols. Note that trips that have multiple 
+    # Calculate Number of trips in each STRATA × dmn_cols. Note that trips that have multiple 
     # 'dmn_cols' were split here!
     strata_dmn_N_dt <- dmn_nbr_dt[, .(STRATA_DMN_N = sum(BOX_DMN_w)), by = c(year_col, stratum_cols, dmn_cols)]
     
@@ -616,35 +620,40 @@ allo_equal <- function(x, budget){
 ## Proximity -----------------------------------------------------------------------------------------------------------
 
 #' Bootstrap fishing effort for each stratum, sampling trips without replacement.
-#' `sample_N` is a data.table of columns `STRATA` and the predicted number of trips as `sample_N`.
-bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budget_lst, bootstrap_iter = 1, seed = 12345) {
+#' `sample_N` is a data.table of columns `STRATA` and the predicted number of trips as `N`.
+bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budget_lst, seed = 12345) {
   #' [Defaults to use when effort_prediction.R is not yet run]
-  # effort_pred_n <- pc_effort_st[, .(N = uniqueN(TRIP_ID)), keyby = .(ADP, STRATA)]; bootstrap_iter <- 1
+  # seed <- 12345
+  
+  time_start <- Sys.time()
+  if( length(sample_N) > 1 ) cat(paste0("[Start: ", time_start, "]\n"))
   
   pc_effort_lst <- split(pc_effort_st, by = "STRATA")
   
   # Make sure names and ordering are the same
-  if(!identical(names(pc_effort_lst), sample_N$STRATA)) stop("Strata names/order are not the same!")
+  if(!identical(names(pc_effort_lst), sample_N[[1]]$STRATA)) stop("Strata names/order are not the same!")
+  
+  # sample_N_lst <- split(sample_N, by = "STRATA")
   
   # Initialize bootstrap list
-  swor_boot_lst <- vector(mode = "list", length = bootstrap_iter)
+  swor_boot_lst <- vector(mode = "list", length = length(sample_N))
   
   set.seed(seed)
-  for(k in seq_len(bootstrap_iter)) {
+  for(k in seq_along(sample_N)) {
     # k <- 1
-    cat(k, ", ")
+    cat(paste0(k, ", "))
     
-    # Bootstrap using adp_strata_N to sample each stratum's population size size
+    # Bootstrap using each item in strata_N to resample each stratum's population size
     swor_bootstrap.effort <- rbindlist(Map(
       function(prior, strata_N) {
-        # prior <- pc_effort_lst[[5]]; strata_N <- sample_N$N[5]
+        # prior <- pc_effort_lst[[5]]; strata_N <-  split(sample_N[[k]], by = "STRATA")[[5]]
         
         # Create vector of TRIP_IDs
         trip_ids <- unique(prior$TRIP_ID)
         # How many times does prior effort go into future effort?
-        prior_vs_future <- floor(strata_N / length(trip_ids))
+        prior_vs_future <- floor(strata_N$N / length(trip_ids))
         # What number of trips should be sampled without replacement?
-        swr_n <- strata_N - (length(trip_ids) * prior_vs_future)
+        swr_n <- strata_N$N - (length(trip_ids) * prior_vs_future)
         # Create dt of trip_ids
         sampled_trip_ids <- data.table(
           TRIP_ID = c(
@@ -657,75 +666,79 @@ bootstrap_allo <- function(pc_effort_st, sample_N, box_params, cost_params, budg
         sampled_trip_ids[, I := .I]
         # Bring in each trip's data
         bootstrap_sample <- prior[sampled_trip_ids, on = .(TRIP_ID), allow.cartesian = T]
+        bootstrap_sample
       }, 
       prior = pc_effort_lst,
-      strata_N = sample_N$N
+      strata_N = split(sample_N[[k]], by = "STRATA")
     ))
     
     # Re-assign trip_id so that we can differentiate trips sampled multiple times
     swor_bootstrap.effort[, TRIP_ID := .GRP, keyby = .(ADP, STRATA, BSAI_GOA, TRIP_ID, I)]
-    if(uniqueN(swor_bootstrap.effort$TRIP_ID) != sum(sample_N$N)) stop("Count of TRIP_IDs doesn't match!")
-    
-    # [2024 only] Apply the Trawl EM EFP opt-in probability, move those that 'opt-out' into OB_TRW-GOA
-    # em_trw_id <- unique(swor_bootstrap.effort[STRATA == "EM_TRW-GOA", TRIP_ID ])
-    # # Randomly sample vessels as opting in (TRUE) or out (FALSE) of the EFP. We will use the 'expected' number of trips
-    # # opting out rather than allowing it to be stochastic so that STRATA_N does not vary between iterations.
-    # trw_em_opt_out_N <- round(sample_N[STRATA == "EM_TRW-GOA", N] * efp_prob[COVERAGE_TYPE == "PARTIAL", 1 - EFP_PROB])
-    # trw_em_opt_out_id <- sample(em_trw_id, size = trw_em_opt_out_N)
-    # swor_bootstrap.effort[TRIP_ID %in% trw_em_opt_out_id, ':=' (POOL = "OB", STRATA = "OB_TRW-GOA")]
+    if(uniqueN(swor_bootstrap.effort$TRIP_ID) != sum(sample_N[[k]]$N)) stop("Count of TRIP_IDs doesn't match!")
     
     # Define boxes of bootstrapped effort
-    
-    #' TODO *Have this function take the box definition parameters!*
-    
     swor_bootstrap.box <- define_boxes(
       swor_bootstrap.effort, space = box_params$space, time = box_params$time,
       year_col = box_params$year_col, stratum_cols = box_params$stratum_cols, ps_cols = box_params$ps_cols )
     
     # Calculate each stratum's mean trip duration of bootstrapped effort
-    swor_bootstrap.allo_lst <- list(effort = unique(swor_bootstrap.effort[, .(ADP, STRATA, BSAI_GOA, TRIP_ID, DAYS)])[
-    ][, .(STRATA_N = uniqueN(TRIP_ID), TRP_DUR = mean(DAYS)), keyby = .(ADP, STRATA)])
+    swor_bootstrap.allo_lst <- list(
+      effort = unique(swor_bootstrap.effort[, .(ADP, STRATA, BSAI_GOA, TRIP_ID, DAYS)]) |>
+        _[, .(STRATA_N = uniqueN(TRIP_ID), TRP_DUR = mean(DAYS)), keyby = .(ADP, STRATA)]
+    )
     
-    #' * TESTING ============================*
+    # For observer stratum trips, create a vector of Julian Days
     ob_contract_dates <- trip_dates(swor_bootstrap.effort[STRATA %like% "OB_"])
     # For each trip, calculate the proportion of dates the occurred BEFORE the contract change date
     ob_contract_calc <- ob_contract_dates$dt[, .(TRIP_ID)]
     ob_contract_calc$PROP <- sapply(
       ob_contract_dates$lst, function(x) sum(x < julian.Date(cost_params$OB$contract_change_date)) / length(x)
     )
-    # Merge ADP, STRATA, and DAYS back in
-    ob_contract_calc <- unique(swor_bootstrap.effort[STRATA %like% "OB_", .(ADP, STRATA, TRIP_ID, DAYS)])[
-    ][ob_contract_calc, on = .(TRIP_ID)]
-    # For each Stratum, calculate the number of days on contract period 1 and contract period 2
-    ob_contract_calc <- ob_contract_calc[, .(
-      CONTRACT_1 = sum(DAYS * PROP),
-      CONTRACT_2 = sum(DAYS *(1 - PROP))
-    ), keyby = .(ADP, STRATA)]
+    # Summarize the number of days on each partial coverage contract for each stratum
+    ob_contract_calc <- swor_bootstrap.effort |>
+      _[STRATA %like% "OB_", .(ADP, STRATA, TRIP_ID, DAYS)] |>
+      unique() |>
+      # Merge in proportion of days on each contract for each trip
+      _[ob_contract_calc, on = .(TRIP_ID)
+        # For each Stratum, calculate the number of days on contract period 1 and contract period 2
+      ][, .(
+        CONTRACT_1 = sum(DAYS * PROP),
+        CONTRACT_2 = sum(DAYS *(1 - PROP))
+      ), keyby = .(ADP, STRATA)]
+    
     # Merge in contract proportions
     swor_bootstrap.allo_lst$effort <- ob_contract_calc[swor_bootstrap.allo_lst$effort, on = .(ADP, STRATA)]
-    #' * TESTING ============================*
+    
+    # Calculate the number of sea days in Trawl EM and shuttle this to cost_params
+    cost_params$EMTRW$emtrw_sea_days <-  swor_bootstrap.effort |>
+      _[STRATA == "EM_TRW-GOA", .(TRIP_ID, DAYS)] |> 
+      unique() |>
+      _[, sum(DAYS)]
     
     # Calculate rates afforded with the specified budget.
-    
-    #' [NOTE] The `allo_prox()` function currently excludes the "EM_TRW" strata by default.
+    #' [NOTE:] The `allo_prox()` function currently excludes the "EM_TRW" strata by default.
     swor_bootstrap.rates <- allo_prox(
-      swor_bootstrap.box, swor_bootstrap.allo_lst, cost_params, budget_lst[[1]], max_budget = 7e6, index_interval = 0.0001
+      swor_bootstrap.box, swor_bootstrap.allo_lst, cost_params, 
+      budget_lst[[1]], max_budget = 6e6, index_interval = 0.0001
     )
     # Capture results of iteration
     swor_boot_lst[[k]] <- list(
       rates = swor_bootstrap.rates,
-      strata_N = sample_N
+      strata_N = sample_N[[k]],
+      resample = unique(swor_bootstrap.effort[, .(wd_TRIP_ID, I)])
     )
-    
+  }
+  
+  time_end <- Sys.time()
+  if( length(sample_N) > 1 ) {
+    cat(paste0("[End:   ", time_end, "]\n"))
+    cat(paste("[Elapsed: ", round(as.numeric(time_end - time_start, units = "mins"),3), "min]"))
   }
   
   swor_boot_lst
 }
 
-
-
-
-#' This was the version used inthe 2024 Final ADP in the final_rates.R script. Used `calculate_prox`
+#' This was the version used in the 2024 Final ADP in the final_rates.R script. Used `calculate_prox`
 #' and `calculate_cost`
 allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_interval = 0.001, range_var = 1) { 
   
@@ -751,7 +764,9 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
   
   for(i in year_vec) {
     
-    box_def_sub.prox.range <- calculate_prox(box_def, sample_rate_vec = c(0.0001, seq(0.05, 1, by = 0.001)), omit_strata = "ZERO" )$prox_dt[ADP == i]
+    box_def_sub.prox.range <- calculate_prox(
+      box_def, sample_rate_vec = c(0.0001, seq(0.05, 1, by = 0.001)), omit_strata = "ZERO" 
+    )$prox_dt[ADP == i]
     # Calculate index for each stratum
     box_def_sub.prox.range[
     ][, n := SAMPLE_RATE * STRATA_N
@@ -794,6 +809,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
     # Get all stratum names
     strata_dt <- unique(box_def$strata_n_dt[, ..stratum_cols])
     prox_by_stratum_lst <- vector(mode = "list", length = nrow(strata_dt))
+    
     # Calculate proximity for each stratum using a focused range of sample rates
     for(k in 1:nrow(strata_dt)) {
       # k <- 1
@@ -807,11 +823,11 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
       )
       # Find the stratum's range of sample rates
       sample_range <- sapply(
-        index_vec_rates_costs[c(index_near_budget - range_var, index_near_budget + 1)],             # FIXME I have to do +2 instead of +1. findInterval always underestimates?
+        index_vec_rates_costs[c(index_near_budget - range_var, index_near_budget + 1)],
         function(x) x[strata_dt[k], on = c(box_def$params$stratum_cols), SAMPLE_RATE]
       )
-      # box_res <- copy(box_stratum); omit_strata <- NULL; sample_rate_vec <- seq(0.5, 575, by = 0.0001)
-      # Now, we go back calculating rates ever 0.0001 here.
+
+      # Now, we go back calculating rates every 0.0001 here.
       prox_by_stratum <- calculate_prox(box_stratum, sample_rate_vec = seq(sample_range[1], sample_range[2], by = 0.0001))$prox_dt
       prox_by_stratum[
       ][, n := SAMPLE_RATE * STRATA_N
@@ -823,8 +839,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
     }
     prox_by_list_dt <- rbindlist(prox_by_stratum_lst)
     
-    # find the common range of indices
-    # Find range if INDEX that is common to all strata x ADP
+    # Find range if INDEX that is common to all strata × ADP
     prox_by_list_dt[, as.list(setNames(range(INDEX), c("MIN", "MAX"))), by = c(stratum_cols)]
     
     index_range_afforded <- prox_by_list_dt[
@@ -833,7 +848,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
     
     prox_by_list_dt <- prox_by_list_dt[, .SD[between(INDEX, index_range_afforded$MIN, index_range_afforded$MAX )], by = c(stratum_cols)]
     
-    # I can set index_interval to 0.0001 to really get the closes to affording the budget. Does take 10x longer...
+    # I can set index_interval to 0.0001 to really get the closest to affording the budget. Does take 10× longer...
     prox_index_search <- seq(round(index_range_afforded$MIN,3), round(index_range_afforded$MAX,3), by = index_interval)
     index_costs2 <- lapply(prox_index_search, function(x) {
       x1 <- data.table(INDEX = x)
@@ -842,9 +857,8 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
       x2$STRATUM_COL <- stratum_column
       x2
     })
+    
     # Calculate the cost of each index
-    #' *TODO `calculate_cost()` now takes much longer to run for each index than before. *
-    # Generate the cost summaries for each index
     index_cost_lst <- lapply(index_costs2, function(x) {
       calculate_cost(x, cost_params, allo_lst, max_budget)
     })
@@ -869,6 +883,7 @@ allo_prox <- function(box_def, allo_lst, cost_params, budget, max_budget, index_
   
 }
 
+
 # Proximity
 calculate_cost <- function(index_rates, cost_params, allo_lst, max_budget) {
   
@@ -882,24 +897,21 @@ calculate_cost <- function(index_rates, cost_params, allo_lst, max_budget) {
   out <- rbindlist(lapply(
     split(index_rates_copy, by = "ADP"),
     function(x) {
-      
       index_vec <- unique(x$I)
       index_rates_lst <- vector(mode = "list", length = uniqueN(index_vec))
       
       for(i in 1:length(index_vec)) {
         index_rates_sub <- x[I == index_vec[i]]
         index_rates_sub_res <- cbind(
-          
           ob_cost_new(index_rates_sub[STRATA %like% "OB_"], cost_params, allo_lst$effort[STRATA %like% "OB_"]),
-          
           emfg_cost( index_rates_sub[STRATA %like% "EM_HAL|EM_POT|EM_FIXED"], cost_params),
-          emtrw_cost_new( index_rates_sub[STRATA %like% "EM_TRW"], cost_params)
+          emtrw_cost_new(cost_params)
         )
         index_rates_sub_res[, INDEX_COST := sum(OB_TOTAL, EMFG_TOTAL, EMTRW_TOTAL, na.rm = T)]
         # If the cost exceeds the specified maximum budget, don't bother continuing cost calculations
         if(index_rates_sub_res$INDEX_COST > max_budget) break 
         else (index_rates_lst[[i]] <- cbind(index_rates_sub_res, unique(index_rates_sub[, .(ADP, INDEX, I)])))
-      }  #how long does this take? Around 2 minutes?
+      }
       rbindlist(index_rates_lst)
     }
   ))
@@ -909,6 +921,7 @@ calculate_cost <- function(index_rates, cost_params, allo_lst, max_budget) {
   out
   
 }
+
 
 #' Calculate interspersion  * RENAME TO PROXIMITY*
 calculate_prox <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
@@ -927,7 +940,7 @@ calculate_prox <- function(box_res, sample_rate_vec, omit_strata = c(NULL)) {
     keep_strata <- rep(T, times = length(box_res$box_smry))
   }
   
-  # For for a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
+  # For a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
   # (0-1), and then multiply it by that post-stratum's total weight of component trips centered on the post-stratum.
   
   # For each sample rate...
@@ -1017,7 +1030,7 @@ calculate_proximity_old <- function(box_res, sample_rate_vec, omit_strata = c(NU
     keep_strata <- rep(T, times = length(box_res$box_smry))
   }
   
-  # For for a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
+  # For a range of sample rates, calculate the probably that a post-stratum would be near a sampled neighbor
   # (0-1), and then multiply it by that post-stratum's total weight of component trips centered on the post-stratum.
   
   # For each sample rate...
@@ -1085,7 +1098,7 @@ calculate_index <- function(prox_res, trip_cost_dt) {
   ][, CV_SCALING := sqrt(FPC * (1/n))
   ][, INDEX := PROX / CV_SCALING][]
   
-  # Find range if INDEX that is common to all strata x ADP
+  # Find range of INDEX that is common to all strata × ADP
   x2 <- x1[
   ][, .(MIN = min(INDEX), MAX = max(INDEX)), by = group_cols
   ][, .(MIN = max(MIN),  MAX = min(MAX)), by = year_col]
@@ -1355,7 +1368,7 @@ dmn_insp_percentile <- function(realized_insp, prog_sim, real_sim){
     
     # Subset the data for each group
     dat_sub <- realized_insp[i,]
-    # Define functions to calculate percentiles (feed in all simulated interspersion values from both distributions
+    # Define functions to calculate percentiles (feed in all simulated interspersion values from both distributions)
     ecdf_fun.prog <- ecdf(prog_sim$dim_insp.pool[dat_sub[, ..year_pool_domains], on = (year_pool_domains), INSP])
     ecdf_fun.real <- ecdf(real_sim$dim_insp.pool[dat_sub[, ..year_pool_domains], on = (year_pool_domains), INSP])
     # Calculate the percentiles and send to output list
@@ -1412,7 +1425,7 @@ calculate_density <- function(sim_res, fill_color, adjust = NULL) {
     
     # Extract the cutoffs of each group
     cutoffs <- dmn_density[, .SD[c(1, .N),], keyby = c(year_strata_domains, "quant", "FILL")]
-    # For the lower , add the x values of the tails 0 and 3
+    # For the lower, add the x values of the tails 0 and 3
     quant_1.min <- cutoffs[quant == 0][.N][, ':=' (FILL = fill_color, quant = 1)][]
     quant_1.max <- cutoffs[quant == 2][1][, ':=' (FILL = fill_color, quant = 1)][]
     
@@ -1479,7 +1492,7 @@ ob_cost <- function(x, cost_params, sim = F) {
   
 }
 
-# This version was created for the 2025 ADP to handle new PC  contract information
+# This version was created for the 2025 ADP to handle new PC contract information
 ob_cost_new <- function(x, cost_params, allo_sub, sim = F) {
 
   x1 <- x[STRATA %like% "OB_"]
@@ -1490,13 +1503,13 @@ ob_cost_new <- function(x, cost_params, allo_sub, sim = F) {
     #' *If simulating trip selection, allo_sub must be subset to selected trips*
     
     #' *=====================================================*
-    #' *TAKEN FROM* `bootstrap_allo()` Should probably make this a function
+    #' [TODO: Modified from* `bootstrap_allo()` *Should probably make this a function]
     
     ob_contract_dates <- trip_dates(allo_sub[STRATA %like% "OB_"])
-    # For each trip, calculate the proportion of dates the occurred BEFORE the contract change date
+    # For each trip, calculate the proportion of dates that occurred BEFORE the contract change date
     ob_contract_calc <- ob_contract_dates$dt[, .(TRIP_ID)]
     ob_contract_calc$PROP <- sapply(
-      ob_contract_dates$lst, function(x) sum(x < julian.Date(cost_params$OB$contract_change_date)) / length(x)
+      ob_contract_dates$lst, function(x) sum(x < as.integer(cost_params$OB$contract_change_date)) / length(x)
     )
     # Merge ADP, STRATA, and DAYS back in
     ob_contract_calc <- unique(allo_sub[STRATA %like% "OB_", .(ADP, STRATA, TRIP_ID, DAYS)])[
@@ -1529,8 +1542,8 @@ ob_cost_new <- function(x, cost_params, allo_sub, sim = F) {
   
   # Account for days already on the contract
   day_costs.contract[PERIOD == 1, DAYS_ON_CONTRACT := cost_params$OB$current_contract_days]
-  #' Count number of base days and guaranteed days on each contract. Check to see if we allocated the minimum number
-  #' of base days on contract 1
+  # Count number of base days and guaranteed days on each contract. Check to see if we allocated the minimum number
+  # of base days on contract 1
   min_days_met <- day_costs.contract[PERIOD == 1, OB_DAYS + DAYS_ON_CONTRACT] >= cost_params$OB$contract_day_min
   
   day_costs.contract[
@@ -1602,8 +1615,8 @@ emtrw_cost <- function(x, cost_params, sim = F) {
   
   emtrw_goa_v                <- cost_params$EMTRW$emtrw_goa_v
   trip_to_plant_factor       <- cost_params$EMTRW$trip_to_plant_factor   # Used to predict plant days from trips
-  amortized_equipment_per_VY <- cost_params$EMTRW$amortized_equipment_per_VY   # Per (Vessel x Year) amortized EM equipment install costs for GOA-only vessels
-  equipment_upkeep_per_VY    <- cost_params$EMTRW$equipment_upkeep_per_VY      # Per (Vessel x Year) EM equipment maintenance cost for GOA-only vessels
+  amortized_equipment_per_VY <- cost_params$EMTRW$amortized_equipment_per_VY   # Per (Vessel × Year) amortized EM equipment install costs for GOA-only vessels
+  equipment_upkeep_per_VY    <- cost_params$EMTRW$equipment_upkeep_per_VY      # Per (Vessel × Year) EM equipment maintenance cost for GOA-only vessels
   review_day_rate            <- cost_params$EMTRW$review_day_rate      # Per sea day cost for EM compliance review
   plant_day_rate             <- cost_params$EMTRW$plant_day_rate    # Per plant day cost for shoreside monitoring by observers
   
@@ -1641,18 +1654,22 @@ emtrw_cost <- function(x, cost_params, sim = F) {
 }
 
 # Now that it is a carve-off and we total the costs in monitoring_costs.R, this function becomes very simple
-emtrw_cost_new <- function(x, cost_params) {
-  #' Note that `x` isn't actually needed, but following the same syntax as other cost functions
+emtrw_cost_new <- function(cost_params) {
+  # Calculate review costs, based on the cost per review day and the number of days fished
   
-  data.table(
-    EMTRW_TOTAL = cost_params$EMTRW$emtrw_total_cost,
-    EMTRW_PLANT_OBS = cost_params$EMTRW$emtrw_summary[
-    ][Category %in% c("Observer Plant Day Costs", "Lodging", "Per Diem"), sum(Cost)],
+  emtrw_data_cost <- cost_params$EMTRW$emtrw_data_cpd * cost_params$EMTRW$emtrw_sea_days
+  
+  out <- data.table(
+    EMTRW_PLANT_OBS = cost_params$EMTRW$emtrw_summary |>
+      _[Category %in% c("Observer Plant Day Costs", "Lodging", "Per Diem"), sum(Cost)],
     EMTRW_BASE = cost_params$EMTRW$emtrw_summary[Category == "Equipment Maintenance", Cost],
-    EMTRW_DATA = cost_params$EMTRW$emtrw_summary[Category == "Data", Cost]
-  )
-  
+    EMTRW_DATA = emtrw_data_cost
+  ) |>
+    _[, EMTRW_TOTAL := cost_params$EMTRW$emtrw_total_cost][]
+  setcolorder(out, c("EMTRW_TOTAL", "EMTRW_PLANT_OBS", "EMTRW_BASE", "EMTRW_DATA"))
+  out
 }
+
 
 
 
@@ -1684,7 +1701,7 @@ rates_to_costs <- function(allo_lst_effort, rate_vec, cost_params, max_budget, c
     total_col <- which(colnames(cost_res) %like% "_TOTAL")
     
     # If all year have totals above out max, stop the loop.
-    # FIXME The ob_cost() model should be made logistic so CPD doesn't become low at extremely high volumns
+    # FIXME The ob_cost() model should be made logistic so CPD doesn't become low at extremely high volumes
     if(all(cost_res[[total_col]] > max_budget)) break() 
     else{
       out_lst[[i]] <- cbind(MON_RATE = rate_vec[i], cost_res)
@@ -1694,7 +1711,7 @@ rates_to_costs <- function(allo_lst_effort, rate_vec, cost_params, max_budget, c
   
 }
 
-# These functions would work a lot faster with matrices rather than data.frames! A lot if simple calculations...
+# These functions would work a lot faster with matrices rather than data.frames! A lot of simple calculations...
 # TODO VECTORIZE THIS: Will go much faster once vectorized
 # TODO Make it return an object like allo_lst that includes trip durations!
 rates_to_costs_all <- function(allo_lst, rate_vec, cost_params, max_budget, cost_fun_vec = c("ob_cost", "emfg_cost", "emtrw_cost")) {
