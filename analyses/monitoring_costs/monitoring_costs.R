@@ -431,7 +431,7 @@ goa_season_days <- goa_A_season_days + goa_B_season_days
 
 contract_days <- rbindlist(assign_dates, idcol = "CRUISE") |>
   _[cruise_year, on = .(CRUISE)
-    # 2023 is a safer model since 2024 B season was cut short
+    # 2023 is a safer analog since the 2024 B season was cut short
   ][YEAR == 2023
   ][, DATE := as.Date(DATE)
   ][, CONTRACT_HALF := ifelse(yday(DATE) <= yday(contract_end), 1, 2)
@@ -465,43 +465,54 @@ trw_em_day_costs  #' Total cost of sea days, accounting for guaranteed and optio
 
 ### Lodging ----
 
-#' Per e-mail from [Lisa Thompson 2024-Aug-16], lodging and per diem rates.
+#' Per e-mail from Lisa Thompson 2024-Nov-12, lodging and per diem rates.
+#' [From: analyses/monitoring_costs/MAXIMUM PER DIEM RATES OUTSIDE THE CONTINENTAL UNITED STATES_11.12.24.pdf]
 
-#' Use the government lodging rates to estimate the cost per room day. Varies at different times of year.
-#' Mar-1 to Sep-30 = ($223 per night) aka PERIOD = 1
-#' Oct-1 to Feb-28 = ($121 per night) aka PERIOD = 2
-kodiak_lodging_dt <- data.table(PERIOD = 1:2, COST_PER_NIGHT = c(223, 121))
+#' Use the government lodging rates to estimate the cost per room day in Kodiak. Varies at different times of year.
+#' Period 1, the peak, falls Feb-1 through Oct-31, and the Period 2, the offseason, falls Nov-1 through Jan 31.
+#' False Pass falls into the 'OTHER' category where this is no period.
+lodging_dt <- data.table(
+  PORT = c("KODIAK", "KODIAK", "FALSE PASS"),
+  PERIOD = c(1, 2, NA), COST_PER_NIGHT = c(231, 138, 230))
 
 # Identify how many fishing days are in each lodging period
-cruise_date <- unique(
-  rbindlist(assign_dates, idcol = "CRUISE")[
-  ][cruise_year, on = .(CRUISE)
+cruise_date <- rbindlist(assign_dates, idcol = "CRUISE") |>
+  _[cruise_year, on = .(CRUISE)
   ][, DATE := as.Date(DATE)
-  ][, .(YEAR, CRUISE, DATE)]
-)
-year_date_period <- unique(cruise_date[YEAR == adp_year - 2, .(YEAR, DATE)])[
-][, PERIOD := ifelse(
-  (yday(DATE) >= yday(as.Date(paste0(adp_year, "-03-01")))) & (yday(DATE) < yday(as.Date(paste0(adp_year, "-10-01")))),
-  1, 2
-)][, SEASON := fcase(month(DATE) <= 8, "A", month(DATE) >= 9, "B" )
-][, .(DAYS = uniqueN(DATE)), keyby = .(YEAR, PERIOD, SEASON)
-][, PROP := DAYS / sum(DAYS)
-  # merge in lodging rates by period
-][kodiak_lodging_dt, on = .(PERIOD)
-][SEASON == "A", PLANT_OBS := goa_plant_obs.A
-][SEASON == "B",PLANT_OBS := goa_plant_obs.B][]
+  ][, .(YEAR, CRUISE, DATE)] |>
+  unique()
 
-#' Assuming you can put 2 observers in each room
-kodiak_lodging_cost <- year_date_period[, sum(goa_season_days * PROP * (COST_PER_NIGHT * (PLANT_OBS/2)))]
+# Calculate the proportion of days in each Season and Period. This will be applied to goa_season_days later.
+lodging_period_prop <- cruise_date[YEAR == adp_year - 2, .(YEAR, DATE)] |>
+  _[, PERIOD := ifelse(
+    (yday(DATE) >= yday(as.Date(paste0(adp_year, "-02-01")))) & (yday(DATE) < yday(as.Date(paste0(adp_year, "-11-01")))),
+    1, 2)
+  ][, SEASON := fcase(month(DATE) <= 8, "A", month(DATE) >= 9, "B" )
+  ][, .(DAYS = uniqueN(DATE)), keyby = .(YEAR, PERIOD, SEASON)
+  ][, PROP := DAYS / sum(DAYS)][]
+
+# Kodiak Lodging Costs. In both A and B season, we'll have 5 observers in Kodiak and 2 obsevers per room
+lodging_cost.kodiak <- lodging_dt |>
+  _[lodging_period_prop , on = .(PERIOD)
+  ][, sum(5/2 * COST_PER_NIGHT * PROP * goa_season_days)]
+
+# False Pass Loding Costs. Will only have 1 observer in False Pass for B season, no room sharing since only 1 observer
+lodging_cost.false_pass <- sum(lodging_period_prop[SEASON == "B", PROP] * goa_season_days * lodging_dt[PORT == "FALSE PASS"]$COST_PER_NIGHT)
+
+# Total costs of lodging
+lodging_cost <- lodging_cost.kodiak + lodging_cost.false_pass
 
 ### Per Diem ----
 
 #' Assuming the Kodiak plant observers do not have a food plan organized between the plant and the PC contract holder,
-#' we are obligated to pay per-diem rates of $109 per day.
-goa_plant_per_diem <- 109
-
-#' Total per-diem, number of season days × number of plant observers × per diem rate
-kodiak_per_diem_cost <- goa_plant_per_diem * goa_plant_ob_days
+#' we are obligated to pay govnernment per-diem rates.
+#' Again, using the per diem rates for Kodiak and Other from the PDF, summing local meals and local incidentals:
+per_diem_cost <- sum(
+  # 5 Observers in Kodiak both A and B season at $109 per day:
+  sum(lodging_period_prop[, PROP * goa_season_days] * 5 * 109),
+  # 1 Observer in False Pass in B season at $121 per day:
+  sum(lodging_period_prop[SEASON == "B", PROP * goa_season_days] * 1 * 121)
+)
 
 #=================================#
 ## Data and Video Review Costs ---- 
@@ -629,7 +640,7 @@ goa_cv_cost <- emtrw_goa_v_count * equipment_upkeep_per_VY
 cost_summary.em_trw <- data.table(
   Category = c("Observer Plant Day Costs", "Lodging", "Per Diem", "Equipment Maintenance", "Data"),
   Cost = c(
-    trw_em_day_costs, kodiak_lodging_cost, kodiak_per_diem_cost, 
+    trw_em_day_costs, lodging_cost, per_diem_cost, 
     (goa_cv_cost + goa_tender_cost), emtrw.total_data_cost
   )
 )
