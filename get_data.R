@@ -2,7 +2,7 @@
 
 ADPyear     <- 2025     # Enter numeric year you are doing the ADP for
 ADP_version <- "Final"  # Enter "Draft" or "Final"
-EM_final    <- "N"      # Is the final EM list approved? Y/N (caps)
+EM_final    <- "Y"      # Is the final EM list approved? Y/N (caps)
 options(scipen = 9999)  # Avoid scientific notation
 
 # Get packages ------------------------------------------------------------
@@ -14,9 +14,12 @@ if(!require("odbc")) install.packages("odbc", repos='http://cran.us.r-project.or
 if(!require("data.table"))   install.packages("data.table", repos='http://cran.us.r-project.org')
 if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.r-project.org') # ggplot2, dplyr, tidyr, readr, purrr, tibble, stringr, forcats, lubridate (for fixing datetimes)  
 
+
 # Establish channels ------------------------------------------------------
 
 source("common_functions/open_channel.R")
+source("common_functions/model_trip_duration.R")
+
 channel_afsc <- open_channel()
 
 ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
@@ -28,7 +31,7 @@ gdrive_download(
   local_path = paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", sep = "_")),
   gdrive_dribble = ADP_dribble
 )
-load(paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", sep = "_")))
+(load(paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", sep = "_"))))
 
 # Data queries ------------------------------------------------------------
 
@@ -45,59 +48,72 @@ PartialCPs <- data.frame(VESSEL_ID = c(662, 4581, 6039))
 
 # * Fixed-gear EM research ---- 
 
-em_research <- dbGetQuery(channel_afsc, paste(
+fgem_research <- dbGetQuery(channel_afsc, paste(
   "
     SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
     FROM loki.em_vessels_by_adp
     WHERE sample_plan_seq_desc = 'Electronic Monitoring -  research not logged '
-      AND adp >=", if(ADP_version == "Draft" | EM_final == "N") (ADPyear - 1) else (ADPyear), "
+      AND adp =", if(ADP_version == "Draft" | EM_final == "N") (ADPyear - 1) else (ADPyear), "
     ORDER BY adp, vessel_id
   "
 ))
 
 # * Fixed-gear EM approvals ---- 
 
-em_base <- dbGetQuery(channel_afsc, paste(
+fgem_base <- dbGetQuery(channel_afsc, paste(
   "
     SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
     FROM loki.em_vessels_by_adp
-    WHERE adp >= ", if(ADP_version == "Draft" | EM_final == "N") (ADPyear - 1) else (ADPyear), "
+    WHERE adp = ", if(ADP_version == "Draft" | EM_final == "N") (ADPyear - 1) else (ADPyear), "
       AND em_request_status = 'A'
-      AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'
+      AND sample_plan_seq_desc IN (
+        'Electronic Monitoring - Gear Type- Selected Trips',   -- Pre-2024
+        'EM Declared Gear',
+        'EM Fixed Gear  - Fishing Area')                       -- 2024 onward
     ORDER BY adp, vessel_id
   "
 ))
 # Remove EM research vessels from em_base
-em_base <- em_base %>% anti_join(select(em_research, ADP, VESSEL_ID), by = c("ADP", "VESSEL_ID"))
+fgem_base <- fgem_base %>% anti_join(select(fgem_research, ADP, VESSEL_ID), by = c("ADP", "VESSEL_ID"))
 
 # * Fixed-gear EM requests ---- 
 
-# Vessels have until November 1st to request. Approvals are typically made shortly thereafter.
-em_requests <- dbGetQuery(channel_afsc, paste(
+# Vessels have until November 1st to request. Approvals are typically made shortly thereafter by FMA Director.
+fgem_requests <- dbGetQuery(channel_afsc, paste(
   "
     SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
     FROM loki.em_vessels_by_adp
-    WHERE adp = ", ADPyear,"
-      AND em_request_status = 'NEW'
-      AND sample_plan_seq_desc = 'Electronic Monitoring - Gear Type- Selected Trips'
+    WHERE adp = ", ADPyear, "
+      AND", if(ADP_version == "Draft" | EM_final == "N") {
+        ("em_request_status = 'NEW'")
+      } else if (EM_final == "Y") {
+        paste0("em_request_status IN ('A', 'D', 'O') AND EXTRACT(YEAR FROM em_request_status_date) = ", (ADPyear - 1) )
+      }, "
+      AND sample_plan_seq_desc IN(
+        'Electronic Monitoring - Gear Type- Selected Trips',
+        'EM Declared Gear',
+        'EM Fixed Gear  - Fishing Area')                       -- 2024 onward
   "
 ))
+# Remove any vessels that request that were already approved (existing in fgem_base)
+fgem_base <- fgem_base %>% anti_join(select(fgem_requests, ADP, VESSEL_ID), by = c("ADP", "VESSEL_ID"))
 
-#' @UDPATE *This currently reflects what was used in the 2024 ADP. Update for 2025 or remove!*
-# Hardcode EM removals, opt-outs, and approvals
-em_base <- em_base %>% 
-           # removal
-           filter(VESSEL_ID != 90) %>% 
-           # opt-outs
-           filter(!(VESSEL_ID %in% c(792, 32413, 3297, 3102))) %>% 
-           # approvals
-           bind_rows(data.table(VESSEL_ID = c("2084", "3717", "4387"), VESSEL_NAME = c("COMMANDER", "CARLYNN", "TANYA M")))
-  
+
 # * Trawl EM ----
 
-trawl_em <- read.csv("source_data/efp_list_2023-09-05.csv")
-#' @TODO This file is in the [Vision 2024 ADP/Data] folder. We should have a more updated version? 
+# trawl_em <- read.csv("source_data/efp_list_2023-09-05.csv")
+#' [TODO: This file is in the Vision 2024 ADP/Data folder. Now using loki query for trawl EM vessels] 
 # https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
+
+trw_em <- setDT(dbGetQuery(channel_afsc, paste0(
+  "
+    SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status 
+    FROM loki.em_vessels_by_adp 
+    WHERE adp = ", if(ADP_version == "Draft") (ADPyear - 1) else (ADPyear), "
+      AND SAMPLE_PLAN_SEQ_DESC = 'EM Pelagic Trawl'
+    ORDER BY VESSEL_ID
+    "
+)))
 
 # * Vessel lengths ----
 
@@ -250,8 +266,8 @@ if( year(Sys.Date()) == (ADPyear - 1) & year(max(work.data$RUN_DATE, na.rm = T))
 gc()
 
 # Load data from current year. The AKRO Region will re-run Valhalla for the current year to date (ADPyear - 1).
-gdrive_download("source_data/2024-10-01valhalla.Rdata", ADP_dribble)
-load("source_data/2024-10-01valhalla.Rdata")
+gdrive_download("source_data/2024-11-05cas_valhalla.Rdata", ADP_dribble)
+load("source_data/2024-11-05cas_valhalla.Rdata")
 
 # Append data from current year to data from prior year. Ensure data types match between the old and new datasets.
 date_cols <- c("TRIP_TARGET_DATE", "LANDING_DATE")
@@ -305,7 +321,7 @@ work.data[, ADP := min(ADP), by = .(TRIP_ID)]
 if(nrow(select(work.data, TRIP_ID, ADP) %>% 
         distinct() %>% 
         group_by(TRIP_ID) %>% 
-        filter(n()>1) %>% 
+        filter(n() > 1) %>% 
         data.frame()) > 0){
   work.data$TRIP_ID <- paste(work.data$ADP, work.data$TRIP_ID, sep = ".")
   message("Adding 'year.' to duplicate TRIP_IDs across years")
@@ -366,10 +382,10 @@ distinct(work.data, COVERAGE_TYPE, CVG_NEW, STRATA) %>%
 # Partial coverage strata
 work.data[
   is.na(CVG_NEW) & COVERAGE_TYPE == "PARTIAL" & STRATA %in% c(
-  "EM", "EM Voluntary", "EM_FIXED_BSAI", "EM_FIXED_GOA", "EM_HAL", "EM_POT", "EM_TRW_EFP", "EM_TRW_GOA", "EM_TenP",
-  "HAL", "OB_FIXED_BSAI", "OB_FIXED_GOA", "OB_TRW_BSAI", "OB_TRW_GOA", "POT", "T", "TRIP", "TRW", "TenH", "TenP",
-  "TenTR", "VESSEL", "ZERO", "ZERO_EM_RESEARCH", "t"
-), CVG_NEW := "PARTIAL"]
+    "EM", "EM Voluntary", "EM_FIXED_BSAI", "EM_FIXED_GOA", "EM_HAL", "EM_POT", "EM_TRW_EFP", "EM_TRW_GOA", "EM_TenP",
+    "HAL", "OB_FIXED_BSAI", "OB_FIXED_GOA", "OB_TRW_BSAI", "OB_TRW_GOA", "POT", "T", "TRIP", "TRW", "TenH", "TenP",
+    "TenTR", "VESSEL", "ZERO", "ZERO_EM_RESEARCH", "t"),
+  CVG_NEW := "PARTIAL"]
 
 # Split trips that fished both full and partial coverage
 work.data |>
@@ -409,13 +425,13 @@ work.data |>
     # Zero coverage
   ][CVG_NEW == "PARTIAL" & STRATA == "ZERO", STRATA_NEW := "ZERO"
     # Fixed-gear EM. Base STRATUM_NEW on gear type and BSAI_GOA
-  ][VESSEL_ID %in% em_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), STRATA_NEW := paste("EM_FIXED", BSAI_GOA, sep = "-")
+  ][VESSEL_ID %in% fgem_base$VESSEL_ID & STRATA_NEW %in% c("HAL", "POT"), STRATA_NEW := paste("EM_FIXED", BSAI_GOA, sep = "-")
     # Fixed-gear EM research
-  ][VESSEL_ID %in% em_research$VESSEL_ID, STRATA_NEW := "ZERO"
+  ][VESSEL_ID %in% fgem_research$VESSEL_ID, STRATA_NEW := "ZERO"
     # Trawl EM
-  ][, TRAWL_EM_FLAG := VESSEL_ID %in% trawl_em$PERMIT & all(AGENCY_GEAR_CODE == "PTR") & all(TRIP_TARGET_CODE %in% c("B", "P"))
+  ][, TRAWL_EM_FLAG := VESSEL_ID %in% trw_em$VESSEL_ID & all(AGENCY_GEAR_CODE == "PTR") & all(TRIP_TARGET_CODE %in% c("B", "P")) & MANAGEMENT_PROGRAM_CODE != "RPP"
     , by = .(TRIP_ID)          
-  ][TRAWL_EM_FLAG == T, STRATA_NEW := paste("EM_TRW", BSAI_GOA, sep = "_")       #' CHANGED FMP TO BSAI_GOA TO GET RID OF EM_TRW_BS record
+  ][TRAWL_EM_FLAG == T, STRATA_NEW := paste("EM_TRW", BSAI_GOA, sep = "_")
   ][STRATA_NEW == "EM_TRW-GOA", CVG_NEW := "PARTIAL"
   ][, TRAWL_EM_FLAG := NULL]
 # Refine STRATA_NEW, fixing labels and defining strata for observer strata
@@ -440,18 +456,18 @@ under_forties
 # Flip STRATA_NEW to ZERO for vessels that are < 40 (according to FMA)
 work.data <- work.data[TRIP_ID %in% under_forties$TRIP_ID, ':=' (CVG_NEW = "PARTIAL", STRATA_NEW = "ZERO")]
 
-# View > 40's without coverage:
-over_forties <- filter(work.data, LENGTH_OVERALL > 39 & AGENCY_GEAR_CODE != "JIG" & STRATA_NEW == "ZERO" & !(VESSEL_ID %in% em_research$VESSEL_ID)) %>% 
+# View >= 40's without coverage:
+over_forties <- filter(work.data, LENGTH_OVERALL > 39 & AGENCY_GEAR_CODE != "JIG" & STRATA_NEW == "ZERO" & !(VESSEL_ID %in% fgem_research$VESSEL_ID)) %>% 
   distinct(ADP, VESSEL_ID, TRIP_ID, STRATA, STRATA_NEW, AGENCY_GEAR_CODE, MANAGEMENT_PROGRAM_CODE, LENGTH_OVERALL) %>%
   left_join(VL)
 
 over_forties
 
-# Flip STRATA_NEW to gear-based strata for vessels that are > 40
+# Flip STRATA_NEW to gear-based strata for vessels that are >= 40
 work.data |>
-  _[TRIP_ID %in% over_forties$TRIP_ID & !(VESSEL_ID %in% em_base$VESSEL_ID), 
+  _[TRIP_ID %in% over_forties$TRIP_ID & !(VESSEL_ID %in% fgem_base$VESSEL_ID), 
     STRATA_NEW := paste0("OB_FIXED-", BSAI_GOA)
-  ][TRIP_ID %in% over_forties$TRIP_ID & VESSEL_ID %in% em_base$VESSEL_ID,
+  ][TRIP_ID %in% over_forties$TRIP_ID & VESSEL_ID %in% fgem_base$VESSEL_ID,
     STRATA_NEW := .SD[any(AGENCY_GEAR_CODE %in% c("HAL", "POT")), paste0("EM_FIXED-", BSAI_GOA)],
     by = .(TRIP_ID)]
 
@@ -654,15 +670,16 @@ if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected 
 
 # * Full Coverage Summary ----
 
-full_efrt <- work.data[
-  CVG_NEW == "FULL", 
-  .(
-    POOL = "FULL", STRATA = STRATA_NEW, FMP, AREA = REPORTING_AREA_CODE, TARGET = TRIP_TARGET_CODE, 
-    AGENCY_GEAR_CODE, PERMIT, MONTH,
-    START = min(TRIP_TARGET_DATE, LANDING_DATE, na.rm = TRUE), 
-    END = max(TRIP_TARGET_DATE, LANDING_DATE, na.rm = TRUE)
-  ),
-  keyby = .(ADP, TRIP_ID)] |>
+full_efrt <- work.data |>
+  _[
+    CVG_NEW == "FULL", 
+    .(
+      POOL = "FULL", STRATA = STRATA_NEW, FMP, AREA = REPORTING_AREA_CODE, TARGET = TRIP_TARGET_CODE, 
+      AGENCY_GEAR_CODE, PERMIT, MONTH,
+      START = min(TRIP_TARGET_DATE, LANDING_DATE, na.rm = TRUE), 
+      END = max(TRIP_TARGET_DATE, LANDING_DATE, na.rm = TRUE)
+    ),
+    keyby = .(ADP, TRIP_ID)] |>
   unique() |>
   # Create GEAR column (i.e. TRW instead of NPT or PTR)
   _[, GEAR := ifelse(AGENCY_GEAR_CODE %in% c("NPT", "PTR"), "TRW", AGENCY_GEAR_CODE)
@@ -672,15 +689,15 @@ full_efrt <- work.data[
 
 unique(full_efrt[, .(TRIP_ID, GEAR)])[, .N, keyby = GEAR]                         # Here is a rough summary of trip counts by gear type without adjusting for EM/COD
 
-# * EM Vessel Summary ----
+# * Fixed-Gear EM Vessel Summary ----
 
-fg_em <- setDT(copy(em_base))[, .(VESSEL_NAME, PERMIT = VESSEL_ID)]
+fg_em <- setDT(copy(fgem_base))[, .(VESSEL_NAME, PERMIT = VESSEL_ID)]
 # Add back EM research vessels
-fg_em <- rbind(fg_em, data.table(VESSEL_NAME = em_research$VESSEL_NAME, PERMIT = em_research$VESSEL_ID))
-fg_em[, FLAG := ifelse(PERMIT %in% em_research$VESSEL_ID, "RESEARCH", "NONE")]
+fg_em <- rbind(fg_em, data.table(VESSEL_NAME = fgem_research$VESSEL_NAME, PERMIT = fgem_research$VESSEL_ID))
+fg_em[, FLAG := ifelse(PERMIT %in% fgem_research$VESSEL_ID, "RESEARCH", "NONE")]
 # Add back EM requesting vessels, then make unique list
-fg_em <- rbind(fg_em, setDT(copy(em_requests))[, .(VESSEL_NAME, PERMIT = VESSEL_ID)], fill = TRUE)
-fg_em[, FLAG := ifelse(PERMIT %in% em_requests$VESSEL_ID, "REQUEST", FLAG)]
+fg_em <- rbind(fg_em, setDT(copy(fgem_requests))[, .(VESSEL_NAME, PERMIT = VESSEL_ID, FLAG = EM_REQUEST_STATUS)], fill = TRUE)
+fg_em[, FLAG := ifelse(PERMIT %in% fgem_requests$VESSEL_ID & FLAG != "A", "REQUEST", FLAG)]
 # Make vessel list unique
 fg_em <- unique(fg_em)
 # Counts of vessels listed in EM
@@ -703,7 +720,7 @@ effort_strata <- work.data |>
     # set julian date to 366 for trips that left in year adp + 1
   ][, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) > ADP, 366, JULIAN_DATE)][] 
 
-# isolate the latest date for which we have data in the most recent year of valhalla
+#' isolate the latest date for which we have data in the most recent year of valhalla
 effort_strata.max_date <- max(effort_strata[ADP == ADPyear - 1, JULIAN_DATE])
 # count trips through max_date and total trips by year and stratum
 effort_strata <- effort_strata[, .(
@@ -712,6 +729,189 @@ effort_strata <- effort_strata[, .(
 ), by = .(ADP, STRATA)
 # make total trips NA for ADPyear - 1, since the year is not over
 ][ADP == ADPyear - 1, TOTAL_TRIPS := NA][]
+
+# * Trip duration ----
+
+#' First, trim off the most recent 4 years of trips. Modeling trip duration over the entire dataset is not needed and
+#' doesn't always give the best model for the next year. 
+work.data.recent <- work.data[ADP >= ADPyear - 4]
+
+#' Match observed trip assignment duration (to half day) with Valhalla trip duration, and model the relationship. The
+#' year x gear type interaction gives a decent match. Creates the mod_dat object.
+td_mod <- model_trip_duration(work.data.recent, use_mod = "DAYS ~ RAW + ADP * AGENCY_GEAR_CODE", channel = channel_afsc)
+
+# Occasionally we have multiple ODDS records assigned to the same Valhalla trip. In such cases, sum the sea days.
+actual_ob_days <- unique(mod_dat[, .(TRIP_ID, ODDS_SEQ, DAYS)]) |>
+  _[, .(DAYS = sum(DAYS)), keyby = .(TRIP_ID)]
+
+# Merge in actual days observed. NAs will fill for any non partial coverage observer stratum trip
+work.data.recent[, DAYS := actual_ob_days[work.data.recent, DAYS, on = .(TRIP_ID)]]
+
+# For other observer strata trips that were not observed, use the modeled estimates
+ob_trips_predict_days <- unique(work.data.recent[STRATA_NEW %like% "OB" & is.na(DAYS), .(
+  ADP = as.factor(ADP), AGENCY_GEAR_CODE,
+  RAW = as.numeric(max(LANDING_DATE, TRIP_TARGET_DATE) - min(TRIP_TARGET_DATE, LANDING_DATE), units = "days")
+), keyby = .(TRIP_ID)])
+# Apply the model, rounding to the nearest half day
+ob_trips_predict_days[, DAYS := round(predict(td_mod$TD_MOD, newdata = ob_trips_predict_days)/0.5) * 0.5]
+# For trips with multiple gear types, take the average 
+ob_trips_predict_days <- ob_trips_predict_days[, .(DAYS = mean(DAYS)), keyby = .(TRIP_ID)]
+# Merge in predictions
+work.data.recent |>
+  _[, MOD_DAYS := ob_trips_predict_days[work.data.recent, DAYS, on = .(TRIP_ID)]
+  ][, DAYS := fcase(!is.na(DAYS), DAYS, !is.na(MOD_DAYS), MOD_DAYS)
+  ][, MOD_DAYS := NULL]
+
+# For non-observer partial coverage strata, simply use the end - start + 1 method
+work.data.recent[
+  is.na(DAYS) & CVG_NEW == "PARTIAL", 
+  DAYS := as.numeric(
+    1 + max(TRIP_TARGET_DATE, LANDING_DATE) - min(TRIP_TARGET_DATE, LANDING_DATE), units = "days"
+  ),
+  by = .(TRIP_ID)]
+if(nrow(work.data.recent[CVG_NEW == "PARTIAL" & is.na(DAYS)])) stop("Some records are still missing DAYS")
+
+
+#' *===================================================================================================================*
+#' [2025FinalADP:]
+
+# <2025 ADP ONLY> Adjust for CGOA Pollock Closure in 2024  ----
+
+#' In 2024, CGOA Pollock was shut down in the B season due to salmon bycatch on Sep 25th, 2024 (NMFS Areas 620 and 630)
+#' [https://www.fisheries.noaa.gov/bulletin/ib-24-41-nmfs-prohibits-directed-fishing-pollock-vessels-using-trawl-gear-central]
+#' We want the 2024 Final ADP to operate as if the closure did not happen, so we will have to:
+#' - `Hard-code [effort_strata] to adjust the expected fishing effort prediction for 2024, and therefore 2025's effort`
+#' - `Hard-code [work.data] to replace 2024 CGOA B season trips with 2023 CGOA B season trips for allocation`
+
+if(ADPyear == 2025) {
+  
+  #' Subset all partial coverage trawl trips from 2023-2024. First, we just want to visualize what will be modified.
+  trw_sub <- work.data.recent[
+    ADP >= 2023 & CVG_NEW == "PARTIAL" & STRATA %like% "TRW",
+    .(
+      ADP, VESSEL_ID, TRIP_ID, REPORTING_AREA_CODE, AGENCY_GEAR_CODE, TRIP_TARGET_CODE, BSAI_GOA,
+      TRIP_TARGET_DATE, LANDING_DATE, CVG_NEW, STRATA, STRATA_NEW, PORT_CODE, TENDER
+    )] |> unique() |>
+    # Get each trips's start and end date
+    _[, START := min(TRIP_TARGET_DATE, LANDING_DATE, na.rm = T), by = .(TRIP_ID)
+    ][, END := max(TRIP_TARGET_DATE, LANDING_DATE, na.rm = T), by = .(TRIP_ID)
+    ][, c("TRIP_TARGET_DATE", "LANDING_DATE") := NULL
+    ][, MONTH := month(START)
+      # Label the pollock seasons as A or B
+    ][, SEASON := fcase(MONTH < 5, "A", MONTH > 5, "B")
+    ][, MONTH := factor(MONTH, levels = as.character(1:12))] |> 
+    unique() |>
+    # Recode old strata so it's easier to compare between ADP years
+    _[, STRATA := fcase(
+      STRATA == "EM_TRW_EFP", "EM_TRW-GOA",
+      STRATA == "TRW", paste0("OB_TRW-", BSAI_GOA),
+      STRATA == "OB_TRW_BSAI", "OB_TRW-BSAI",
+      STRATA == "OB_TRW_GOA", "OB_TRW-GOA",
+      STRATA == "EM_TRW_GOA", "EM_TRW-GOA",
+      rep(TRUE, .N), STRATA)
+      # Code new TARGET column with just P for pollock (no bottom pollock)
+    ][, TARGET:= TRIP_TARGET_CODE
+    ][TARGET== "B", TARGET := "P"
+    ][, TRIP_TARGET_CODE := NULL
+      # Label all vessels in trawl EM, even if they opted out of the stratum for their trips in 2023/2024
+    ][, TRW_EM := VESSEL_ID %in% trw_em$VESSEL_ID
+      # Label the GOA region
+    ][, REGION := fcase(
+      REPORTING_AREA_CODE %in% c(610), "WGOA", 
+      REPORTING_AREA_CODE %in% c(620, 630), "CGOA", 
+      REPORTING_AREA_CODE > 630, "EGOA",
+      REPORTING_AREA_CODE < 600, "BSAI")
+    ][, REGION := factor(REGION, levels = c("BSAI", "WGOA", "CGOA", "EGOA"))][]
+
+  ## Estimate number of CGOA trips that would have occurred ----
+  
+  # Plot a summary to compare years
+  library(ggh4x)
+  trw_sub.smry <- trw_sub[, .(N = uniqueN(TRIP_ID)), keyby = .(STRATA_NEW, REGION, ADP, SEASON, MONTH, TARGET)] 
+  ggplot(trw_sub.smry, aes(x = MONTH, y = STRATA_NEW, fill = N)) +
+    facet_nested(REGION + TARGET ~ ADP, scales = "free_y", space = "free_y") +
+    geom_tile() + geom_text(color = "gray", aes(label = N)) +
+    scale_x_discrete(drop = F) + 
+    labs(subtitle = "Trawl gear trip counts by stratum, month, region, and target, 2023-2024. CGOA Pollock closed for salmon Sep-25-2024.")
+  #' We can see that in 2023, the CGOA pollock B season fished though September and October. 
+  #' In 2024, after B season closed Sep-25th, we don't see any more pollock trips. However, some of the trawl fleet
+  #' instead began fishing non-pelagic gear for P cod (C) and flatfish (W). Pollock fishing was not closed in the WGOA.
+  #' It should be noted that for both the OB and EM strata in the CGOA, the amount of fishing for pollock changed 
+  #' considerably between 2023 and 2024. Effort in September in EM increased in 2024, but it halved in OB. 
+
+  #' In order to estimate the number of pollock trips that would have occurred in 2024 CGOA B season if the fishery
+  #' had not closed, we will calculate the proportion of trips that occurred in 2023 before and after Sep-25 and then
+  #' use the proportion to calculate the number of trips that would have occurred after Sep-25 in 2024.
+  cgoa_prop.2023 <- trw_sub[
+    ADP == 2023 & SEASON == "B" & TARGET == "P" & REGION == "CGOA", 
+    .(TOTAL_N = uniqueN(TRIP_ID),
+      BEFORE_SEP_25 = uniqueN(TRIP_ID[END <= as.Date("2023-09-25")])), 
+    keyby = .(STRATA_NEW)
+  ][, PROP_REMAINING := (TOTAL_N - BEFORE_SEP_25) / TOTAL_N][]
+  cgoa_prop.2023 
+  #' For both strata, around 57-59% of trips were remaining to be fished before the closure.
+  #' Now, calculate the expected number of CGOA pollock trips in 2024.
+  cgoa_prop.2024 <- trw_sub[
+    ADP == 2024 & SEASON == "B" & TARGET == "P" & REGION == "CGOA", 
+    .(TOTAL_N = uniqueN(TRIP_ID),
+      BEFORE_SEP_25 = uniqueN(TRIP_ID[END <= as.Date("2024-09-25")])), 
+    keyby = .(STRATA_NEW)][]
+  #' Merge the 2023 proportions in and then calculate the additional number of pollock trips expected
+  cgoa_prop.2024 |>
+    _[, PROP_REMAINING := cgoa_prop.2023[cgoa_prop.2024, PROP_REMAINING, on = .(STRATA_NEW)]
+    ][, ADD_TRIPs := round(TOTAL_N * PROP_REMAINING)]
+  cgoa_prop.2024
+  #' `We estimate that EM_TRW-GOA would have fished +82 pollock trips and OB_TRW-GOA would have fished +12 more.`
+  #' However, as noted before, after the CGOA pollock fishery closed, the trawl fleet (most of which were in the EM 
+  #' trawl pool), logged trips in the OB_TRW-GOA stratum to target cod and flatfish in the CGOA.
+  trw_sub[
+    MONTH %in% 9:10 & REGION == "CGOA" & TARGET %in% c("C", "W", "H"), 
+    .(N = uniqueN(TRIP_ID)),
+    keyby = .(ADP, TRW_EM, STRATA_NEW)] |>
+    dcast(TRW_EM + STRATA_NEW ~ ADP, value.var = "N", fill = 0)
+  #' In 2023 B season in the CGOA, trawl vessels fished 7 non-pelagic gear for cod/flatfish.
+  #' In 2024, 62 cod/flatfish trips were fished. We will assume 62 - 7 = 55 trips wouldn't have occurred.
+  #' `We will also subtract 55 cod/flatfish trips from the OB_TRW-GOA stratum that likely would not have occurred`
+
+  #' In `effort_strata`, MAX_DATE_TRIPS was originally 850 for EM_TRW and 219 for OB_TRW-GOA.
+  effort_strata[ADP == 2024 & STRATA %like% "TRW-GOA"]
+  #' `EM_TRW-GOA will have (850) + (82 CGOA B season pollock trips) =` *932 trips*
+  #' `OB_TRW-GOA will have (219) + (12 CGOA B season pollock trips) - 55 cod/flatfish trips = ` *176 trips*
+  effort_strata[ADP == 2024 & STRATA == "EM_TRW-GOA", MAX_DATE_TRIPS := 932]    # changed from 850 to 932
+  effort_strata[ADP == 2024 & STRATA == "OB_TRW-GOA", MAX_DATE_TRIPS := 176]    # changed from 219 to 176
+  
+  # Replacing 2024 CGOA trawl effort with 2023 CGOA trawl effort ----
+  
+  #' Because the 2024 B season in the CGOA was shortened, even if we adjust the expected number of trips we think would
+  #' have occurred in the stratum, during resampling, there wouldn't be any trips to populate that time/space from 2024
+  #' trips. Therefore, we will assume that the CGOA trawl trips fished in 2023 will be a decent representation of the 
+  #' kinds of trips we would have seen had in 2024 had the fishery not closed.
+  #' `In work.data, the 2024 CGOA trawl trips will be deleted and replaced with those from 2023, with dates adjusted`
+  trw_sub.cgoa_2023_B <- trw_sub[ADP == 2023 & SEASON == "B" & REGION == "CGOA"]
+  trw_sub.cgoa_2024_B <- trw_sub[ADP == 2024 & SEASON == "B" & REGION == "CGOA"]
+  # Make sure these trips only occurred in CGOA, areas 620 and 630 only
+  work.data.recent[TRIP_ID %in% trw_sub.cgoa_2023_B$TRIP_ID, unique(REPORTING_AREA_CODE)]
+  work.data.recent[TRIP_ID %in% trw_sub.cgoa_2024_B$TRIP_ID, unique(REPORTING_AREA_CODE)]
+  
+  #' Prepare the 2023 dataset, coding it to 2024
+  trw_cgoa_2024_new <- work.data.recent |>
+    # Grab all 2023 B season CGOA trawl trips
+    _[TRIP_ID %in% trw_sub.cgoa_2023_B$TRIP_ID
+      # Adjust trip dates and ADP year to 2024
+    ][, TRIP_TARGET_DATE := make_date(year = 2024, month = month(TRIP_TARGET_DATE), day = day(TRIP_TARGET_DATE))
+    ][, LANDING_DATE := make_date(year = 2024, month = month(LANDING_DATE), day = day(LANDING_DATE))
+    ][, ADP := 2024
+      # To be safe, re-assign TRIP_ID 
+    ][, TRIP_ID := paste0(TRIP_ID, ".2024")][]
+  
+  # Remove the 2024 B season CGOA trips and replace with the 2023 trips
+  work.data.recent <- rbind(
+    work.data.recent[!(TRIP_ID %in% trw_sub.cgoa_2024_B$TRIP_ID)],
+    trw_cgoa_2024_new
+  )
+} #' [2025FinalADP:]
+#' *===================================================================================================================*
+
 
 # Final outputs ----
 
@@ -723,12 +923,11 @@ if(out_save == "Y"){
   save(work.data, file = "source_data/work.data.rdata")
   #' Upload to shared Gdrive source_data folder
   gdrive_upload(local_path = "source_data/work.data.rdata", gdrive_dribble = ADP_dribble)
-  
+
   #' For the data to be used by the rest of our scripts, we trim work.data to contain only the most recent 3 full 
   #' years and the current year.
-  work.data <- work.data[ADP >= ADPyear - 4]
   save(
-    work.data, trips_melt, PartialCPs, full_efrt, max_date, fg_em, effort_strata,
+    work.data.recent, trips_melt, PartialCPs, full_efrt, max_date, fg_em, trw_em, effort_strata, td_mod,
     file = paste0("source_data/", out_name)
   )
   #' Upload to shared Gdrive source_data folder
