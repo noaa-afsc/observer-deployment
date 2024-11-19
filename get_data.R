@@ -2,7 +2,7 @@
 
 ADPyear     <- 2025     # Enter numeric year you are doing the ADP for
 ADP_version <- "Final"  # Enter "Draft" or "Final"
-EM_final    <- "N"      # Is the final EM list approved? Y/N (caps)
+EM_final    <- "Y"      # Is the final EM list approved? Y/N (caps)
 options(scipen = 9999)  # Avoid scientific notation
 
 # Get packages ------------------------------------------------------------
@@ -81,27 +81,21 @@ fgem_requests <- dbGetQuery(channel_afsc, paste(
   "
     SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
     FROM loki.em_vessels_by_adp
-    WHERE adp = ", ADPyear,"
-      AND em_request_status = 'NEW'
+    WHERE adp = ", ADPyear, "
+      AND", if(ADP_version == "Draft" | EM_final == "N") {
+        ("em_request_status = 'NEW'")
+      } else if (EM_final == "Y") {
+        paste0("em_request_status IN ('A', 'D', 'O') AND EXTRACT(YEAR FROM em_request_status_date) = ", (ADPyear - 1) )
+      }, "
       AND sample_plan_seq_desc IN(
         'Electronic Monitoring - Gear Type- Selected Trips',
         'EM Declared Gear',
         'EM Fixed Gear  - Fishing Area')                       -- 2024 onward
   "
 ))
+# Remove any vessels that request that were already approved (existing in fgem_base)
+fgem_base <- fgem_base %>% anti_join(select(fgem_requests, ADP, VESSEL_ID), by = c("ADP", "VESSEL_ID"))
 
-#'[2025ADP: Hardcoding the one additional fixed-gear EM vessel following approval from Lisa Thompson]
-setDT(fgem_requests)
-
-fgem_requests[VESSEL_NAME == "CAPE ST ELIAS", EM_REQUEST_STATUS := 'A']
-fgem_requests[VESSEL_NAME != "CAPE ST ELIAS", EM_REQUEST_STATUS := 'D']
-
-fgem_base <- rbind(fgem_base, fgem_requests[VESSEL_NAME == "CAPE ST ELIAS"]) %>%
-  select(-"SAMPLE_PLAN_SEQ_DESC") %>%
-  distinct()
-fgem_requests <- fgem_requests %>% filter(EM_REQUEST_STATUS != 'A') %>%
-  select(-"SAMPLE_PLAN_SEQ_DESC") %>%
-  distinct()
 
 # * Trawl EM ----
 
