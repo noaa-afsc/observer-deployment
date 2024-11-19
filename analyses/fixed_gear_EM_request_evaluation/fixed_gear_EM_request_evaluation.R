@@ -10,44 +10,54 @@
 # Data Prep ----
 #======================================================================================================================#
 
+ADPyear <- 2025
+
 #===================#
 ## Load packages ----
 #===================#
 
 library(data.table)
 library(ggplot2)
+library(FMAtools)
+library(odbc)
 library(readxl)      # For reading xlsx spreadsheets
 library(gridExtra)
-library(magrittr)    # For Piping
+library(dplyr)       # For handling sf objects
 library(sf)          # For spatial statistics
 library(ggh4x)       # For facet_nested
+
+#=======================#
+## Connect to NORPAC ----
+#=======================#
+
+source("common_functions/open_channel.R")
+
+channel_afsc <- open_channel()
+
+### Determine which vessels are requesting to be added to the fixed-gear EM pool. Taken from get_data.R ----
+
+# Vessels have until November 1st to request. Approvals are typically made shortly thereafter.
+fgem_request_dt <- setDT(dbGetQuery(channel_afsc, paste(
+  "
+    SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status, ves.length
+    FROM loki.em_vessels_by_adp
+      JOIN norpac.atl_lov_vessel ves
+        ON vessel_id = ves.permit
+    WHERE adp = ", ADPyear,"
+      AND em_request_status IN ('NEW', 'O')
+      AND sample_plan_seq_desc IN(
+        'Electronic Monitoring - Gear Type- Selected Trips',   -- Pre-2024
+        'EM Fixed Gear  - Fishing Area')                       -- 2024 onward
+  "
+)))
+fgem_request_dt[, VESSEL_ID := as.numeric(VESSEL_ID)]
 
 #===============#
 ## Load Data ----
 #===============#
 
-# Load spreadsheet from Glenn Campbell (sent 2023-Nov-1)
-# https://docs.google.com/spreadsheets/d/1CB0UJ63f7sQsyubzrRS_6ZNTyO682svB/edit?usp=share_link&ouid=112928343270640187258&rtpof=true&sd=true
-fgem_request_dt <- setDT(read_xlsx("source_data/EM_fixed_gear_requests.xlsx"))
-fgem_opt_in <- fgem_request_dt[`Type of Request` == "Request EM for 2024"]
-fgem_opt_out <- fgem_request_dt[`Type of Request` == "Opt out of EM for 2024"]
-
-# Load prepped data for 2024 Final ADP
-# https://drive.google.com/file/d/1Iet_Fh_8u06UcGwCrZGGWTARpvAAjzky/view?usp=share_link
-# TODO data_prep.R has not yet been run on the 2023-Nov-03 version of VALHALLA
-load("analyses/allocation_evaluation/data_prep_final.rdata")
-
-# Prepare trips_melt object
-# trips_melt has metrics and trip duration for all trips >= 2015. . 
-# Add ADP year, STRATA, and DAYS of each TRIP_ID to trips_melt
-trips_melt_add_data <- unique(pc_effort_dt[STRATA != "ZERO", .(ADP, TRIP_ID, STRATA, DAYS)])
-trips_melt <- trips_melt_add_data[trips_melt, on = .(TRIP_ID)]
-setcolorder(trips_melt, c("ADP", "STRATA", "TRIP_ID", "DAYS", "Metric", "Value"))
-setkey(trips_melt, ADP, STRATA, TRIP_ID, DAYS, Metric, Value)
-# Error-check
-if(nrow(trips_melt[, .N, by = .(TRIP_ID)][N != uniqueN(trips_melt$Metric)])) stop("At least one trip has number of metrics != 3!")
-# Remove records missing data
-trips_melt <- trips_melt[!is.na(ADP)]
+fgem_opt_in <- fgem_request_dt[EM_REQUEST_STATUS == "NEW"]
+fgem_opt_out <- fgem_request_dt[EM_REQUEST_STATUS == "O"]
 
 # Load the ADFG statistical area shapefile. '../' is needed for Rmarkdown to climb into parent folders.
 stat_area_sf <- st_read(
@@ -58,62 +68,68 @@ stat_area_sf <- st_read(
 # Load the Alaska map sf objects
 load("source_data/ak_shp.rdata")      # shp_land, shp_nmfs, and shp_centroids added to global
 
-# Load VALHALLA for fishing histories
-load("source_data/2024_Final_ADP_data.rdata")
+# Load full VALHALLA (work.data) for fishing histories, created by get_data.R
+gdrive_download(
+  local_path = "source_data/work.data.rdata", 
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/"))
+(load("source_data/work.data.rdata"))
 
 #====================#
 ## Load Functions ----
 #====================#
 
-# FIXME using a version of functions.R that is on the repo under effort_prediction_explroation branch
-source("C:/Users/geoff.mayhew/Desktop/2024_adp_functions_temp.R", echo = FALSE)
-# source("analyses/allocation_evaluation/functions.R")
+source("common_functions/allocation_functions.R")
 
 #======================================================================================================================#
 # Fixed Gear EM Evaluation ----
 #======================================================================================================================#
 
 ## Fishing History
-fishing_history <- unique(work.data[
-  VESSEL_ID %in% fgem_opt_in$`Vessel Permit/Vessel ID`,
-  .(VESSEL_ID = as.numeric(VESSEL_ID), ADP, TRIP_ID, STRATA, STRATA_NEW, COVERAGE_TYPE, CVG_NEW, TRIP_TARGET_CODE, REPORTING_AREA_CODE, AGENCY_GEAR_CODE)])
-table(fishing_history$STRATA_NEW)  # According to 2024 stratum definitions, all fish in the GOA, some fished zero coverage, one as TRW_GOA??
+fishing_history <- work.data[VESSEL_ID %in% fgem_opt_in$VESSEL_ID, .(
+  VESSEL_ID = as.numeric(VESSEL_ID), ADP, TRIP_ID, STRATA, STRATA_NEW, COVERAGE_TYPE, CVG_NEW, 
+  TRIP_TARGET_CODE, REPORTING_AREA_CODE, AGENCY_GEAR_CODE)] |>
+  unique()
+table(fishing_history$STRATA_NEW)  
 
-# Any vessels with no fishing history?
-setdiff( fgem_opt_in$`Vessel Permit/Vessel ID`, unique(fishing_history$VESSEL_ID))
-# 5735 has no fishing history since 2013!
+# Note that some WGOA vessels may also fish with both TRW and POT Gear!
+trw_history <- fishing_history[AGENCY_GEAR_CODE %in% c("PTR", "NPT"), unique(VESSEL_ID)]
+fgem_opt_in[VESSEL_ID %in% trw_history]
+fishing_history[VESSEL_ID %in% trw_history, .(N = uniqueN(TRIP_ID)), keyby = .(VESSEL_ID, ADP, STRATA_NEW)] |>
+  dcast(VESSEL_ID + STRATA_NEW ~ ADP, value.var = "N", fill = 0)
+#' [2025ADP: 10562, CAPE ST ELIAS,  vessel fishes in the EM_TRW-GOA stratum and also fishes fixed-gear in the GOA]
 
-fishing_history[STRATA_NEW == "TRW_GOA"] 
-# VESSEL_ID 2348, ALEUT_MISTRESS, fished a TRW trip in 2017?
-work.data[VESSEL_ID == 2348 & AGENCY_GEAR_CODE == "NPT"] # TRIP_ID == 4844370, fished one GOA COD tender trip out of King Cove
+# The rest of the analysis will only concern impacts to fixed-gear trips. Retain an original copy of the history
+if(!exists("fishing_history_og")) fishing_history_og <- copy(fishing_history)
 
 # Exclude any trips that wouldn't be counted under fixed-gear EM
-fishing_history <- fishing_history[(STRATA_NEW %like% c("FIXED_GOA"))]
+fishing_history <- fishing_history[(STRATA_NEW %like% c("FIXED"))]
 
-# Count trips by each vessel and year that would fall under fixed-gear EM
+# Count fixed-gear trips by each vessel and year that would fall under fixed-gear EM
 fishing_history_years <- fishing_history[order(ADP), unique(ADP)]
 fishing_history_N <- dcast(fishing_history[, .(N = uniqueN(TRIP_ID)), keyby = .(VESSEL_ID, ADP)], VESSEL_ID ~ ADP, value.var = "N", fill = 0)
 fishing_history_N[, TOTAL := rowSums(fishing_history_N[, -"VESSEL_ID"])]
 fishing_history_N[, EARLIEST := fishing_history_years[min(which(lapply(.SD, function(x) x > 0) == T))], by = VESSEL_ID, .SDcols = as.character(fishing_history_years)]
 fishing_history_N[, LATEST := fishing_history_years[max(which(lapply(.SD, function(x) x > 0) == T))], by = VESSEL_ID, .SDcols = as.character(fishing_history_years)]
-fishing_history_N[, VESSEL_NAME := fgem_opt_in[fishing_history_N, `Vessel Name`, on = c(`Vessel Permit/Vessel ID` = "VESSEL_ID")]]
-fishing_history_N[, LOA := fgem_opt_in[fishing_history_N, `Vessel Length`, on = c(`Vessel Permit/Vessel ID` = "VESSEL_ID")]]
-fishing_history_N[, TPY := round(TOTAL / ((2023 - EARLIEST) + 1), 3)]
-# Only 0 Vessels fall under this definition, with a fishing history dating back to 2013
-fishing_history_N[order(-TOTAL)]
-### 3 Vessels only have a history dating back to 2022 at earliest
-fishing_history_N[EARLIEST == 2022]  # Both vessels fish at between 4 to 16.5 trips per year
-### 2 vessels didn't fish last year, ALEUT MISTRESS (hasn't fished since either 2014)and THREE_PEARLS (hasnt fished since 2019), , and never took more than 1 trip per year
-fishing_history_N[LATEST != 2023]
+# Merge in vessel_name and Length
+fishing_history_N[, c("VESSEL_NAME", "LOA") := fgem_opt_in[fishing_history_N, .(VESSEL_NAME, LENGTH), on = .(VESSEL_ID)]]
+# Calculate trips per year in the past 3 years
+last_3_years <- as.character(seq((ADPyear - 3), (ADPyear - 1)))
+fishing_history_N$TPY3 <- rowSums(fishing_history_N[, ..last_3_years]) / 3 
+setorder(fishing_history_N, -TPY3)
 
-# Several vessels have no fishing history that would count under fixed-gear EM
-no_history <- setdiff(fgem_opt_in$`Vessel Permit/Vessel ID`, fishing_history$VESSEL_ID)  
-fgem_opt_in[`Vessel Permit/Vessel ID` %in% no_history]  
-# CRYSTSAL STAR, EMERALD ISLE, and THREE PERALS have no fishing history aside from ZERO 
+#' [2025ADP: 3 vessels with a history didn't fish in 2024 so far]
+fishing_history_N[LATEST != (ADPyear - 1)]
 
-# These vessels are listed as 39 ft length overall in VALHALLA/work.data
-unique(work.data[VESSEL_ID %in% no_history, .(VESSEL_ID, TRIP_ID, ADP, STRATA, STRATA_NEW, MANAGEMENT_PROGRAM_CODE, LENGTH_OVERALL)])[order(VESSEL_ID)]
-fgem_opt_in[`Vessel Permit/Vessel ID` %in% no_history]  # but have lengths of 41, 48, and 44 in the spreadsheet?
+# Some vessels may have no fishing history that would count under fixed-gear
+no_history <- setdiff(fgem_opt_in$VESSEL_ID, fishing_history$VESSEL_ID)  
+fgem_opt_in[VESSEL_ID %in% no_history]
+#' [2025ADP: 2527, ANGIE LEE has no fishing history since 2013] 
+
+# Are any vessels requesting EM in the zero-coverage fleet due to LOA < 40?
+fgem_opt_in[LENGTH < 40]
+#' [2025ADP: 0 vessels are < 40 ft] 
+
+fishing_history_N
 
 #======================================================================================================================#
 # Evaluate Interspersion ---- 
@@ -123,57 +139,76 @@ fgem_opt_in[`Vessel Permit/Vessel ID` %in% no_history]  # but have lengths of 41
 # change to the afforded selection rates from proximity allocation (e.g., OB rates would go up and FG-EM would go down, presumably)
 # -- pc_effort_dt is only made for 2015 at earliest
 
-# Redefine STRATA combining HAL and POT into FIXED
-fixed.pc_effort <- unique(copy(pc_effort_dt)[STRATA %like% "HAL|POT", STRATA := paste0(POOL, "_", "FIXED")])
+# Specify years of fishing effort to include in review (more takes longer!)
+year_vec <- seq((ADPyear - 3), (ADPyear - 1))
 
-# FIXME for some very early years, BSAI_GOA has AI and BS separated
-fixed.pc_effort <- unique(fixed.pc_effort[BSAI_GOA %in% c("AI", "BS"), BSAI_GOA := "BSAI"])
+# Restrict analysis to fixed-gear trips
+fixed.pc_effort <- work.data[ADP %in% year_vec & STRATA_NEW %like% "FIXED|ZERO",] 
+# Apply the stratum definitions from the ADP year
+fixed.pc_effort[, STRATA := STRATA_NEW][, CVG := CVG_NEW]
+fixed.pc_effort <- fixed.pc_effort |> spatiotemp_data_prep()
 
-# FIXME Also, haven't re-run data_prep.R, so the vessels that were originally labeled as ZERO due to LOA discrepancy need to be converted
-fixed.pc_effort[PERMIT %in% c(33881, 35836, 3735) & STRATA == "ZERO", STRATA := "OB_FIXED"]
-
+#' [2025ADP: Have always set 15% here before - consider changing this!]
 # Initialize data.table with 15% selection rates for all strata
-selection_15 <- unique(fixed.pc_effort[STRATA != "ZERO", .(ADP, STRATA, BSAI_GOA)])[
-][, STRATUM_COL := paste0(STRATA, "-", BSAI_GOA)
-][, SAMPLE_RATE := 0.15][]
+# selection_15 <- unique(fixed.pc_effort[STRATA != "ZERO", .(ADP, STRATA, BSAI_GOA)])[
+# ][, STRATUM_COL := paste0(STRATA, "-", BSAI_GOA)
+# ][, SAMPLE_RATE := 0.15][]
 
 # First, move all vessels opting OUT of fixed-gear EM back into the observer pool
 dcast(
-  fixed.pc_effort[PERMIT %in% fgem_opt_out$`Vessel Permit/Vessel ID`, .(N = uniqueN(TRIP_ID)), keyby = .(PERMIT, ADP, STRATA, BSAI_GOA)],
+  fixed.pc_effort[PERMIT %in% fgem_opt_out$VESSEL_ID, .(N = uniqueN(TRIP_ID)), keyby = .(PERMIT, ADP, STRATA, BSAI_GOA)],
   PERMIT + STRATA + BSAI_GOA ~ ADP, value.var = "N", fill = 0) 
 # 3297 actually fished a fair amount, probably was a reasonably cost-effective fixed-gear EM vessel?
 # 792 fished somewhat consistently, actually fished 10 trips in 2022 but only 1 so far in 2013.
 # 3102 hasn't fished since 2015. 32413 hasn't fished since 2018.
-fixed.pc_effort[PERMIT %in% fgem_opt_out$`Vessel Permit/Vessel ID`, ':=' (POOL = "OB", STRATA = gsub("EM_", "OB_", STRATA))]
+fixed.pc_effort[PERMIT %in% fgem_opt_out$VESSEL_ID, ':=' (POOL = "OB", STRATA = gsub("EM_", "OB_", STRATA))]
 
 #=============#
 ## Initial ----
 #=============#
 
-# Specify years of fishing effort to include in review (more takes longer!)
-# year_vec <- 2021:2023    # for testing (3 years)
-year_vec <- 2018:2023  # for full run (6 years)
+box_params <- list(
+  space = c(2e5, 2e5),
+  time = c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"),
+  year_col = "ADP", stratum_cols = "STRATA", ps_cols = "GEAR",
+  stat_area_sf = stat_area_sf
+)
 
-# Make things faster by cropping out all TRW trips
-system.time(init.box <- define_boxes_3(
-  fixed.pc_effort[ADP %in% year_vec & !(STRATA %like% "TRW")], space = c(2e5, 2e5), time = c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"),
-  year_col = "ADP", stratum_cols = c("STRATA", "BSAI_GOA"), dmn_cols = c("GEAR"), geom = T ))
+init.box <- define_boxes(
+  fixed.pc_effort, space = box_params$space, time = box_params$time,
+  year_col = box_params$year_col, stratum_cols = box_params$stratum_cols, ps_cols = box_params$ps_cols,
+  dmn_lst = list(nst = "GEAR", st = "BSAI_GOA"), geom = T)
+
 
 # Define acceptor/donor lists for interspersion 
+init.box$strata_n_dt[, -c("ADP", "STRATA_N")] |> unique()
 # init.box$dmn$strata_dt
 fixed_fmp.OB.acceptor_donor_lst <- c(
   rep(list(3:4), times = 2),                # 1-2:   EM Fixed Gear
   rep(list(3:4), times = 2),                # 3-4:   OB Fixed Gear
-  rep(list(3:4), times = 2)                 # 5-6:   ZERO           
+  rep(list(3:4), times = 1)                 # 5:   ZERO           
 )
 fixed_fmp.nonOB.acceptor_donor_lst <- c(
   rep(list(1:2), times = 2),               # 1-2: Fixed-gear EM to itself
-  rep(list(NULL), times = 4)               # 3-6: No other donors
+  rep(list(NULL), times = 3)               # 3: No other donors
+)
+
+# Set the assumed monitoring rates for the upcoming ADP year STRATUM x ADP, using the rates from the Draft ADP
+gdrive_download(
+  local_path = paste0("results/draft_adp_", ADPyear, "_results.rdata"),
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output")
+)
+(load(paste0("results/draft_adp_", ADPyear, "_results.rdata")))  # using rates_adp
+# Apply these rates to the past 3 years
+rates_adp <- rbind(
+  copy(rates_adp)[,ADP := ADPyear - 3],
+  copy(rates_adp)[,ADP := ADPyear - 2],
+  copy(rates_adp)[,ADP := ADPyear - 1]
 )
 
 init.ispn <- dmn_interspersion_figs(
   box_def = init.box,
-  selection_rates = selection_15,
+  selection_rates = rates_adp,
   ob_adl = fixed_fmp.OB.acceptor_donor_lst,
   nonob_adl = fixed_fmp.nonOB.acceptor_donor_lst
 )
@@ -188,8 +223,8 @@ init.ispn$DMN_INSP_NONOB_SMRY$BSAI_GOA
 ## Loop through each vessel ----
 #==============================#
 
-fgem_vessel_vec <- fgem_opt_in$`Vessel Permit/Vessel ID`
-prior.effort <- copy(fixed.pc_effort[ADP %in% year_vec  & !(STRATA %like% "TRW")])
+fgem_vessel_vec <- fgem_opt_in$VESSEL_ID
+prior.effort <- copy(fixed.pc_effort)
 prior.ispn <- copy(init.ispn)
 add_fgem_vec <- c()
 fgem_eval_vec <- list()
@@ -197,7 +232,8 @@ fgem_eval_vec <- list()
 while(length(fgem_vessel_vec) > 0) {
   
   # Count the number of OB_FIXED trips by each vessel and year
-  trip_counts <- prior.effort[PERMIT %in% fgem_vessel_vec & STRATA %like% "OB_FIXED", .(N = uniqueN(TRIP_ID)), keyby = .(PERMIT, ADP)]
+  trip_counts <- prior.effort |>
+    _[PERMIT %in% fgem_vessel_vec & STRATA %like% "OB_FIXED", .(N = uniqueN(TRIP_ID)), keyby = .(PERMIT, ADP)]
   
   # identify vessels with no fishing history
   no_fishing_history <- setdiff(fgem_vessel_vec, unique(trip_counts$PERMIT))
@@ -213,26 +249,27 @@ while(length(fgem_vessel_vec) > 0) {
   for(i in seq_along(fgem_vessel_vec)) {
     # i <- 1
     
-    cat("Vessel:", fgem_vessel_vec[i], ":")
+    cat("Vessel:", fgem_vessel_vec[i], ": ")
     
     # Copy the most recent stable fishing effort object
     temp.effort <- copy(prior.effort)
     
-    # Move the vessel out of OB-FIXED and into FIXED_EM pool
-    trips_to_convert <- temp.effort[PERMIT %in% fgem_vessel_vec[i] & STRATA == "OB_FIXED", unique(TRIP_ID)]
+    # Move the vessel out of OB-FIXED and into EM_FIXED pool
+    trips_to_convert <- temp.effort[PERMIT %in% fgem_vessel_vec[i] & STRATA %like% "OB_FIXED", unique(TRIP_ID)]
 
     # Convert all OB_FIXED trips into EM_FIXED
-    temp.effort[TRIP_ID %in% trips_to_convert, STRATA := "EM_FIXED"]
+    temp.effort[TRIP_ID %in% trips_to_convert, STRATA := sub("OB_FIXED", "EM_FIXED", STRATA)]
 
     # Define boxes
-    temp.box <- define_boxes_3(
-      temp.effort, space = c(2e5, 2e5), time = c("week", 1, "TRIP_TARGET_DATE", "LANDING_DATE"),
-      year_col = "ADP", stratum_cols = c("STRATA", "BSAI_GOA"), dmn_cols = c("GEAR"), geom = T )
-
+    temp.box <- define_boxes(
+      temp.effort, space = box_params$space, time = box_params$time,
+      year_col = box_params$year_col, stratum_cols = box_params$stratum_cols, ps_cols = box_params$ps_cols,
+      dmn_lst = list(nst = "GEAR", st = "BSAI_GOA"), geom = T)
+    
     # Calculate interspersion
     temp.ispn <- dmn_interspersion_figs(
       box_def = temp.box,
-      selection_rates = selection_15,
+      selection_rates = rates_adp,
       ob_adl = fixed_fmp.OB.acceptor_donor_lst,
       nonob_adl = fixed_fmp.nonOB.acceptor_donor_lst
     )
@@ -250,13 +287,15 @@ while(length(fgem_vessel_vec) > 0) {
     x1 <- x$ISPN
     # Calculate differences in overall interspersion indices
     overall <- copy(x1$DMN_INSP_OB_SMRY$OVERALL)
-    overall[, PRIOR := prior.ispn$DMN_INSP_OB_SMRY$OVERALL[overall, .(POOL_DMN_INTERSPERSION), on = .(GEAR, ADP, POOL)]]
-    overall[, DIFF := POOL_DMN_INTERSPERSION - PRIOR]
+    overall |>
+      _[, PRIOR := prior.ispn$DMN_INSP_OB_SMRY$OVERALL[overall, POOL_DMN_INTERSPERSION, on = .(GEAR, ADP, POOL)]
+      ][, DIFF := POOL_DMN_INTERSPERSION - PRIOR]
     
     # Calculate differences in FMP-specific interspersion indices
     bsai_goa <- copy(x1$DMN_INSP_OB_SMRY$BSAI_GOA)
-    bsai_goa[, PRIOR := prior.ispn$DMN_INSP_OB_SMRY$BSAI_GOA[bsai_goa, POOL_DMN_INTERSPERSION, on = .(GEAR, BSAI_GOA, ADP, POOL)]]
-    bsai_goa[, DIFF := POOL_DMN_INTERSPERSION - PRIOR]
+    bsai_goa |>
+      _[, PRIOR := prior.ispn$DMN_INSP_OB_SMRY$BSAI_GOA[bsai_goa, POOL_DMN_INTERSPERSION, on = .(GEAR, BSAI_GOA, ADP, POOL)]
+      ][, DIFF := POOL_DMN_INTERSPERSION - PRIOR]
     
     list(OVERALL = overall, BSAI_GOA = bsai_goa)
     
@@ -291,8 +330,6 @@ while(length(fgem_vessel_vec) > 0) {
   add_fgem_vec <- c(add_fgem_vec, add_to_fgem)
   cat("\n+ Adding vessel :", add_to_fgem, "to fixed-gear EM pool.\n\n")
   
-  # TODO for first run, when add_fgem_vec is length 0, save INSP_CHANGE object for all vessels as init.insp_change
-  
   # Reassign prior.ispn, prior.effort, and fgem_vessel_vec
   prior.effort <- loop_res[[which(fgem_vessel_vec == add_to_fgem)]]$EFFORT
   prior.ispn <- loop_res[[which(fgem_vessel_vec == add_to_fgem)]]$ISPN
@@ -314,33 +351,35 @@ while(length(fgem_vessel_vec) > 0) {
 # save(
 #   fgem_request_dt, fgem_opt_in, fgem_opt_out,
 #   fishing_history, fishing_history_N, add_fgem_vec, fgem_eval_vec,
-#   file = "analyses/fixed_gear_EM_request_evaluation/fgem_eval_results.rdata")
+#   file = paste0("analyses/fixed_gear_EM_request_evaluation/results/", ADPyear, "fgem_eval_raw.rdata"))
 
 # 6-year Vector:
 # 4383 33881 5608 2084 4387 3717 35836 4659 (with 2348, 5735 with no history in 2018-2023)
 
-# TODO Make scorecard, combining fishing_history_N and results of loop
+# Make a scorecard, combining fishing_history_N and results of loop
 
-fishing_history_N
-
+# Capture ranks of each vessel based on OB_RATIO (per-trip impact to OB-OB interspersion)
 eval_dt <- data.table(VESSEL_ID = sapply(fgem_eval_vec, "[[", "PERMIT"))[, RANK := .I][]
-eval_dt <- eval_dt[data.table(VESSEL_ID = fgem_opt_in$`Vessel Permit/Vessel ID`), on = .(VESSEL_ID)]
-eval_dt <- fishing_history_N[eval_dt, on = .(VESSEL_ID)]
-eval_dt <- rbindlist(lapply(fgem_eval_vec, function(x) x$METRICS[1, ]))[, .(VESSEL_ID = PERMIT, OB_DIFF, EVAL_N = N, RATIO)][eval_dt, on = .(VESSEL_ID)]
-eval_dt[VESSEL_ID == 5735, VESSEL_NAME := "EMERALD_ISLE"]
-eval_dt[order(VESSEL_ID)]
+
+# Merge in all vessels and names, including those not evaluated for not having a fishing history
+eval_dt <- eval_dt[fgem_request_dt[, .(VESSEL_ID = as.integer(VESSEL_ID), VESSEL_NAME)], on = .(VESSEL_ID)]
+
+# Merge in yearly fishing history
+eval_dt <- fishing_history_N[eval_dt, on = .(VESSEL_ID, VESSEL_NAME)]
+# Merge in LOA, TYP3, and Rank Metrics
+eval_dt <- rbindlist(lapply(fgem_eval_vec, function(x) x$METRICS[1, ])) |>
+  _[, .(VESSEL_ID = PERMIT, OB_DIFF, EVAL_N = N, RATIO)
+  ][eval_dt, on = .(VESSEL_ID)]
 setorder(eval_dt, RANK)
-setcolorder(eval_dt, c("VESSEL_ID", "VESSEL_NAME", as.character(2013:2023), "TOTAL", "EARLIEST", "LATEST", "TPY", "EVAL_N", "OB_DIFF", "RATIO", "RANK"))
-# TODO ADD LENGTH OVERALL?
+setcolorder(eval_dt, c("VESSEL_ID", "VESSEL_NAME", as.character(2013:(ADPyear-1)), "TOTAL", "EARLIEST", "LATEST", "TPY3", "EVAL_N", "OB_DIFF", "RATIO", "RANK"))
+# Melt data for plotting
 eval_dt_melt <- suppressWarnings(melt(
   eval_dt, id.vars = c("VESSEL_ID", "VESSEL_NAME"), 
-  measure.vars = c("TOTAL", "TPY", "EVAL_N", "OB_DIFF", "RATIO", "RANK")))
-# higher values is better, except for RANK!
-eval_dt_melt[, FILL_RATIO := (value - min(value, na.rm = T)) / diff(range(value, na.rm = T)), by = variable]
-eval_dt_melt[variable == "RANK", FILL_RATIO := -FILL_RATIO + 1]
-
-# eval_dt_melt[variable == "RANK", FILL_RATIO := (1/ (1-FILL_RATIO))/10]
-
+  measure.vars = c("TOTAL", "TPY3", "EVAL_N", "OB_DIFF", "RATIO", "RANK")))
+# Assign a fill color, scaled by each variable. Higher values is better, except for RANK!
+eval_dt_melt |>
+  _[, FILL_RATIO := (value - min(value, na.rm = T)) / diff(range(value, na.rm = T)), by = variable
+  ][variable %in% c("OB_DIFF", "RATIO"), FILL_RATIO := -FILL_RATIO + 1]
 
 ### How many POT, HAL, or mixed trips? ----
 trips_gear <- unique(fishing_history[, .(ADP, AGENCY_GEAR_CODE, TRIP_ID, VESSEL_ID)])
@@ -354,37 +393,24 @@ trips_gear[, TOTAL := HAL + MIXED + POT]
 sum(trips_gear$TOTAL) # should equal same amount as before (406)
 dcast(trips_gear, VESSEL_ID ~ ADP, value.var = c("HAL", "MIXED", "POT"))
 trips_gear_melt <- melt(trips_gear[, -"TOTAL"], id.vars = c("VESSEL_ID", "ADP"))[value != 0]
-plot_trips_gear <- ggplot(trips_gear_melt, aes(x = ADP, y = variable, fill = value, label = value)) + 
+plot_trips_gear <- ggplot(trips_gear_melt, aes(x = as.character(ADP), y = variable, fill = value, label = value)) + 
   facet_grid(as.character(VESSEL_ID) ~ ., scales = "free_y", space = "free_y") + 
   geom_tile(aes(color = variable), linewidth = 1) + geom_text() + 
   scale_fill_viridis_c() + 
   scale_color_manual(values = c(HAL = "red", MIXED = "purple", POT = "blue"), guide = "none") + 
-  labs(x = "Year", y = "Gear Used", fill = "Trips")
+  labs(x = "Year", y = "Gear Used", fill = "Trips", subtitle = "Red = HAL, Purple = MIXED, Blue = POT")
 
-
-fishing_history_N[order(VESSEL_ID)]
-
+# Score card of metrics. Purple = "good", yellow == "bad"
 plot_fgem <- ggplot(eval_dt_melt, aes(x = paste0("(", VESSEL_ID, ") ", VESSEL_NAME), y= value, fill = FILL_RATIO)) + 
   facet_grid(. ~ variable, scales = "free_x") + 
-  geom_col(color = "black") + geom_text(aes(label = round(value, 6))) + 
+  geom_col(color = "black", na.rm = T) + geom_text(aes(label = round(value, 6)), na.rm = T) + 
   scale_fill_viridis_c() + scale_x_discrete(limits = rev) + coord_flip() +
-  labs(fill = "Relative Value", y = "Value", x = "Vessel") + 
-  theme(legend.position = "bottom")
+  labs(fill = "Relative Value", y = "Value", x = "Vessel", subtitle = paste0(ADPyear, ": Purple = good, yellow == bad")) + 
+  theme(legend.position = "bottom") + theme_classic()
 
-
-
-# Changes to other pools (additive)
+## Impacts to other pools ----
 a <- as.data.table(do.call(rbind, lapply(fgem_eval_vec, "[[", "INSP_CHANGE")))
 a[, PERMIT := sapply(fgem_eval_vec, "[[", "PERMIT")]
-sapply(fgem_eval_vec, "[[", "PERMIT")
-# 35836 has more of an impact to OB than to ZE and EM
-
-a_melt <- melt(a, id.vars = c("PERMIT"))
-a_melt[, FILL_RATIO := (value - min(value, na.rm = T)) / diff(range(value, na.rm = T)), by = variable]
-
-# This is total change, not scaled by # trips
-ggplot(a_melt, aes(x = as.character(PERMIT), y = value, fill = FILL_RATIO)) + facet_grid(. ~ variable, scales = "free") + geom_col(color = "black") + 
-  coord_flip() + scale_fill_viridis_c() + labs(x = "Vessel", y = "Value")
 
 # this is the first cut. As more vessels are added, impacts to OB become a little greater
 first_cut <- fgem_eval_vec[[1]]$METRICS[, .(PERMIT, N)]
@@ -393,17 +419,12 @@ metric_cols <- c("OB", "EM", "ZE")
 first_cut[, paste0(metric_cols, "_RATIO") := lapply(.SD, function(x) x / N), by = .(PERMIT), .SDcols = metric_cols]
 first_cut_melt <- melt(first_cut, id.vars = c("PERMIT", "N"))
 first_cut_melt[, FILL_RATIO := (value - min(value, na.rm = T)) / diff(range(value, na.rm = T)), by = variable]
-#first_cut_melt[, variable := factor(variable, levels = c("OB", "OB_RATIO", "EM", "EM_RATIO", "ZE", "ZE_RATIO"))]
-ob_em_ze_metrics <- ggplot(first_cut_melt, aes(x = as.character(PERMIT), y = value, fill = FILL_RATIO)) + 
+plot_ob_em_ze_metrics <- ggplot(first_cut_melt, aes(x = as.character(PERMIT), y = value, fill = FILL_RATIO)) + 
   facet_grid(. ~ variable, scales = "free") + geom_col(color = "black") + 
   coord_flip() + scale_fill_viridis_c() + labs(x = "Vessel", y = "Value") + 
-  labs(x = "Vessel", y = "Value", fill = "Relative value") + 
+  labs(x = "Vessel", y = "Value", fill = "Relative value", subtitle = "First-cut metrics (i.e., non-additive impacts)") + 
   geom_hline(yintercept = 0) +
   scale_x_discrete(limits = rev)
-ob_em_ze_metrics
-init.ispn$DMN_INSP_OB_SMRY$BSAI_GOA  # Note that we have interspersion split by HAL and POT, so we are summing impacts to both of those idependently
-# 3717 had on overall impact of 0.01 on FMP-level interspersion
-#  4659 had the worst per-trip impacts to all OB, EM, and ZE, with only 4.6 trips per year
 
 # Of the FGEM vessels that fish, what is the average # of trips taken per year?
 fgem_tpy <- fixed.pc_effort[STRATA %like% "EM_FIXED", .(N = uniqueN(TRIP_ID)),  keyby = .(ADP, PERMIT)]
@@ -413,153 +434,89 @@ plot_fgem_tpy <- ggplot(fgem_tpy, aes(x = N)) + geom_histogram(bins = 30) + face
   geom_text(data = fgem_tpy_mean_median, aes(x = MEAN, y = 30, label = round(MEAN,2)), color = "red", angle = 90, vjust = 1, hjust = 1, size = 3) + 
   geom_vline(data = fgem_tpy_mean_median, aes(xintercept = MEDIAN)) + 
   geom_text(data = fgem_tpy_mean_median, aes(x = MEDIAN, y = 30, label = round(MEDIAN,2)), angle = 90, vjust = 0, hjust = 1, size = 3) +
-  labs(x = "Trips per year", y = "Count of vessels", subtitle = "Using 2023 list of FGEM vessels. Note that 2023 is data to date.")
+  labs(x = "Trips per year", y = "Count of vessels", subtitle = "Mean = red, median = black")
 # Red is mean, black is median
 # Trips per year does fluctuate 
 
+#==========================#
+## Spatial distribution ----
+#==========================#
 
-#=============#
-## Summary ----
-#=============#
-fishing_history_N[order(VESSEL_ID)]
-plot_fgem # Summary of results from history and interspersion analysis (impacts to OB-OB)
-ob_em_ze_metrics # First cut, look at impacts to OB, EM, and ZE interspersion, total and per trip (i.e. total divided by N_EVAL)
-plot_fgem_tpy # For reference, current list of FG_EM vessels fished 7.76 trips per year on average, median of 6.
-
-### Save Objects for RMD ----
-save(fishing_history_N, plot_fgem, ob_em_ze_metrics, plot_fgem_tpy, plot_trips_gear, file = "analyses/fixed_gear_EM_request_evaluation/fgem_results.rdata")
-# Saved to Final ADP Outputs folder: https://drive.google.com/file/d/1gbLfqw1ncifSuoHtTsIBDAcTdLSVkHvC/view?usp=drive_link
-
-#  2084  COMMANDER -      [Good candidate] Fishes 8.5 trips per year and had fairly low impact per trip
-#  2348  ALEUT MISTRESS - [Bad] No recent fishing effort, last fished in 2014. Probably not cost effective?
-# 33881  THREE PEARLS -   [Bad] Hasn't fished since 2019 (no fishing in last 3 years), and only fished 2-1 trips per year. 
-# 35836  CRYSTAL STAR -   [Bad?] Fishes 5.5 trips per year but had the 2nd highest impact per rip  -- CHECK WHY 
-#  3717  CARLYNN -        [Okay?] Fishes 18.455 trips per year, had most overall impact, but 6th greatest impact per trip.
-#  4383  SOUTHEASTERN -   [Bad?] Fishes only 2.5 trips per year (2-4 consistently), with lowest impact per trip.
-#  4387  TANYA M -        [Okay?] Fishes a lot (16.5 trips per year), but with some impacts to data. 
-#  4659  SUNDANCER -      [Bad?] fishes 4.6 trips per year but had the highest impact per trip -- [CHECK WHY]
-#  5608  GARNET -         [Okay?] Fishes only 4 trips per year, but more in more recent years, with low impact per trip. 
-#  5735  EMERALD ISLE -   [Bad?] No fishing history whatsoever in VALHALLA
-
-# Relative to all of FGEM vessels, knowing the percentile would be informative (putting them back into OB to compare the difference)
-
-#======================================================================================================================#
-# Incomplete ----
-#======================================================================================================================#
-
-# The below is not done - was working towards a way to visualize where/when fishing effort from one vessel occurs in 
-# relation to the rest of fishing effort.
-
-#=============#
-## Mapping ----
-#=============#
-
-init.ispn$DMN_INSP_OB$RAW
-init.ispn$DMN_INSP_OB$geom  # geometry to apply to cells
+# How the vessels were ranked (i.e., impacts to data gaps), may be explained by where the vessels fish and how that 
+# compares to the remaining fishing in the observer pool
 
 a1 <- copy(init.ispn$DMN_INSP_OB$RAW)
 a1 <- merge(init.ispn$DMN_INSP_OB$geom, a1, on = "HEX_ID") %>% filter(STRATA %like% "FIXED")
 
-init.box$og_data  # I Don't have VESSEL_ID but I do have TRIP_ID. Can see which BOX_ID they were in
-
-fgem_request_box_id <- lapply(fgem_opt_in$`Vessel Permit/Vessel ID`, function(x) {
+fgem_request_box_id <- lapply(fgem_opt_in$VESSEL_ID, function(x) {
   init.box$og_data[TRIP_ID %in% unique(fixed.pc_effort[PERMIT == x, TRIP_ID])  ]
 })
-names(fgem_request_box_id) <- fgem_opt_in$`Vessel Permit/Vessel ID`
+names(fgem_request_box_id) <- fgem_opt_in$VESSEL_ID
 fgem_request_box_id <- rbindlist(fgem_request_box_id, idcol = "PERMIT")
 fgem_request_box_id <- merge(init.ispn$DMN_INSP_OB$geom, fgem_request_box_id, on = "HEX_ID") %>% filter(STRATA %like% "FIXED")
 
 # Kind of sloppy, but shows where each vessel fished. This is overplotting across all time (years split by weeks!)
-ggplot(a1 %>% filter(STRATA == "OB_FIXED")) +
+plot_spatial_overall <- ggplot(a1 %>% filter(STRATA == "OB_FIXED")) +
   geom_sf(data = ak_low_res %>% st_set_crs(st_crs(init.ispn$DMN_INSP_OB$geom))) + 
   geom_sf(data = fgem_request_box_id, fill = "red", alpha = 0.2) +
   geom_sf(fill = NA) + facet_wrap(~PERMIT, nrow = 2)
 
 # Faceting by year
-ggplot(a1 %>% filter(STRATA == "OB_FIXED")) +
+plot_spatial_by_year <- ggplot(a1 %>% filter(STRATA == "OB_FIXED")) +
   geom_sf(data = ak_low_res %>% st_set_crs(st_crs(init.ispn$DMN_INSP_OB$geom))) + 
   geom_sf(data = fgem_request_box_id, fill = "red", alpha = 0.2) +
   geom_sf(fill = NA) + facet_grid(ADP~PERMIT)
 
-# Get yearly totals
-
-a2 <- a1 %>% filter(STRATA == "OB_FIXED") %>% group_by(ADP, HEX_ID, geometry) %>% summarize(BOX_DMN_w = sum(BOX_DMN_w)) 
+# Calculate weight of boxes to create a map of where OB_FIXED fishing occurs
+a2 <- a1 %>% filter(STRATA %like% "OB_FIXED") %>% group_by(ADP, HEX_ID, geometry) %>% summarize(BOX_DMN_w = sum(BOX_DMN_w)) 
 a3 <- fgem_request_box_id %>% group_by(ADP, PERMIT, HEX_ID, geometry) %>% summarize(BOX_N = n()) # number of weeks fished in that cell
 
-ggplot(a2) +
+#' Plot how much each vessel fishes (outlines) overlaid on the total OB_FIXED fishing effort. You don't really want to 
+#' add vessels to the EM pool if they represent a lot of fishing in a particular area (purple cells outlined in orange)
+plot_spatial_overlay <- ggplot(a2) +
   geom_sf(data = ak_low_res %>% st_set_crs(st_crs(init.ispn$DMN_INSP_OB$geom))) + 
-  geom_sf(aes(fill = BOX_DMN_w)) + facet_grid(ADP~PERMIT) + 
+  geom_sf(aes(fill = BOX_DMN_w)) + facet_grid(ADP ~ PERMIT) + 
   scale_fill_viridis_c(trans = "sqrt") + 
-  geom_sf(data = a3, aes(color = BOX_N), linewidth = 1, fill = NA) + 
-  scale_color_gradient(low = "red4", high = "orange")
-# TODO Making individual plots for each stratum with fixed color scales should be nice? Could flip though each vessel
+  geom_sf(data = a3, aes(color = BOX_N), linewidth = 0.5, fill = NA) + 
+  scale_color_gradient(low = "red4", high = "orange") + 
+  labs(subtitle = "Purple cells outlined in orange = bad: Vessel fishes a lot in places where less fishing occurs")
 
-ggplot(a2) +
-  geom_sf(data = ak_low_res %>% st_set_crs(st_crs(init.ispn$DMN_INSP_OB$geom))) + 
-  geom_sf(aes(fill = BOX_DMN_w)) + facet_grid(ADP~PERMIT) + 
-  scale_fill_viridis_c(trans = "log") +   # LOG OR SQRT?
-  geom_sf(data = a3 %>% filter(PERMIT == 4659), aes(color = BOX_N), linewidth = 1, fill = NA) + 
-  scale_color_gradient(low = "red4", high = "orange")
-# 4659 is supposed to have the highest impact per trip. Seems like it generally fishes in HEX_IDs with high effort, but if those 
-# boxes are high effort because of its trips or if neighboring cells are have fewer trips, may not 
-# May need to summarize over time? Quarter Perhaps?
+#=============#
+## Summary ----
+#=============#
 
-# time is split into weeks 1 to 53. Could split into 'months, rep(c(4,5), times = 6), or quarters sum(c(13,14,13,14))
-a2 <- a1 %>% filter(STRATA == "OB_FIXED") %>% 
-  mutate(MONTH = cut(TIME, cumsum(c(0, rep(c(4,5), times = 6))), labels = F)) %>%
-  group_by(ADP, HEX_ID, MONTH, geometry) %>% summarize(BOX_DMN_w = sum(BOX_DMN_w)) 
-a3 <- fgem_request_box_id %>%
-  mutate(MONTH = cut(TIME, cumsum(c(0, rep(c(4,5), times = 6))), labels = F)) %>%
-  group_by(ADP, PERMIT, HEX_ID, geometry, MONTH) %>% summarize(BOX_N = n()) # number of weeks fished in that cell
-ggplot(a2) +
-  geom_sf(data = ak_low_res %>% st_set_crs(st_crs(init.ispn$DMN_INSP_OB$geom))) + 
-  geom_sf(aes(fill = BOX_DMN_w)) + facet_grid(MONTH ~ PERMIT + ADP) + 
-  scale_fill_viridis_c(trans = "log") +   # LOG OR SQRT?
-  geom_sf(data = a3 %>% filter(PERMIT == 4659), aes(color = BOX_N), linewidth = 1, fill = NA) + 
-  scale_color_gradient(low = "red4", high = "orange")
+#' [2025ADP: Summary]
+#' VESSEL_ID    VESSEL_NAME         COMMENTS
+#'      2527      ANGIE LEE - [bad]  No fishing history since 2013.
+#'     26563     JODI MARIE - [bad]  No fishing history since 2022.
+#'     25961       DOMINION - [bad]  Not cost-efficient. Only 1.67 trips fished per year.
+#'     25080     ALEUT LADY - [bad]  Not cost-efficient. Only 1.00 trips fished per year.
+#'       571  NORTHERN FURY - [bad]  Not cost-efficient. Only 1.67 trips fished per year.
+#'     30617    OCEAN OASIS - [okay] Not cost-efficient. Only 5.00 trips fished per year, evaluate next year.
+#'     10562  CAPE ST ELIAS - *good* Fishes 6.33 trips per year, already wired as a Trawl EM vessel.
+#'     35836   CRYSTAL STAR - [bad]  Not cost-efficient. Only 3.67 trips fished per year.
+#'      1877      LADY RUTH - [bad]  Fishes 11.67 trips per year but all in the BSAI, highly likely to cause data gaps.
 
-a4 <- merge(a3, a2 %>% st_drop_geometry(), by = c("ADP", "HEX_ID", "MONTH"))
-ggplot(a4 %>% filter(PERMIT == 4659)) +
-  geom_sf(data = ak_low_res %>% st_set_crs(st_crs(init.ispn$DMN_INSP_OB$geom))) + 
-  geom_sf(aes(fill = BOX_DMN_w, color = BOX_N), linewidth = 1) + facet_grid(MONTH ~ PERMIT + ADP) + 
-  geom_sf_text(aes(label = round(BOX_DMN_w)), size = 1.5, color = "gray50") + 
-  scale_fill_viridis_c(trans = "log") +   # LOG OR SQRT?
-  scale_color_gradient(low = "red4", high = "orange")
+### Save Objects ----
+out_name <- paste0("analyses/fixed_gear_EM_request_evaluation/results/", ADPyear, "_fgem_eval.rdata")
+save(
+  # Raw outputs
+  fgem_request_dt, fgem_opt_in, fgem_opt_out, fishing_history, fishing_history_N, add_fgem_vec, fgem_eval_vec,
+  # Summaries
+  eval_dt, eval_dt_melt,
+  # Figures
+  plot_fgem, plot_ob_em_ze_metrics, plot_fgem_tpy, plot_trips_gear,
+  plot_spatial_overall, plot_spatial_by_year, plot_spatial_overlay,
+  file = out_name)
+#' Upload to Gdrive
+gdrive_upload(local_path = out_name, gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data"))
 
-# I can back-calculate number of neighbors using the sample prob (15%)
-what <- copy(init.ispn$DMN_INSP_OB$POOLED)
-what[, BOX_DMN_nbr := log(1 - BOX_DONOR_SAMPLE_PROB) / log(1 - 0.15) ]
-# these neighbor counts are split by gear type... I typically apply these to a mixed gear trip's components separately to get a single probability
-# SPLIT BY GEAR TYPE HERE Im summing BOX_DMN_w across gear type...
+### Save figures to upload to the repo
+ggsave(plot_fgem, file = "analyses/fixed_gear_EM_request_evaluation/results/figures/plot_fgem.png", width = 10, height = 7.5, units = "in")
+ggsave(plot_ob_em_ze_metrics, file = "analyses/fixed_gear_EM_request_evaluation/results/figures/plot_ob_em_ze_metrics.png", width = 10, height = 7.5, units = "in")
+ggsave(plot_fgem_tpy, file = "analyses/fixed_gear_EM_request_evaluation/results/figures/plot_fgem_tpy.png", width = 10, height = 7.5, units = "in")
+ggsave(plot_trips_gear, file = "analyses/fixed_gear_EM_request_evaluation/results/figures/plot_trips_gear.png", width = 10, height = 7.5, units = "in")
+ggsave(plot_spatial_overall, file = "analyses/fixed_gear_EM_request_evaluation/results/figures/plot_spatial_overall.png", width = 10, height = 4.5, units = "in")
+ggsave(plot_spatial_by_year, file = "analyses/fixed_gear_EM_request_evaluation/results/figures/plot_spatial_by_year.png", width = 10, height = 4.5, units = "in")
+ggsave(plot_spatial_overlay, file = "analyses/fixed_gear_EM_request_evaluation/results/figures/plot_spatial_overlay.png", width = 10, height = 4.5, units = "in")
 
-
-
-a2 <- a1 %>% filter(STRATA == "OB_FIXED") %>% 
-  mutate(BOX_DMN_nbr = log(1 - BOX_DONOR_SAMPLE_PROB) / log(1 - 0.15)) %>%
-  st_drop_geo
-
-
-a1 <- copy(init.ispn$DMN_INSP_OB$RAW)[STRATA == "OB_FIXED"]
-a1[, BOX_DMN_nbr := log(1 - BOX_DONOR_SAMPLE_PROB) / log(1 - 0.15) ]  # calculate # neighbors
-# Identify number of trips each permit contributes to each box
-
-trips_4659 <- unique(init.box$og_data[TRIP_ID %in% fixed.pc_effort[PERMIT == 4659, unique(TRIP_ID)]])
-trips_4659 <- trips_4659[, .(VES_N = uniqueN(TRIP_ID)), keyby = .(BOX_ID)]
-# Identify which boxes these neighbor
-trips_4659 <- setnames(data.table(table(unlist(apply(trips_4659, MARGIN = 1, FUN = function(x) {
-  rep(init.box$nbr_lst[[x[1]]], times = x[[2]])
-})))), c("BOX_ID", "BOX_nbr_count"))
-a1[trips_4659, on = .(BOX_ID)]
-
-init.box$og_data[, BOX_n := .N, keyby = BOX_ID]
-
-trips_4659 <- unique(fixed.pc_effort[PERMIT == 4659, .(TRIP_ID, GEAR)])
-trips_4659 <- init.box$og_data[trips_4659, on = .(TRIP_ID)][, .(VES_N = uniqueN(TRIP_ID)), keyby = .(GEAR, BOX_ID)]
-trips_4659 <- split(trips_4659, by = "GEAR", keep.by = F)
-trips_4659 <- rbindlist(lapply(trips_4659, function(x) {
-  setnames(data.table(table(unlist(apply(x, MARGIN = 1, function(y) {
-    rep(init.box$nbr_lst[[y[[1]]]], times = y[[2]])
-  })))), c("BOX_ID", "BOX_nbr_count"))
-}), idcol = "GEAR")
-
-init.ispn$DMN_INSP_OB$RAW[STRATA == "OB_FIXED"]
