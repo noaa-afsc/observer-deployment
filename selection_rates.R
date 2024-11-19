@@ -46,7 +46,7 @@ gdrive_download(
 (load("source_data/cost_params_2025.Rdata"))
 
 #' Using `fg_em`, add the number of fixed-gear EM vessels to the `cost_params` list
-cost_params$EMFG$emfg_v <- uniqueN(fg_em$PERMIT)
+cost_params$EMFG$emfg_v <- uniqueN(fg_em[FLAG %in% c("A", "NONE"), PERMIT])
 
 #' Load `effort_glm`, the output of `effort_prediction.R` This is done for the final draft only.
 if(adp_ver == "Final") {
