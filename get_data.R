@@ -689,10 +689,10 @@ work.data.em <- work.data %>% mutate(REPORT_ID = as.character(REPORT_ID),
 
 # Need to do CVs and tenders separately during initial joins because of differences in data fields needed to
 # identify each
-work.cv <- left_join(work.data2, em_cv, by = join_by(REPORT_ID)) %>%
+work.cv <- left_join(work.data.em, em_cv, by = join_by(REPORT_ID)) %>%
   filter(!is.na(type))
 
-work.tender <- left_join(work.data2, tender, by = join_by(REPORT_ID)) %>%
+work.tender <- left_join(work.data.em, tender, by = join_by(REPORT_ID)) %>%
   filter(!is.na(type)) %>%
   # Tender ADFG number sometimes shortened in VALHALLA - Why? Who knows
   select(!c(TENDER_OFFLOAD_DATE, TENDER_VESSEL_ADFG_NUMBER.x)) %>%
@@ -725,7 +725,7 @@ missing_offloads <- dbGetQuery(channel_afsc, paste(
 
 missing.check <- anti_join(em.missing, missing_offloads, by = join_by(REPORT_ID))
 
-work.missing <- left_join(work.data2, missing_offloads, by = join_by(REPORT_ID)) %>%
+work.missing <- left_join(work.data.em, missing_offloads, by = join_by(REPORT_ID)) %>%
   filter(!is.na(type)) %>%
   # Tender ADFG number sometimes shortened in VALHALLA - Why? Who knows
   select(!c(TENDER_VESSEL_ADFG_NUMBER.x)) %>%
