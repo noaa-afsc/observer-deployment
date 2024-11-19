@@ -132,6 +132,10 @@ FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT AS vessel_id, length A
 #   Not a required field in eLandings
 
 #'[TODO: Separate the queries from the wrangling]
+#'[TODO: We don't necessarily need to identify which offloads were observed in GOA Trawl EM]
+#'  [Reasoning: Essentially full coverage since all offloads will now be monitored for salmon]
+#'  `We can identify tender vs CV trips solely on AKRO eLandings data in that case by separating trips with a`
+#'  `TENDER_VESSEL_ADFG_NUMBER to identify tender (!is.na) and cv (is.na)`
 
 akro_offloads <- dbGetQuery(channel_afsc, paste(
   "SELECT report_id, processor_permit_id, processor_name, vessel_id, vessel_name, vessel_adfg_number, landing_date,
@@ -422,7 +426,7 @@ fmp_bsai_goa <- copy(work.data) |>
 work.data <- work.data[fmp_bsai_goa, on = .(TRIP_ID)]
 # Initialize STRATA_NEW
 work.data |>
-  #'[TODO]* Change recode to case_match *
+  #'[TODO: Change recode to case_match]
   # Base STRATA_NEW on AGENCY_GEAR_CODE
   _[, STRATA_NEW := recode(AGENCY_GEAR_CODE, "PTR" = "TRW", "NPT" = "TRW", "JIG" = "ZERO")
     # Full coverage
@@ -680,7 +684,7 @@ work.data.em <- work.data %>% mutate(REPORT_ID = as.character(REPORT_ID),
                                    TENDER_VESSEL_ADFG_NUMBER = as.numeric(TENDER_VESSEL_ADFG_NUMBER)) %>%
   filter((STRATA == "EM_TRW_GOA" | STRATA == "EM_TRW_EFP") & FMP == "GOA" & ADP > 2020) %>%
   select(REPORT_ID, VESSEL_ID, TRIP_ID, PERMIT, MANAGEMENT_PROGRAM_CODE, AGENCY_GEAR_CODE, STRATA,
-         TENDER_VESSEL_ADFG_NUMBER, LANDING_DATE, FMP, ADP, BSAI_GOA) %>%
+         TENDER_VESSEL_ADFG_NUMBER, LANDING_DATE, FMP, ADP, BSAI_GOA, PARTIAL_DELIVERY_FLAG) %>%
   distinct()
 
 # Need to do CVs and tenders separately during initial joins because of differences in data fields needed to
@@ -719,7 +723,7 @@ missing_offloads <- dbGetQuery(channel_afsc, paste(
   mutate(type = case_when(is.na(TENDER_VESSEL_ADFG_NUMBER) ~ "CV",
                           !is.na(TENDER_VESSEL_ADFG_NUMBER) ~ "Tender"))
 
-look <- anti_join(em.missing, missing_offloads, by = join_by(REPORT_ID))
+missing.check <- anti_join(em.missing, missing_offloads, by = join_by(REPORT_ID))
 
 work.missing <- left_join(work.data2, missing_offloads, by = join_by(REPORT_ID)) %>%
   filter(!is.na(type)) %>%
