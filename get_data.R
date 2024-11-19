@@ -154,7 +154,8 @@ akro_offloads <- dbGetQuery(channel_afsc, paste(
 # Missing matches for records near max_date of work.data
 
 # Create dataframe that only contains fish tickets associated with tender deliveries
-tender <- filter(akro_offloads, !is.na(TENDER_OFFLOAD_DATE))
+tender <- filter(akro_offloads, !is.na(TENDER_OFFLOAD_DATE)) %>%
+  mutate(type = "Tender")
 
 #'* Connecting observer data to EM offloads*
 
@@ -217,13 +218,15 @@ GOA_EM_tender <-
   select(!c(REPORT_ID, LANDING_DATE, VESSEL_ADFG_NUMBER, VESSEL_NAME, VESSEL_ID)) %>%
   filter(!is.na(TENDER_VESSEL_ADFG_NUMBER)) %>%
   distinct() %>%
-  left_join(obs_EM_offloads, by = join_by(OBS_REPORT_ID))
+  left_join(obs_EM_offloads, by = join_by(OBS_REPORT_ID)) %>%
+  mutate(type = "Tender")
 
 GOA_EM_cv <-
   akro_offloads %>%
   filter(is.na(TENDER_VESSEL_ADFG_NUMBER)) %>%
   select(!c(TENDER_OFFLOAD_DATE, TENDER_VESSEL_ADFG_NUMBER)) %>%
-  left_join(obs_EM_offloads, by = join_by(OBS_REPORT_ID))
+  left_join(obs_EM_offloads, by = join_by(OBS_REPORT_ID)) %>%
+  mutate(type = "CV")
 # There are offloads here where we have no observer data
 
 # Exploratory plots
@@ -232,8 +235,8 @@ ggplot(GOA_EM_tender, aes(x = PROCESSOR_NAME)) +
   facet_grid(YEAR ~ .) +
   theme(axis.text.x = element_text(angle = 90))
 
-CV <- GOA_EM_cv %>% mutate(type = "CV") %>% select(!c(REPORT_ID, LANDING_DATE, VESSEL_ID, VESSEL_NAME, VESSEL_ADFG_NUMBER))
-TEN <- GOA_EM_tender %>% mutate(type = "Tender") %>% select(!c(TENDER_OFFLOAD_DATE, TENDER_VESSEL_ADFG_NUMBER))
+CV <- GOA_EM_cv %>% select(!c(REPORT_ID, LANDING_DATE, VESSEL_ID, VESSEL_NAME, VESSEL_ADFG_NUMBER))
+TEN <- GOA_EM_tender %>% select(!c(TENDER_OFFLOAD_DATE, TENDER_VESSEL_ADFG_NUMBER))
 
 combo <- rbind(CV, TEN)
 
@@ -665,6 +668,18 @@ if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected 
 
 
 #'* LIKELY AREA TO DEAL WITH TRAWL EM TENDERS ---------------------------------*
+# Probably combine tender and GOA_EM_cv to get master list
+
+test <- select(tender, !c(TENDER_VESSEL_ADFG_NUMBER, TENDER_OFFLOAD_DATE))
+test_cv <- select(GOA_EM_cv, !c(OBS_SALMON_CNT_FLAG, YEAR))
+
+test_combo <- rbind(test, test_cv)
+
+work.data2 <- work.data %>% mutate(REPORT_ID = as.character(REPORT_ID)) %>%
+  filter(BSAI_GOA == GOA & STRATA_NEW == )
+
+merging <- left_join(work.data2, test_combo, by = join_by(REPORT_ID))
+
 #'*----------------------------------------------------------------------------*
 
 
