@@ -205,7 +205,8 @@ ten <- akro_offloads %>% select(OBS_REPORT_ID) %>% distinct()
 
 compare <- anti_join(ten, obs)
 
-filter(akro_offloads, OBS_REPORT_ID %in% compare$OBS_REPORT_ID)
+missing <- filter(akro_offloads, OBS_REPORT_ID %in% compare$OBS_REPORT_ID)
+missing
 # Missing CV fish tickets do not exist in norpac.atl_offload
 
 obs_EM_offloads <- obs_offloads %>%
@@ -421,6 +422,7 @@ fmp_bsai_goa <- copy(work.data) |>
 work.data <- work.data[fmp_bsai_goa, on = .(TRIP_ID)]
 # Initialize STRATA_NEW
 work.data |>
+  #'[TODO]* Change recode to case_match *
   # Base STRATA_NEW on AGENCY_GEAR_CODE
   _[, STRATA_NEW := recode(AGENCY_GEAR_CODE, "PTR" = "TRW", "NPT" = "TRW", "JIG" = "ZERO")
     # Full coverage
@@ -668,17 +670,68 @@ if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected 
 
 
 #'* LIKELY AREA TO DEAL WITH TRAWL EM TENDERS ---------------------------------*
-# Probably combine tender and GOA_EM_cv to get master list
+# Identify number of offloads for GOA trawl EM to estimate observer workload
 
-test <- select(tender, !c(TENDER_VESSEL_ADFG_NUMBER, TENDER_OFFLOAD_DATE))
-test_cv <- select(GOA_EM_cv, !c(OBS_SALMON_CNT_FLAG, YEAR))
+em_cv <- select(GOA_EM_cv, !c(OBS_SALMON_CNT_FLAG, YEAR))
 
-test_combo <- rbind(test, test_cv)
+# Filter VALHALLA down to make more managable and restrict to GOA Trawl EM so we can identify fish tickets
+# that might be flagged as trawl EM from AKRO but are missing TEM management program modifier in norpac
+work.data.em <- work.data %>% mutate(REPORT_ID = as.character(REPORT_ID),
+                                   TENDER_VESSEL_ADFG_NUMBER = as.numeric(TENDER_VESSEL_ADFG_NUMBER)) %>%
+  filter((STRATA == "EM_TRW_GOA" | STRATA == "EM_TRW_EFP") & FMP == "GOA" & ADP > 2020) %>%
+  select(REPORT_ID, VESSEL_ID, TRIP_ID, PERMIT, MANAGEMENT_PROGRAM_CODE, AGENCY_GEAR_CODE, STRATA,
+         TENDER_VESSEL_ADFG_NUMBER, LANDING_DATE, FMP, ADP, BSAI_GOA) %>%
+  distinct()
 
-work.data2 <- work.data %>% mutate(REPORT_ID = as.character(REPORT_ID)) %>%
-  filter(BSAI_GOA == GOA & STRATA_NEW == )
+# Need to do CVs and tenders separately during initial joins because of differences in data fields needed to
+# identify each
+work.cv <- left_join(work.data2, em_cv, by = join_by(REPORT_ID)) %>%
+  filter(!is.na(type))
 
-merging <- left_join(work.data2, test_combo, by = join_by(REPORT_ID))
+work.tender <- left_join(work.data2, tender, by = join_by(REPORT_ID)) %>%
+  filter(!is.na(type)) %>%
+  # Tender ADFG number sometimes shortened in VALHALLA - Why? Who knows
+  select(!c(TENDER_OFFLOAD_DATE, TENDER_VESSEL_ADFG_NUMBER.x)) %>%
+  rename(TENDER_VESSEL_ADFG_NUMBER = TENDER_VESSEL_ADFG_NUMBER.y)
+
+# Join matches together
+work.offload <- rbind(work.cv, work.tender)
+
+# Identify fish tickets that are missing from norpac query
+em.missing <- anti_join(work.data.em, work.offload, by = join_by(REPORT_ID)) %>% select(REPORT_ID)
+em.missing.vec <- em.missing[["REPORT_ID"]]
+
+# Query norpac again to get data for missing fish tickets
+missing_offloads <- dbGetQuery(channel_afsc, paste(
+  "SELECT report_id, vessel_id, processor_permit_id, processor_name, vessel_name, vessel_adfg_number, landing_date,
+          agency_gear_code, tender_vessel_adfg_number
+  FROM norpac_views.atl_landing_id o
+  WHERE o.year >= 2021 AND o.report_id IN (
+    SELECT m.report_id 
+    FROM norpac_views.atl_landing_mgm_id m
+    WHERE m.report_id IN (", paste(em.missing.vec, collapse = ","), "))"
+ )) %>%
+  mutate(TENDER_VESSEL_ADFG_NUMBER = as.numeric(TENDER_VESSEL_ADFG_NUMBER),
+         REPORT_ID = as.character(REPORT_ID),
+         VESSEL_ADFG_NUMBER = as.numeric(VESSEL_ADFG_NUMBER),
+         PROCESSOR_PERMIT_ID = as.numeric(PROCESSOR_PERMIT_ID)) %>%
+  # Add type
+  mutate(type = case_when(is.na(TENDER_VESSEL_ADFG_NUMBER) ~ "CV",
+                          !is.na(TENDER_VESSEL_ADFG_NUMBER) ~ "Tender"))
+
+look <- anti_join(em.missing, missing_offloads, by = join_by(REPORT_ID))
+
+work.missing <- left_join(work.data2, missing_offloads, by = join_by(REPORT_ID)) %>%
+  filter(!is.na(type)) %>%
+  # Tender ADFG number sometimes shortened in VALHALLA - Why? Who knows
+  select(!c(TENDER_VESSEL_ADFG_NUMBER.x)) %>%
+  rename(TENDER_VESSEL_ADFG_NUMBER = TENDER_VESSEL_ADFG_NUMBER.y)
+
+trip.offload <- rbind(work.offload %>% select(!OBS_REPORT_ID), work.missing)
+
+total.offloads <- trip.offload %>% select(TRIP_ID, ADP, type) %>% distinct() %>%
+  group_by(ADP, type) %>%
+  summarise(O = n())
 
 #'*----------------------------------------------------------------------------*
 
