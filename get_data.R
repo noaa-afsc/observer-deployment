@@ -570,6 +570,7 @@ akro_offloads <- akro_offloads %>%
 
 # Filter VALHALLA down to make more manageable and restrict to GOA Trawl EM so we can identify fish tickets
 # that might be flagged as trawl EM from VALHALLA but are missing TEM management program modifier in NORPAC
+<<<<<<< HEAD
 work.data.em <- work.data %>%
   mutate(REPORT_ID = as.character(REPORT_ID),
          TENDER_VESSEL_ADFG_NUMBER = as.numeric(TENDER_VESSEL_ADFG_NUMBER)) %>%
