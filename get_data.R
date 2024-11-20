@@ -672,9 +672,13 @@ if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected 
 
 # Summaries -------------------------------------------------------------------------------------------------------
 
+#'* AREA TO DEAL WITH TRAWL EM TENDERS ---------------------------------*
+# * GOA EM Offload Summary ----
 
-#'* LIKELY AREA TO DEAL WITH TRAWL EM TENDERS ---------------------------------*
 # Identify number of offloads for GOA trawl EM to estimate observer workload
+
+#'[TODO: Can probably reduce this and just filter akro_landings to get everything]
+#'`     For example, assign Tender where TENDER_VESSEL_ADFG_NUMBER !is.na() - need to test`
 
 em_cv <- select(GOA_EM_cv, !c(OBS_SALMON_CNT_FLAG, YEAR))
 
@@ -703,6 +707,7 @@ work.offload <- rbind(work.cv, work.tender)
 
 # Identify fish tickets that are missing from norpac query
 em.missing <- anti_join(work.data.em, work.offload, by = join_by(REPORT_ID)) %>% select(REPORT_ID)
+em.missing
 em.missing.vec <- em.missing[["REPORT_ID"]]
 
 # Query norpac again to get data for missing fish tickets
@@ -724,6 +729,7 @@ missing_offloads <- dbGetQuery(channel_afsc, paste(
                           !is.na(TENDER_VESSEL_ADFG_NUMBER) ~ "Tender"))
 
 missing.check <- anti_join(em.missing, missing_offloads, by = join_by(REPORT_ID))
+missing.check
 
 work.missing <- left_join(work.data.em, missing_offloads, by = join_by(REPORT_ID)) %>%
   filter(!is.na(type)) %>%
@@ -731,11 +737,22 @@ work.missing <- left_join(work.data.em, missing_offloads, by = join_by(REPORT_ID
   select(!c(TENDER_VESSEL_ADFG_NUMBER.x)) %>%
   rename(TENDER_VESSEL_ADFG_NUMBER = TENDER_VESSEL_ADFG_NUMBER.y)
 
-trip.offload <- rbind(work.offload %>% select(!OBS_REPORT_ID), work.missing)
+offload <- rbind(work.offload %>% select(!OBS_REPORT_ID), work.missing)
 
-total.offloads <- trip.offload %>% select(TRIP_ID, ADP, type) %>% distinct() %>%
+# Get total number of offloads
+# Duplicate TRIP_ID when a CV made tender offloads and finished a trip with a shoreside offload during a single trip
+total.offloads <- offload %>% select(TRIP_ID, ADP, type) %>% distinct() %>%
   group_by(ADP, type) %>%
   summarise(O = n())
+
+# Get total number of unique trips
+total.trips <- offload %>% select(TRIP_ID, ADP) %>% distinct() %>%
+  group_by(ADP) %>%
+  summarise(N = n())
+
+# Create final output table and calculate offload/trip ratio
+trw_em_offload <- total.offloads %>% left_join(total.trips, by = join_by(ADP)) %>%
+  mutate(ratio = O/N)
 
 #'*----------------------------------------------------------------------------*
 
@@ -999,7 +1016,7 @@ if(out_save == "Y"){
   #' For the data to be used by the rest of our scripts, we trim work.data to contain only the most recent 3 full 
   #' years and the current year.
   save(
-    work.data.recent, trips_melt, PartialCPs, full_efrt, max_date, fg_em, trw_em, effort_strata, td_mod,
+    work.data.recent, trips_melt, PartialCPs, full_efrt, max_date, fg_em, trw_em, effort_strata, td_mod, trw_em_offload,
     file = paste0("source_data/", out_name)
   )
   #' Upload to shared Gdrive source_data folder
