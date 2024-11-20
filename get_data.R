@@ -578,7 +578,6 @@ work.data.em <- work.data %>%
          LANDING_DATE, FMP, ADP, BSAI_GOA, PARTIAL_DELIVERY_FLAG, PORT_NEW) %>%
   distinct()
 
-
 work.offload <- work.data.em %>%
   left_join(akro_offloads, by = join_by(REPORT_ID)) %>%
   filter(!is.na(type))
