@@ -851,6 +851,6 @@ trw_em_offload %>%
   filter(ADP == adp_year - 1) %>%
   mutate(
     est_N = table_b3.final[Pool == "Trawl EM", N],
-    est_O = ratio * est_N,
-    Total = sum(est_O)) 
+    est_O = round(ratio * est_N),
+    est_Total_O = sum(est_O)) 
 
