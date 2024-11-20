@@ -733,6 +733,10 @@ work.missing <- left_join(work.data.em, missing_offloads, by = join_by(REPORT_ID
 
 offload <- rbind(work.offload %>% select(!OBS_REPORT_ID), work.missing)
 
+#'`Investigate duplicate trip IDs for non-tender trips`
+dups <- offload %>% group_by(TRIP_ID) %>% filter(n() > 1 & is.na(TENDER_VESSEL_ADFG_NUMBER))
+
+
 # Get total number of offloads
 # Duplicate TRIP_ID when a CV made tender offloads and finished a trip with a shoreside offload during a single trip
 total.offloads <- offload %>% select(TRIP_ID, ADP, type) %>% distinct() %>%
