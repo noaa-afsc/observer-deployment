@@ -230,10 +230,10 @@ travel_cpd               #' [Estimated cost of travel per sea day]
 
 #' Fixed-gear EM costs generally fall into three categories:
 
-#' 1) Costs that scale with the size of the fixed-gear EM pool, such as equipment maintenance and project management. 
+#' (1) Costs that scale with the size of the fixed-gear EM pool, such as equipment maintenance and project management. 
 #'    These are generally recurring costs. 
-#' 2) Equipment installation costs, commonly referred to as 'amortized' costs, that are large one-time payments. 
-#' 3) Data review and storage costs, that scale with the number of monitored sea days
+#' (2) Equipment installation costs, commonly referred to as 'amortized' costs, that are large one-time payments. 
+#' (3) Data review and storage costs, that scale with the number of monitored sea days
  
 #' For the purpose of estimating costs, we will assume that equipment installation costs will be funded via the 
 #' Murkowski dollars, and the fee will only be used to pay for equipment maintenance, project management, and data
@@ -254,7 +254,9 @@ travel_cpd               #' [Estimated cost of travel per sea day]
 emfg_review <- data.table(
   YEAR = 2018:2021,
   REVIEW_COST = c(191961, 96501, 189225, 242747),
-  REVIEWED_DAYS = c(1005, 1817, 1442, 1458))
+  REVIEWED_DAYS = c(1005, 1817, 1442, 1458)
+  )
+
 #' Look at how bad this data is. You would think cost would be positively correlated with the number of days reviewed.
 #' I'm going to inflation-adjust each year so that at least the costs are comparable, but rather than taking a yearly
 #' average, I'm going to total the inflation-adjusted costs and divide by the total number or reviewed days.
