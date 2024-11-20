@@ -682,7 +682,7 @@ work.data.em <- work.data %>% mutate(REPORT_ID = as.character(REPORT_ID),
                                    TENDER_VESSEL_ADFG_NUMBER = as.numeric(TENDER_VESSEL_ADFG_NUMBER)) %>%
   filter((STRATA == "EM_TRW_GOA" | STRATA == "EM_TRW_EFP") & FMP == "GOA" & ADP > 2020) %>%
   select(REPORT_ID, VESSEL_ID, TRIP_ID, PERMIT, MANAGEMENT_PROGRAM_CODE, AGENCY_GEAR_CODE, STRATA,
-         TENDER_VESSEL_ADFG_NUMBER, LANDING_DATE, FMP, ADP, BSAI_GOA, PARTIAL_DELIVERY_FLAG) %>%
+         TENDER_VESSEL_ADFG_NUMBER, LANDING_DATE, FMP, ADP, BSAI_GOA, PARTIAL_DELIVERY_FLAG, PORT_NEW) %>%
   distinct()
 
 # Need to do CVs and tenders separately during initial joins because of differences in data fields needed to
@@ -736,6 +736,10 @@ offload <- rbind(work.offload %>% select(!OBS_REPORT_ID), work.missing)
 #'`Investigate duplicate trip IDs for non-tender trips`
 dups <- offload %>% group_by(TRIP_ID) %>% filter(n() > 1 & is.na(TENDER_VESSEL_ADFG_NUMBER))
 
+ggplot() +
+  geom_bar(data = dups %>% select(ADP, VESSEL_NAME, TRIP_ID) %>% distinct(), aes(x = VESSEL_NAME)) +
+  theme(axis.text.x = element_text(angle = 90)) +
+  facet_grid(rows = vars(ADP), scales = "free")
 
 # Get total number of offloads
 # Duplicate TRIP_ID when a CV made tender offloads and finished a trip with a shoreside offload during a single trip
