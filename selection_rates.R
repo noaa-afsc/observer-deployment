@@ -490,6 +490,7 @@ if(adp_ver == "Draft") {
     set_header_labels(values = c("", paste0("Draft ", adp_year, " ADP"), paste0("Final ", adp_year, " ADP"))) %>%
     align(j = 2, align = "right", part = "all") %>%
     bold(i = ~ is.na(value)) %>%
+    merge_h_range(i = ~ is.na(value), j1 = 1, j2 = 3) %>%
     bold(part = "header") %>%
     hline(i = ~ STRATA == "") %>%
     hline(i = 5) %>%
@@ -524,8 +525,7 @@ table_b2.flex <- table_b2 %>%
   compose(i = 1, j = c(2, 3:7), part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
   mk_par(i = 1, j = 5, part = "header", value = as_paragraph(as_i("T\U0302"), as_sub(as_i("h")))) %>%
   mk_par(i = 1, j = 7, part = "header", value = as_paragraph(as_i("D\U0302"), as_sub(as_i("h")))) %>%
-  colformat_num(j = 2, big.mark = ",", part = "body") %>%
-  colformat_double(j = 4, digits = 2) %>%
+  colformat_double(j = 2:4, digits = 2, big.mark = ",") %>%
   colformat_double(j = 5:7, digits = 4) %>%
   add_header_row(top = F, values = c(paste0("Draft ", adp_year, " ADP"), ""), colwidths = c(1, 6)) %>%
   bold(i = 2, j = 1, part = "header") %>%
@@ -650,7 +650,7 @@ if(adp_ver == "Draft") {
     compose(i = 1, j = 2:4, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
     compose(i = 1, j = 5, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") ), " (%)"), use_dot = T) %>%
     bold(i = ~ Stratum == "Total", part = "body") %>%
-    bold(i = c(9,10), j = 2:5, part = "body") %>%
+    bold(i = ~ Stratum %in% c("EM Trawl GOA", "Zero"), j = 2:5, part = "body") %>%
     hline(i = ~ Stratum %in% c("Total", "EM Trawl GOA", "Zero")) %>%
     hline(i = nrow(table_b3.draft) + 1) %>%
     compose(i = ~ Stratum == "Total", j = 1, value = as_paragraph("\t", .), use_dot = T) %>%
@@ -802,7 +802,7 @@ tables_name <- paste0("results/", adp_year, "_", adp_ver, "_ADP_tables.rdata")
 save(
   table_b1, table_b1.flex,
   table_b2, table_b2.flex,
-  table_b3, table_b3.flex,
+  table_b3, table_b3.flex, table_b3.draft, table_b3.final,
   file = tables_name
 )
 gdrive_upload(
@@ -819,3 +819,38 @@ ggsave(filename = "output_figures/figure_b2.png", plot = figure_b2, width = 5, h
 
 #'   *Figure for PCFMAC* Waffle plot of tonnage monitored
 ggsave("output_figures/figure_ppt_monitoring_summary.png" , figure_ppt_monitoring_summary, width = 8, height = 5, units = "in")
+
+
+#' *Other statistics*
+
+(load(results_name))
+(load(tables_name))
+
+#' List off some of the values that are reported in the paper that may not be reported in figures and tables
+prior_adp_budget <- 5.819e6
+budget_lst[[1]]   # Budget
+nrow(fg_em[FLAG != "REQUEST"])  # Total number of fixed-gear EM Vessels
+fg_em[, .N, keyby = FLAG]       # A = new approved vessels, NONE = prior existing, O = Opted out, REQUEST = requested but denied
+trw_em[, uniqueN(VESSEL_ID)]           # Total number of EM TRW vessels
+cost_params$EMTRW$emtrw_goa_v_count    # Number of EM TRW GOA-only vessels
+cost_params$EMTRW$goa_plant_ob_days    # Number of EM TRW shoreside observer days budgeted
+cost_params$EMFG$emfg_nonamortized_cpv # Estimated maintenance cost per fixed-gear EM Vessel
+(budget_lst[[1]] - prior_adp_budget) / prior_adp_budget  * 100  # Percentage decrease in budget from 2024 ADP
+cost_totals/cost_totals["TOTAL"] * 100  # Percentage of budget devoted to each monitoring pool
+(sum(cost_totals[c("OB_TOTAL", "EMFG_TOTAL")]) - prior_adp_budget) / prior_adp_budget * 100 # Percentage difference in OB and EMFG allocated dollars from prior ADP
+(table_b3.final[Stratum %like% "At-sea|EM Fixed-gear", sum(N)] - 3727) / 3727 * 100 # Percentage difference in OB+EMFG fishing effort (trips) from prior ADP
+unique(rates_adp$INDEX)  # Index afforded by this ADP
+(unique(rates_adp$INDEX) - 0.8846) / 0.8846 * 100 # Percentage difference in Index afforded 
+
+# Total monitored trips and days in full and partial
+table_b3.final[Pool == "Full Coverage" & Stratum == "Total", .(n, d)]
+table_b3.final[!(Pool %in% c("Full Coverage", "Zero")) & Stratum != "Total", .(n = sum(n), d = sum(d))]
+
+# Estimating number of offloads from EM TRW
+trw_em_offload %>% 
+  filter(ADP == adp_year - 1) %>%
+  mutate(
+    est_N = table_b3.final[Pool == "Trawl EM", N],
+    est_O = ratio * est_N,
+    Total = sum(est_O)) 
+
