@@ -676,7 +676,7 @@ if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected 
 
 em_cv <- select(GOA_EM_cv, !c(OBS_SALMON_CNT_FLAG, YEAR))
 
-# Filter VALHALLA down to make more managable and restrict to GOA Trawl EM so we can identify fish tickets
+# Filter VALHALLA down to make more manageable and restrict to GOA Trawl EM so we can identify fish tickets
 # that might be flagged as trawl EM from AKRO but are missing TEM management program modifier in norpac
 work.data.em <- work.data %>% mutate(REPORT_ID = as.character(REPORT_ID),
                                    TENDER_VESSEL_ADFG_NUMBER = as.numeric(TENDER_VESSEL_ADFG_NUMBER)) %>%
