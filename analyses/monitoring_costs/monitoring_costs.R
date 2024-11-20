@@ -96,9 +96,9 @@ trawl_em_plant_days <- setDT(dbGetQuery(channel, paste0(
 
 # Save the SQL pull
 trawl_em_sql_name <- paste0("trawl_em_plant_days_", adp_year, ".rdata")
-save(trawl_em_plant_days, file = paste0("analyses/monitoring_costs/sql_pulls/", trawl_em_sql_name, ".rdata"))
+save(trawl_em_plant_days, file = paste0("analyses/monitoring_costs/sql_pulls/", trawl_em_sql_name))
 gdrive_upload(
-  local_path = paste0("analyses/monitoring_costs/sql_pulls/", trawl_em_sql_name, ".rdata"),
+  local_path = paste0("analyses/monitoring_costs/sql_pulls/", trawl_em_sql_name),
   gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
 )
 
