@@ -123,8 +123,6 @@ AKROVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT ID AS vessel_id, length_over
 FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT AS vessel_id, length AS fmavl 
                     FROM norpac.atl_lov_vessel")
 
-#'* TESTING ---------------------------------------------------------------*
-
 # * GOA Trawl EM Tender Offloads ----
 
 #   TENDER_OFFLOAD_DATE needed to match CV deliveries to Tender deliveries
@@ -173,8 +171,7 @@ obs_offloads <- dbGetQuery(channel_afsc, paste(
             THEN 'Y' ELSE 'N' END AS obs_salmon_cnt_flag
     FROM norpac.atl_offload o
     WHERE extract(year FROM delivery_end_date) >= 2021"
-)
-) %>%
+)) %>%
   mutate(DELIVERY_VESSEL_ADFG = as.numeric(DELIVERY_VESSEL_ADFG),
          PROCESSOR_PERMIT_ID = as.numeric(PROCESSOR_PERMIT_ID),
          REPORT_ID = as.character(REPORT_ID)) %>%
@@ -249,8 +246,6 @@ ggplot(combo, aes(x = PROCESSOR_NAME, fill = type)) +
   geom_bar() +
   facet_grid(YEAR ~ .) +
   theme(axis.text.x = element_text(angle = 90))
-
-#'*------------------------------------------------------------------------*
 
 # * Valhalla ----
 
