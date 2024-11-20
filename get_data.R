@@ -667,7 +667,6 @@ if(nrow(trips_melt %>% filter_all(any_vars(is.na(.)))) != 0){stop("NAs detected 
 
 # Summaries -------------------------------------------------------------------------------------------------------
 
-#'* AREA TO DEAL WITH TRAWL EM TENDERS ---------------------------------*
 # * GOA EM Offload Summary ----
 
 # Identify number of offloads for GOA trawl EM to estimate observer workload
@@ -748,9 +747,6 @@ total.trips <- offload %>% select(TRIP_ID, ADP) %>% distinct() %>%
 # Create final output table and calculate offload/trip ratio
 trw_em_offload <- total.offloads %>% left_join(total.trips, by = join_by(ADP)) %>%
   mutate(ratio = O/N)
-
-#'*----------------------------------------------------------------------------*
-
 
 # * Full Coverage Summary ----
 
