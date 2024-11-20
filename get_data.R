@@ -100,7 +100,7 @@ fgem_base <- fgem_base %>% anti_join(select(fgem_requests, ADP, VESSEL_ID), by =
 # * Trawl EM ----
 
 # trawl_em <- read.csv("source_data/efp_list_2023-09-05.csv")
-#' [TODO: This file is in the Vision 2024 ADP/Data folder. Now using loki query for trawl EM vessels] 
+#' [TODO: This file is in the Vision 2024 ADP/Data folder. Now using LOKI query for trawl EM vessels] 
 # https://drive.google.com/file/d/1eSSTal-w_y319xF67FRSdI23rv9BLCtn/view?usp=drive_link
 
 trw_em <- setDT(dbGetQuery(channel_afsc, paste0(
@@ -121,7 +121,7 @@ AKROVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT ID AS vessel_id, length_over
 FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT AS vessel_id, length AS fmavl 
                     FROM norpac.atl_lov_vessel")
 
-# * Valhalla ----
+# * VALHALLA ----
 
 #' Pull data from prior years. This pull may never finish when working remotely via VPN. Pulling all years is necessary
 #' so that the effort prediction model in `effort_prediction.R` is informed by the full dataset.
@@ -131,10 +131,10 @@ FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT AS vessel_id, length A
 gdrive_download(local_path = "source_data/loki.valhalla.rdata", gdrive_dribble = ADP_dribble)
 (load("source_data/loki.valhalla.rdata"))
 
-# Check to make sure the Gdrive has the latest version of Valhalla. It should have a run date of ADPyear - 1
+# Check to make sure the Gdrive has the latest version of VALHALLA. It should have a run date of ADPyear - 1
 if( year(Sys.Date()) == (ADPyear - 1) & year(max(work.data$RUN_DATE, na.rm = T)) != (ADPyear - 1) ) {
   message("Local copy of Valhalla has not been updated with more recent data. Performing SQL query to loki.valhalla.")
-  # Pull a full copy of Valhalla
+  # Pull a full copy of VALHALLA
   work.data <- setDT(dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla")))
   # Save it and upload to the Gdrive
   save(work.data, file = "source_data/loki.valhalla.rdata")
@@ -142,7 +142,7 @@ if( year(Sys.Date()) == (ADPyear - 1) & year(max(work.data$RUN_DATE, na.rm = T))
 } else message("Local copy of Valhalla is up-to-date")
 gc()
 
-# Load data from current year. The AKRO Region will re-run Valhalla for the current year to date (ADPyear - 1).
+# Load data from current year. The AKRO Region will re-run VALHALLA for the current year to date (ADPyear - 1).
 gdrive_download("source_data/2024-11-05cas_valhalla.Rdata", ADP_dribble)
 load("source_data/2024-11-05cas_valhalla.Rdata")
 
@@ -157,7 +157,7 @@ work.data |>
   _[, VESSEL_ID := as.character(VESSEL_ID)
   ][, TENDER := toupper(TENDER)]
 
-# Defer to AKRO database dates for all trips in valhalla with dates that don't match the database
+# Defer to AKRO database dates for all trips in VALHALLA with dates that don't match the database
 up_dates[, ':='(DB_TRIP_TARGET_DATE = as.Date(DB_TRIP_TARGET_DATE), DB_LANDING_DATE = as.Date(DB_LANDING_DATE))]
 
 # View the changes to be made to dates
@@ -187,7 +187,7 @@ work.data |>
   _[AGENCY_GEAR_CODE != DB_AGENCY_GEAR_CODE, AGENCY_GEAR_CODE := DB_AGENCY_GEAR_CODE
   ][, DB_AGENCY_GEAR_CODE := NULL]
 
-# Maximum date in valhalla - This will be saved as an output and used to ensure 
+# Maximum date in VALHALLA - This will be saved as an output and used to ensure 
 # 3 full years of data are packaged for trips_melt, efrt, and full coverage summaries
 max_date <- max(work.data$LANDING_DATE, na.rm = TRUE)                    
 
@@ -592,7 +592,7 @@ effort_strata <- work.data |>
     # set julian date to 366 for trips that left in year adp + 1
   ][, JULIAN_DATE := ifelse(year(TRIP_TARGET_DATE) > ADP, 366, JULIAN_DATE)][] 
 
-#' isolate the latest date for which we have data in the most recent year of valhalla
+#' isolate the latest date for which we have data in the most recent year of VALHALLA
 effort_strata.max_date <- max(effort_strata[ADP == ADPyear - 1, JULIAN_DATE])
 # count trips through max_date and total trips by year and stratum
 effort_strata <- effort_strata[, .(
@@ -608,11 +608,11 @@ effort_strata <- effort_strata[, .(
 #' doesn't always give the best model for the next year. 
 work.data.recent <- work.data[ADP >= ADPyear - 4]
 
-#' Match observed trip assignment duration (to half day) with Valhalla trip duration, and model the relationship. The
+#' Match observed trip assignment duration (to half day) with VALHALLA trip duration, and model the relationship. The
 #' year x gear type interaction gives a decent match. Creates the mod_dat object.
 td_mod <- model_trip_duration(work.data.recent, use_mod = "DAYS ~ RAW + ADP * AGENCY_GEAR_CODE", channel = channel_afsc)
 
-# Occasionally we have multiple ODDS records assigned to the same Valhalla trip. In such cases, sum the sea days.
+# Occasionally we have multiple ODDS records assigned to the same VALHALLA trip. In such cases, sum the sea days.
 actual_ob_days <- unique(mod_dat[, .(TRIP_ID, ODDS_SEQ, DAYS)]) |>
   _[, .(DAYS = sum(DAYS)), keyby = .(TRIP_ID)]
 
