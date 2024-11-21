@@ -435,7 +435,7 @@ vessel_totals.pc[
 ][, STRATA := sub("_FIXED", " Fixed-gear", STRATA)
 ][, STRATA := sub("_TRW", " Trawl", STRATA)
 ][, STRATA := sub("^OB", "At-sea Observer", STRATA)
-][, STRATA := sub("ZERO", "Zero", STRATA)]
+][, STRATA := sub("ZERO", "No-selection", STRATA)]
 setorder(vessel_totals.pc, STRATA)
 vessel_totals.pc <- rbind(data.table(STRATA = "Vessels Participating (Partial Coverage)"), vessel_totals.pc, fill = T)
 
@@ -478,6 +478,7 @@ if(adp_ver == "Draft") {
   
   #' [2025Final: After creating these objects for the Draft we rearranged in the document, apply those changes here]
   
+  table_b1.draft[STRATA == "Zero", STRATA := "No-selection"]
   table_b1.groups <- data.table(group = c(rep("costs", 5), rep("vessels", 12)))
   table_b1.draft <- cbind(table_b1.groups, table_b1.draft)
   table_b1.final <- cbind(table_b1.groups, table_b1.final)
@@ -516,7 +517,7 @@ table_b2[
 ][, STRATA := sub("_FIXED", " Fixed-gear", STRATA)
 ][, STRATA := sub("_TRW", " Trawl", STRATA)
 ][, STRATA := sub("^OB", "At-sea Observer", STRATA)
-][, STRATA := sub("ZERO", "Zero", STRATA)]
+][, STRATA := sub("ZERO", "No-selection", STRATA)]
 setorder(table_b2, STRATA)
 setnames(table_b2, new = c("Stratum", "N", "r", "n", "T", "F", "D"))
 table_b2.flex <- table_b2 %>% 
@@ -554,7 +555,7 @@ rates_trips_days.pc[, d := ifelse(STRATA == "EM_TRW-GOA", STRATA_N * MTD, n * MT
 # Refine pool labels
 rates_trips_days.pc[, POOL := fcase(
   POOL == "OB", "At-sea Observer",
-  POOL == "ZE", "Zero",
+  POOL == "ZE", "No-selection",
   STRATA %like% "EM_FIXED", "Fixed-gear EM",
   STRATA %like% "EM_TRW", "Trawl EM")]
 # Refine strata names
@@ -563,7 +564,7 @@ rates_trips_days.pc[
 ][, STRATA := sub("_FIXED", " Fixed-gear", STRATA)
 ][, STRATA := sub("_TRW", " Trawl", STRATA)
 ][, STRATA := sub("^OB", "At-sea Observer", STRATA)
-][, STRATA := sub("ZERO", "Zero", STRATA)]
+][, STRATA := sub("ZERO", "No-selection", STRATA)]
 # Convert sample rate to percentage
 rates_trips_days.pc[, SAMPLE_RATE := SAMPLE_RATE * 100]
 # Round off estimates
@@ -628,7 +629,7 @@ if(adp_ver == "Draft") {
     compose(i = 1, j = 5, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") ), " (%)"), use_dot = T) %>%
     bold(i = ~ Stratum == "Total", part = "body") %>%
     bold(i = c(9,10), j = 2:5, part = "body") %>%
-    hline(i = ~ Stratum %in% c("Total", "EM Trawl GOA", "Zero")) %>%
+    hline(i = ~ Stratum %in% c("Total", "EM Trawl GOA", "No-selection")) %>%
     compose(i = ~ Stratum == "Total", j = 1, value = as_paragraph("\t", .), use_dot = T) %>%
     add_header_row(top = F, values = c(paste0("Draft ", adp_year, " ADP"), ""), colwidths = c(1, 4)) %>%
     bold(i = 2, j = 1, part = "header") %>%
@@ -639,6 +640,7 @@ if(adp_ver == "Draft") {
   
   #' [TODO: Add new columns for total # of offloads and sampled offloads? 'O' and 'o'? for EM_TRW strata?]
   table_b3.final <- copy(table_b3)
+  table_b3.draft[Pool == "Zero", ':=' (Pool = "No-selection", Stratum = "No-selection")]
   table_b3 <- rbind(
     table_b3.draft, 
     rbind(data.table(Stratum = paste(adp_ver, adp_year, "ADP")), table_b3.final, fill = T))
@@ -650,8 +652,8 @@ if(adp_ver == "Draft") {
     compose(i = 1, j = 2:4, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
     compose(i = 1, j = 5, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") ), " (%)"), use_dot = T) %>%
     bold(i = ~ Stratum == "Total", part = "body") %>%
-    bold(i = ~ Stratum %in% c("EM Trawl GOA", "Zero"), j = 2:5, part = "body") %>%
-    hline(i = ~ Stratum %in% c("Total", "EM Trawl GOA", "Zero")) %>%
+    bold(i = ~ Stratum %in% c("EM Trawl GOA", "No-selection"), j = 2:5, part = "body") %>%
+    hline(i = ~ Stratum %in% c("Total", "EM Trawl GOA", "No-selection")) %>%
     hline(i = nrow(table_b3.draft) + 1) %>%
     compose(i = ~ Stratum == "Total", j = 1, value = as_paragraph("\t", .), use_dot = T) %>%
     add_header_row(top = F, values = c(paste0("Draft ", adp_year, " ADP"), ""), colwidths = c(1, 4)) %>%
@@ -777,7 +779,8 @@ mon_catch.long[SECTOR == "PARTIAL", .(PERC_MON = 100 * sum(value[variable == "MO
 # Outputs ----
 #======================================================================================================================#
 
-#' *Allocation Objects*
+## Allocation Objects ----
+
 #' Upload all allocation inputs and outputs to the shared google drive.
 results_name <- paste0("results/", adp_year, "_", adp_ver, "_ADP_results.rdata")
 save(
@@ -796,7 +799,8 @@ gdrive_upload(
   gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output")
 )
 
-#' *Tables*
+## Tables ----
+
 #' Save table outputs for `tables.Rmd` to knit to docx format
 tables_name <- paste0("results/", adp_year, "_", adp_ver, "_ADP_tables.rdata")
 save(
@@ -810,7 +814,7 @@ gdrive_upload(
   gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output")
 )
 
-#' *Figures* 
+## Figures ----
 
 #'   *Figure B-2.* Summary of `cost_iter` outcomes of simulated sampling in ODDS showing the total costs of the 
 #' partial coverage monitoring program expected for 2025. Vertical lines depict the available budget (purple line), 
@@ -821,7 +825,7 @@ ggsave(filename = "output_figures/figure_b2.png", plot = figure_b2, width = 5, h
 ggsave("output_figures/figure_ppt_monitoring_summary.png" , figure_ppt_monitoring_summary, width = 8, height = 5, units = "in")
 
 
-#' *Other statistics*
+## Other statistics ----
 
 (load(results_name))
 (load(tables_name))
@@ -838,13 +842,22 @@ cost_params$EMFG$emfg_nonamortized_cpv # Estimated maintenance cost per fixed-ge
 (budget_lst[[1]] - prior_adp_budget) / prior_adp_budget  * 100  # Percentage decrease in budget from 2024 ADP
 cost_totals/cost_totals["TOTAL"] * 100  # Percentage of budget devoted to each monitoring pool
 (sum(cost_totals[c("OB_TOTAL", "EMFG_TOTAL")]) - prior_adp_budget) / prior_adp_budget * 100 # Percentage difference in OB and EMFG allocated dollars from prior ADP
+# Total partial coverage trips monitored (counting all EM TRW trips)
+table_b3.final[
+  !(Pool %in% c("No-selection", "Full Coverage")), .(
+    n = sum(N[Pool == "Trawl EM"], n[Stratum == "Total"]),
+    d = sum(d[Pool == "Trawl EM"], d[Stratum == "Total"]))]
+# Total full coverage trips monitored (counting all EM TRW trips)
+table_b3.final[Pool == "Full Coverage" & Stratum == "Total", .(N, d)]
+
+
 (table_b3.final[Stratum %like% "At-sea|EM Fixed-gear", sum(N)] - 3727) / 3727 * 100 # Percentage difference in OB+EMFG fishing effort (trips) from prior ADP
 unique(rates_adp$INDEX)  # Index afforded by this ADP
 (unique(rates_adp$INDEX) - 0.8846) / 0.8846 * 100 # Percentage difference in Index afforded 
 
 # Total monitored trips and days in full and partial
 table_b3.final[Pool == "Full Coverage" & Stratum == "Total", .(n, d)]
-table_b3.final[!(Pool %in% c("Full Coverage", "Zero")) & Stratum != "Total", .(n = sum(n), d = sum(d))]
+table_b3.final[!(Pool %in% c("Full Coverage", "No-selection")) & Stratum != "Total", .(n = sum(n), d = sum(d))]
 
 # Estimating number of offloads from EM TRW
 trw_em_offload %>% 
