@@ -426,7 +426,7 @@ cost_totals.pc[, STRATA := fcase(
   STRATA == "EMTRW_TOTAL", "EM Trawl GOA",
   STRATA == "TOTAL", "Total"
 )]
-cost_totals.pc <- rbind(data.table(STRATA = "Partial Coverage Monitoring Budget ($)"), cost_totals.pc, fill = T)
+cost_totals.pc <- rbind(data.table(STRATA = "Partial Coverage Monitoring Budget"), cost_totals.pc, fill = T)
 
 # Number of vessels
 vessel_totals.pc <- pc_effort_st[, .(value = uniqueN(PERMIT)), keyby = .(STRATA)]
