@@ -489,7 +489,7 @@ if(adp_ver == "Draft") {
     flextable() %>%
     compose(i = ~ !is.na(value), value = as_paragraph("\t", .), use_dot = T) %>%
     set_header_labels(values = c("", paste0("Draft ", adp_year, " ADP"), paste0("Final ", adp_year, " ADP"))) %>%
-    align(j = 2, align = "right", part = "all") %>%
+    align(j = 2:3, align = "right", part = "all") %>%
     bold(i = ~ is.na(value)) %>%
     merge_h_range(i = ~ is.na(value), j1 = 1, j2 = 3) %>%
     bold(part = "header") %>%
