@@ -598,8 +598,10 @@ if(F) {
   
   # Find which vessels were in the previous list that are not in this year's list
   setdiff(a$VESSEL_NAME, excel_emtrw_list$VESSEL_NAME)
-  # There are some in LOKI but not in the Excel list. Some are probably typos:
+  # There are some in LOKI but not in the Excel list. Some are typos:
   excel_emtrw_list[VESSEL_NAME == "STARFISH", VESSEL_NAME := "STAR FISH"]
+  excel_emtrw_list[VESSEL_NAME == "ALASKA DEFENDER", VESSEL_NAME := "ALASKAN DEFENDER"]
+  excel_emtrw_list[VESSEL_NAME == "FIERCE ALLIEGIENCE", VESSEL_NAME := "FIERCE ALLEGIANCE"]
   
   # Find which vessels were in the Excel list but not in LOKI
   setdiff(excel_emtrw_list$VESSEL_NAME, a$VESSEL_NAME)  
