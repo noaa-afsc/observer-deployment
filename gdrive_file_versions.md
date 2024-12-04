@@ -4,7 +4,27 @@ This document lists the `.rdata` file versions of the data objects created and/o
 
 ------------------------------------------------------------------------
 
-## 2024 Draft ADP
+## 2024 Final ADP
+
+### SQL data pulls:
+
+-   **trawl_em_plant_days_2025.rdata [ver: 5]**
+
+    Assignments of plant observers to estimate duration of GOA pollock season.
+
+    -   created by: `analyses/monitoring_costs/monitoring_costs.R`
+    -   local: `sql_pulls/trawl_em_plant_days_2025.rdata`
+    -   gdrive: `Projects/ADP/Monitoring Costs - CONFIDENTIAL/`
+
+### Other inputs:
+
+### Intermediate products:
+
+### Final outputs:
+
+------------------------------------------------------------------------
+
+## 2025 Draft ADP
 
 ### SQL data pulls:
 
