@@ -413,9 +413,6 @@ if(adp_ver == "Draft") {
 ## Table B-1. Budget and Vessels ----
 #===================================#
 
-#' Cost summary
-
-
 #' Naming the monitoring method 'strata' here for the sake of keeping the same header as the vessel counts below. The 
 #' final table's column names will be named manually
 cost_totals.pc <- data.table("STRATA" = names(cost_totals), data.table("value" = format_dollar(cost_totals, 0)))
@@ -426,7 +423,7 @@ cost_totals.pc[, STRATA := fcase(
   STRATA == "EMTRW_TOTAL", "EM Trawl GOA",
   STRATA == "TOTAL", "Total"
 )]
-cost_totals.pc <- rbind(data.table(STRATA = "Partial Coverage Monitoring Budget ($)"), cost_totals.pc, fill = T)
+cost_totals.pc <- rbind(data.table(STRATA = "Partial Coverage Monitoring Budget"), cost_totals.pc, fill = T)
 
 # Number of vessels
 vessel_totals.pc <- pc_effort_st[, .(value = uniqueN(PERMIT)), keyby = .(STRATA)]
@@ -435,7 +432,7 @@ vessel_totals.pc[
 ][, STRATA := sub("_FIXED", " Fixed-gear", STRATA)
 ][, STRATA := sub("_TRW", " Trawl", STRATA)
 ][, STRATA := sub("^OB", "At-sea Observer", STRATA)
-][, STRATA := sub("ZERO", "Zero", STRATA)]
+][, STRATA := sub("ZERO", "No-selection", STRATA)]
 setorder(vessel_totals.pc, STRATA)
 vessel_totals.pc <- rbind(data.table(STRATA = "Vessels Participating (Partial Coverage)"), vessel_totals.pc, fill = T)
 
@@ -478,6 +475,7 @@ if(adp_ver == "Draft") {
   
   #' [2025Final: After creating these objects for the Draft we rearranged in the document, apply those changes here]
   
+  table_b1.draft[STRATA == "Zero", STRATA := "No-selection"]
   table_b1.groups <- data.table(group = c(rep("costs", 5), rep("vessels", 12)))
   table_b1.draft <- cbind(table_b1.groups, table_b1.draft)
   table_b1.final <- cbind(table_b1.groups, table_b1.final)
@@ -488,8 +486,9 @@ if(adp_ver == "Draft") {
     flextable() %>%
     compose(i = ~ !is.na(value), value = as_paragraph("\t", .), use_dot = T) %>%
     set_header_labels(values = c("", paste0("Draft ", adp_year, " ADP"), paste0("Final ", adp_year, " ADP"))) %>%
-    align(j = 2, align = "right", part = "all") %>%
+    align(j = 2:3, align = "right", part = "all") %>%
     bold(i = ~ is.na(value)) %>%
+    merge_h_range(i = ~ is.na(value), j1 = 1, j2 = 3) %>%
     bold(part = "header") %>%
     hline(i = ~ STRATA == "") %>%
     hline(i = 5) %>%
@@ -515,7 +514,7 @@ table_b2[
 ][, STRATA := sub("_FIXED", " Fixed-gear", STRATA)
 ][, STRATA := sub("_TRW", " Trawl", STRATA)
 ][, STRATA := sub("^OB", "At-sea Observer", STRATA)
-][, STRATA := sub("ZERO", "Zero", STRATA)]
+][, STRATA := sub("ZERO", "No-selection", STRATA)]
 setorder(table_b2, STRATA)
 setnames(table_b2, new = c("Stratum", "N", "r", "n", "T", "F", "D"))
 table_b2.flex <- table_b2 %>% 
@@ -524,8 +523,7 @@ table_b2.flex <- table_b2 %>%
   compose(i = 1, j = c(2, 3:7), part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
   mk_par(i = 1, j = 5, part = "header", value = as_paragraph(as_i("T\U0302"), as_sub(as_i("h")))) %>%
   mk_par(i = 1, j = 7, part = "header", value = as_paragraph(as_i("D\U0302"), as_sub(as_i("h")))) %>%
-  colformat_num(j = 2, big.mark = ",", part = "body") %>%
-  colformat_double(j = 4, digits = 2) %>%
+  colformat_double(j = 2:4, digits = 2, big.mark = ",") %>%
   colformat_double(j = 5:7, digits = 4) %>%
   add_header_row(top = F, values = c(paste0("Draft ", adp_year, " ADP"), ""), colwidths = c(1, 6)) %>%
   bold(i = 2, j = 1, part = "header") %>%
@@ -554,7 +552,7 @@ rates_trips_days.pc[, d := ifelse(STRATA == "EM_TRW-GOA", STRATA_N * MTD, n * MT
 # Refine pool labels
 rates_trips_days.pc[, POOL := fcase(
   POOL == "OB", "At-sea Observer",
-  POOL == "ZE", "Zero",
+  POOL == "ZE", "No-selection",
   STRATA %like% "EM_FIXED", "Fixed-gear EM",
   STRATA %like% "EM_TRW", "Trawl EM")]
 # Refine strata names
@@ -563,7 +561,7 @@ rates_trips_days.pc[
 ][, STRATA := sub("_FIXED", " Fixed-gear", STRATA)
 ][, STRATA := sub("_TRW", " Trawl", STRATA)
 ][, STRATA := sub("^OB", "At-sea Observer", STRATA)
-][, STRATA := sub("ZERO", "Zero", STRATA)]
+][, STRATA := sub("ZERO", "No-selection", STRATA)]
 # Convert sample rate to percentage
 rates_trips_days.pc[, SAMPLE_RATE := SAMPLE_RATE * 100]
 # Round off estimates
@@ -617,6 +615,7 @@ table_b3 <- rbind(
   rates_trips_days.pc,
   rates_trips_days.fc
 )
+
 if(adp_ver == "Draft") {
 
   # Now that totals are made for pool, remove pool column
@@ -628,7 +627,7 @@ if(adp_ver == "Draft") {
     compose(i = 1, j = 5, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") ), " (%)"), use_dot = T) %>%
     bold(i = ~ Stratum == "Total", part = "body") %>%
     bold(i = c(9,10), j = 2:5, part = "body") %>%
-    hline(i = ~ Stratum %in% c("Total", "EM Trawl GOA", "Zero")) %>%
+    hline(i = ~ Stratum %in% c("Total", "EM Trawl GOA", "No-selection")) %>%
     compose(i = ~ Stratum == "Total", j = 1, value = as_paragraph("\t", .), use_dot = T) %>%
     add_header_row(top = F, values = c(paste0("Draft ", adp_year, " ADP"), ""), colwidths = c(1, 4)) %>%
     bold(i = 2, j = 1, part = "header") %>%
@@ -639,22 +638,43 @@ if(adp_ver == "Draft") {
   
   #' [TODO: Add new columns for total # of offloads and sampled offloads? 'O' and 'o'? for EM_TRW strata?]
   table_b3.final <- copy(table_b3)
+  # Incorporate the estimate of the number of EM TRW offloads in partial coverage
+  trw_em_offload.total <- trw_em_offload %>% 
+    filter(ADP == adp_year - 1) %>%
+    ungroup() %>%
+    mutate(
+      est_N = table_b3.final[Pool == "Trawl EM", N],
+      est_O = round(ratio * est_N)
+    ) %>% summarise(est_Total_O = sum(est_O)) %>% unlist()
+  # Put it under 'n' for now, will move it to 'o' later.
+  table_b3.final[Stratum == "EM Trawl GOA", n := trw_em_offload.total]
+  # Do the same for the draft, except use N since we didn't have an estimate yet
+  table_b3.draft[Pool == "Zero", ':=' (Pool = "No-selection", Stratum = "No-selection")]
+  table_b3.draft[Stratum == "EM Trawl GOA", n := N]
+  # Combine Draft and Final tables
   table_b3 <- rbind(
     table_b3.draft, 
     rbind(data.table(Stratum = paste(adp_ver, adp_year, "ADP")), table_b3.final, fill = T))
+  # Separate CV trips from shoreside offloads for the EM TRW strata
+  table_b3 |>
+    _[Stratum %like% "EM Trawl", ":=" (o = n, n = N)
+    ][, b := round(fcase(
+      Stratum == "EM Trawl GOA", n * 0.3333,
+      Stratum == "EM Trawl BSAI", n,
+      default = NA))]
   
   table_b3.flex <- table_b3[, -"Pool"] %>% 
     flextable() %>%
     autofit() %>%
     compose(i = 1, j = 1, part = "header", value = as_paragraph(., " (", as_i("h"), ")" ), use_dot = T) %>%
-    compose(i = 1, j = 2:4, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
+    compose(i = 1, j = 2:7, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
     compose(i = 1, j = 5, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") ), " (%)"), use_dot = T) %>%
     bold(i = ~ Stratum == "Total", part = "body") %>%
-    bold(i = c(9,10), j = 2:5, part = "body") %>%
-    hline(i = ~ Stratum %in% c("Total", "EM Trawl GOA", "Zero")) %>%
+    bold(i = ~ Stratum %in% c("EM Trawl GOA", "No-selection"), j = 2:5, part = "body") %>%
+    hline(i = ~ Stratum %in% c("Total", "EM Trawl GOA", "No-selection")) %>%
     hline(i = nrow(table_b3.draft) + 1) %>%
     compose(i = ~ Stratum == "Total", j = 1, value = as_paragraph("\t", .), use_dot = T) %>%
-    add_header_row(top = F, values = c(paste0("Draft ", adp_year, " ADP"), ""), colwidths = c(1, 4)) %>%
+    add_header_row(top = F, values = c(paste0("Draft ", adp_year, " ADP"), ""), colwidths = c(1, 6)) %>%
     bold(i = 2, j = 1, part = "header") %>%
     bold(i = nrow(table_b3.draft) + 1, j = 1, part = "body") %>%
     padding(i = ~ Stratum != paste(adp_ver, adp_year, "ADP"), part = "body", padding.top = 2, padding.bottom = 2) %>%
@@ -777,7 +797,40 @@ mon_catch.long[SECTOR == "PARTIAL", .(PERC_MON = 100 * sum(value[variable == "MO
 # Outputs ----
 #======================================================================================================================#
 
-#' *Allocation Objects*
+#' List off some of the values that are reported in the paper that may not be reported in figures and tables
+prior_adp_budget <- 5.819e6
+prior_adp_effort <- 3727
+prior_adp_index <- 0.8846
+adp_stat_list <- list(
+  prior_adp_budget = prior_adp_budget,
+  prior_adp_effort = prior_adp_effort,
+  prior_adp_index = prior_adp_index,
+  adp_budget  = budget_lst[[1]],
+  budget_perc_change = (budget_lst[[1]] - prior_adp_budget) / prior_adp_budget  * 100,
+  budget_perc_change.allo = (sum(cost_totals[c("OB_TOTAL", "EMFG_TOTAL")]) - prior_adp_budget) / prior_adp_budget * 100,
+  budget_by_pool = cost_totals/cost_totals["TOTAL"] * 100, 
+  emfg.v_count = nrow(fg_em[FLAG != "REQUEST"]),
+  emfg.v_status = fg_em[, .N, keyby = FLAG] ,
+  emtrw.v_count = trw_em[, uniqueN(VESSEL_ID)],
+  emtrw.v_count.goa = cost_params$EMTRW$emtrw_goa_v_count,
+  emtrw.plant_days = cost_params$EMTRW$goa_plant_ob_days,
+  emtrw.maintenance_cpv = cost_params$EMFG$emfg_nonamortized_cpv,
+  emtrw.offload_count = trw_em_offload %>% 
+    filter(ADP == adp_year - 1) %>%
+    mutate(
+      est_N = table_b3.final[Pool == "Trawl EM", N],
+      est_O = round(ratio * est_N),
+      est_Total_O = sum(est_O)),
+  trips_days.full = table_b3.final[Pool == "Full Coverage" & Stratum == "Total", .(N, d)],
+  trips_days.partial = table_b3.final[
+    !(Pool %in% c("No-selection", "Full Coverage")), .(
+      n = sum(N[Pool == "Trawl EM"], n[Stratum == "Total"]),
+      d = sum(d[Pool == "Trawl EM"], d[Stratum == "Total"]))],
+  effort_change = (table_b3.final[Stratum %like% "At-sea|EM Fixed-gear", sum(N)] - prior_adp_effort) / prior_adp_effort * 100,
+  adp_index = unique(rates_adp$INDEX),
+  index_change = (unique(rates_adp$INDEX) - prior_adp_index) / prior_adp_index * 100 # Percentage difference in Index afforded 
+)
+
 #' Upload all allocation inputs and outputs to the shared google drive.
 results_name <- paste0("results/", adp_year, "_", adp_ver, "_ADP_results.rdata")
 save(
@@ -788,6 +841,8 @@ save(
   cost_summary, cost_dt,
   ## Raw tables
   table_b1, table_b2, table_b3,
+  ### Other objects
+  adp_stat_list,
   ## Location
   file = results_name
 )
@@ -796,13 +851,14 @@ gdrive_upload(
   gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output")
 )
 
-#' *Tables*
+## Tables ----
+
 #' Save table outputs for `tables.Rmd` to knit to docx format
 tables_name <- paste0("results/", adp_year, "_", adp_ver, "_ADP_tables.rdata")
 save(
   table_b1, table_b1.flex,
   table_b2, table_b2.flex,
-  table_b3, table_b3.flex,
+  table_b3, table_b3.flex, table_b3.draft, table_b3.final,
   file = tables_name
 )
 gdrive_upload(
@@ -810,7 +866,7 @@ gdrive_upload(
   gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output")
 )
 
-#' *Figures* 
+## Figures ----
 
 #'   *Figure B-2.* Summary of `cost_iter` outcomes of simulated sampling in ODDS showing the total costs of the 
 #' partial coverage monitoring program expected for 2025. Vertical lines depict the available budget (purple line), 
