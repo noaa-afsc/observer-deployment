@@ -83,6 +83,16 @@ This document lists the `.rdata` file versions of the data objects created and/o
     -   local: `source_data/cost_params_2025.Rdata`
     -   gdrive: `Projects/ADP/Monitoring Costs - CONFIDENTIAL/`
 
+-   **pc_effort_st_2025.Rdata [ver: 11]**
+
+    Munged version of `2025_Draft_ADP_data.rdata` representing fishing effort in the upcoming ADP year, to be used by the allocation algorithm.
+
+    -   created by: `/selection_rates.R`
+    -   used by:
+        -   `selection_rates.R`
+        -   `analyses/monitoring_costs/monitoring_costs.R`
+    -   local: `source_data/pc_effort_st_2025.Rdata`
+    -   gdrive: `Projects/ADP/Output/`
 
 ### Intermediate products:
 
