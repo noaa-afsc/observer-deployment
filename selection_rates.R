@@ -42,9 +42,10 @@ gdrive_download(
 #' Load `cost_params`, the output of `monitoring_costs.R`. 2025 Draft used ver = 3. 
 gdrive_download( 
   local_path = "source_data/cost_params_2025.Rdata", 
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/"),
+  ver = 7
 )
-(load("source_data/cost_params_2025.Rdata"))
+(load("source_data/cost_params_2025_v007.Rdata"))
 
 #' Using `fg_em`, add the number of fixed-gear EM vessels to the `cost_params` list
 cost_params$EMFG$emfg_v <- uniqueN(fg_em[FLAG %in% c("A", "NONE"), PERMIT])

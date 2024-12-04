@@ -74,6 +74,16 @@ This document lists the `.rdata` file versions of the data objects created and/o
     -   local: `results/final_adp_2024_results.rdata`
     -   gdrive: `Projects/ADP/Output/`
 
+-   **cost_params_2025.Rdata [ver: 7]**
+
+    Cost estimates and parameters of all monitoring methods, used by allocation algorithm.
+
+    -   created by: `analyses/monitoring_costs/monitoring_costs.R`
+    -   used by: `selection_rates.R`
+    -   local: `source_data/cost_params_2025.Rdata`
+    -   gdrive: `Projects/ADP/Monitoring Costs - CONFIDENTIAL/`
+
+
 ### Intermediate products:
 
 -   **2025_Draft_ADP_data.rdata [ver: 1]**
