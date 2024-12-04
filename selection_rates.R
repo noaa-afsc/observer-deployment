@@ -34,9 +34,10 @@ library(officer)            # For additional flextable formatting options such a
 
 gdrive_download(
   local_path = "source_data/2025_Final_ADP_data.rdata",
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/"),
+  ver = 12
 )
-(load("source_data/2025_Final_ADP_data.rdata"))
+(load("source_data/2025_Final_ADP_data_v012.rdata"))
 
 #' Load `cost_params`, the output of `monitoring_costs.R`. 2025 Draft used ver = 3. 
 gdrive_download( 

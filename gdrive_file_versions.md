@@ -31,14 +31,21 @@ This document lists the `.rdata` file versions of the data objects created and/o
     
     Draft ADP's output tables, used to compare with outputs of the final version
     
-    -  created by `selection_rates.R` of 2025 Draft ADP (see [release]())
+    -  created by `selection_rates.R` of 2025 Draft ADP (see [release](https://github.com/Alaska-Fisheries-Monitoring-Analytics/ADP/tree/Draft_2025))
     -  used by: `selection_rates.R`
     -  local: `results/2025_Draft_ADP_tables.rdata`
     -  gdrive: `Projects/ADP/Output`
 
 ### Intermediate products:
 
+-   **2025_Final_ADP_data.rdata [ver: 12]**
 
+    Lightly munged version of Valhalla, used for effort prediction and allocation.
+
+    -   created by: `get_data.R`
+    -   used by: `selection_rates.R`
+    -   local: `source_data/2025_Final_ADP_data.rdata`
+    -   gdrive: `Projects/ADP/source_data/`
 
 ### Final outputs:
 
