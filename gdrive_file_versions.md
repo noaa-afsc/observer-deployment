@@ -18,7 +18,27 @@ This document lists the `.rdata` file versions of the data objects created and/o
 
 ### Other inputs:
 
+-   **final_adp_2024_results.rdata [ver: 1]**
+
+    Previous ADP's selection rates, used to estimate additional monitored days before next ADP year.
+
+    -   created by: `final_rates.R` of 2024 Final ADP (see [release](https://github.com/Alaska-Fisheries-Monitoring-Analytics/ADP/tree/Final_2024))
+    -   used by: `analyses/monitoring_costs/monitoring_costs.R`
+    -   local: `results/final_adp_2024_results.rdata`
+    -   gdrive: `Projects/ADP/Output/`
+    
+-   **2025_Draft_ADP_tables.rdata [ver: 1]**
+    
+    Draft ADP's output tables, used to compare with outputs of the final version
+    
+    -  created by `selection_rates.R` of 2025 Draft ADP (see [release]())
+    -  used by: `selection_rates.R`
+    -  local: `results/2025_Draft_ADP_tables.rdata`
+    -  gdrive: `Projects/ADP/Output`
+
 ### Intermediate products:
+
+
 
 ### Final outputs:
 
