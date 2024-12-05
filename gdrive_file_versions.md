@@ -58,6 +58,15 @@ For file versions from earlier Draft/Final ADPs (starting with the 2025 Draft), 
     -   local: `source_data/cost_params_2025.Rdata`
     -   gdrive: `Projects/ADP/Monitoring Costs - CONFIDENTIAL/`
 
+-   **effort_prediction_2025.rdata [ver: 8]**
+    
+    The effort prediction model 
+    
+    -   created by `analyses/effort_prediction/effort_prediction.R`
+    -   used by: `selection_rates/R`
+    -   local: `source_data/effort_prediction_2025.rdata`
+    -   gdrive: `Projects/ADP/source_data/`
+
 -   **pc_effort_st_2025.Rdata [ver: 11]**
 
     Munged version of `2025_Draft_ADP_data.rdata` representing fishing effort in the upcoming ADP year, to be used by the allocation algorithm.

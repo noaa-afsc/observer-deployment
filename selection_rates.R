@@ -54,9 +54,10 @@ cost_params$EMFG$emfg_v <- uniqueN(fg_em[FLAG %in% c("A", "NONE"), PERMIT])
 if(adp_ver == "Final") {
   gdrive_download( 
     local_path = "source_data/effort_prediction_2025.rdata", 
-    gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
+    gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/"),
+    ver = 8
   )
-  (load("source_data/effort_prediction_2025.rdata"))
+  (load("source_data/effort_prediction_2025_v008.rdata"))
 }
 
 # Load the ADFG statistical area shapefile.
