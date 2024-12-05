@@ -80,6 +80,14 @@ For file versions from earlier Draft/Final ADPs (starting with the 2025 Draft), 
 
 ### Final outputs:
 
+-   **results/2025_Final_ADP_results.rdata [ver: 5]**
+
+    Final outputs of the ADP analyses, containing objects used by the allocation algorithm, the algorithm's outputs, and summary tables.
+
+    -   created by: `selection_rates.R`
+    -   local: `results/2025_Final_ADP_results.rdata`
+    -   gdrive: `Projects/ADP/Output`
+
 ------------------------------------------------------------------------
 
 
