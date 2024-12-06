@@ -34,16 +34,18 @@ library(officer)            # For additional flextable formatting options such a
 
 gdrive_download(
   local_path = "source_data/2025_Final_ADP_data.rdata",
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/"),
+  ver = 12
 )
-(load("source_data/2025_Final_ADP_data.rdata"))
+(load("source_data/2025_Final_ADP_data_v012.rdata"))
 
 #' Load `cost_params`, the output of `monitoring_costs.R`. 2025 Draft used ver = 3. 
 gdrive_download( 
   local_path = "source_data/cost_params_2025.Rdata", 
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/"),
+  ver = 7
 )
-(load("source_data/cost_params_2025.Rdata"))
+(load("source_data/cost_params_2025_v007.Rdata"))
 
 #' Using `fg_em`, add the number of fixed-gear EM vessels to the `cost_params` list
 cost_params$EMFG$emfg_v <- uniqueN(fg_em[FLAG %in% c("A", "NONE"), PERMIT])
@@ -52,9 +54,10 @@ cost_params$EMFG$emfg_v <- uniqueN(fg_em[FLAG %in% c("A", "NONE"), PERMIT])
 if(adp_ver == "Final") {
   gdrive_download( 
     local_path = "source_data/effort_prediction_2025.rdata", 
-    gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
+    gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/"),
+    ver = 8
   )
-  (load("source_data/effort_prediction_2025.rdata"))
+  (load("source_data/effort_prediction_2025_v008.rdata"))
 }
 
 # Load the ADFG statistical area shapefile.

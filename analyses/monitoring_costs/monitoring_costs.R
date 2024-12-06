@@ -37,10 +37,11 @@ source("common_functions/open_channel.R")
 #' Download from the shared Gdrive
 gdrive_download(
   local_path = paste0("source_data/pc_effort_st", "_", adp_year, ".Rdata"),
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output/")
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output/"),
+  ver = 11
 )
 #' Load the `pc_effort_data` object prepared by `selection_rates.R`
-(load(paste0("source_data/pc_effort_st", "_", adp_year, ".Rdata")))
+(load(paste0("source_data/pc_effort_st", "_", adp_year, "_v011.Rdata")))
 
 #====================#
 ### FMA Days Paid ----
