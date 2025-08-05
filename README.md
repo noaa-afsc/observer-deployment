@@ -20,6 +20,8 @@ The Annual Deployment Plan (ADP) is a NOAA document that outlines how fisheries 
 - A AKRO team member must run the **'sql_pull_akro.R`** script in this repo and upload the outputs to the shared google drive.
 - The `selection_rates.R` script can be run, but may also need updates from additional scripts in the `analyses/` subfolder, including `analyses/monitoring_costs/` and `analyses/effort_prediction/`. The products of those files are also uploaded to the Shared G-drive and saved locally to the `source_data` folder.
 
+## Disclaimer
+This repository is a scientific product and is not official communication of the National Oceanic and Atmospheric Administration, or the United States Department of Commerce. All NOAA GitHub project content is provided on an "as is" basis and the user assumes responsibility for its use. Any claims against the Department of Commerce or Department of Commerce bureaus stemming from the use of this GitHub project will be governed by all applicable Federal law. Any reference to specific commercial products, processes, or services by service mark, trademark, manufacturer, or otherwise, does not constitute or imply their endorsement, recommendation or favoring by the Department of Commerce. The Department of Commerce seal and logo, or the seal and logo of a DOC bureau, shall not be used in any manner to imply endorsement of any commercial product or activity by DOC or the United States Government.
 ##
 <img width="250" height="100" alt="image" src="https://github.com/user-attachments/assets/7d4388b5-25e5-4e11-b46b-3819b8e66114" />
 
