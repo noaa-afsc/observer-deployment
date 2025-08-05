@@ -19,3 +19,7 @@ The Annual Deployment Plan (ADP) is a NOAA document that outlines how fisheries 
 - An AKRO team member must run a version of **`valhalla`** for the *current* year and also save this to the shared google drive. If they don't also have a NORPAC connection, they may first need an FMA team member to run the `sql_pull_fma_for_valhalla.R` script and e-mail them the resulting .rdata file. 
 - A AKRO team member must run the **'sql_pull_akro.R`** script in this repo and upload the outputs to the shared google drive.
 - The `selection_rates.R` script can be run, but may also need updates from additional scripts in the `analyses/` subfolder, including `analyses/monitoring_costs/` and `analyses/effort_prediction/`. The products of those files are also uploaded to the Shared G-drive and saved locally to the `source_data` folder.
+
+##
+<img width="250" height="100" alt="image" src="https://github.com/user-attachments/assets/7d4388b5-25e5-4e11-b46b-3819b8e66114" />
+
