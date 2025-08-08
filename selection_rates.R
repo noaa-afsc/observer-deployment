@@ -7,8 +7,8 @@
 # Preparation ----
 #======================================================================================================================#
 
-adp_year <- 2025
-adp_ver  <- "Final"  #' `Draft` or `Final`, which is case-sensitive!
+adp_year <- 2026
+adp_ver  <- "Draft"  #' `Draft` or `Final`, which is case-sensitive!
 
 #===================#
 ## Load Packages ----
@@ -33,19 +33,17 @@ library(officer)            # For additional flextable formatting options such a
 #' Load the outputs of `get_data.R`
 
 gdrive_download(
-  local_path = "source_data/2025_Final_ADP_data.rdata",
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/"),
-  ver = 12
+  local_path = "source_data/2026_Final_ADP_data.rdata",
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
 )
-(load("source_data/2025_Final_ADP_data_v012.rdata"))
+(load("source_data/2026_Final_ADP_data.rdata"))
 
 #' Load `cost_params`, the output of `monitoring_costs.R`. 2025 Draft used ver = 3. 
 gdrive_download( 
-  local_path = "source_data/cost_params_2025.Rdata", 
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/"),
-  ver = 7
+  local_path = "source_data/cost_params_2026.Rdata", 
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
 )
-(load("source_data/cost_params_2025_v007.Rdata"))
+(load("source_data/cost_params_2026.Rdata"))
 
 #' Using `fg_em`, add the number of fixed-gear EM vessels to the `cost_params` list
 cost_params$EMFG$emfg_v <- uniqueN(fg_em[FLAG %in% c("A", "NONE"), PERMIT])
@@ -53,11 +51,10 @@ cost_params$EMFG$emfg_v <- uniqueN(fg_em[FLAG %in% c("A", "NONE"), PERMIT])
 #' Load `effort_glm`, the output of `effort_prediction.R` This is done for the final draft only.
 if(adp_ver == "Final") {
   gdrive_download( 
-    local_path = "source_data/effort_prediction_2025.rdata", 
-    gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/"),
-    ver = 8
+    local_path = "source_data/effort_prediction_2026.rdata", 
+    gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
   )
-  (load("source_data/effort_prediction_2025_v008.rdata"))
+  (load("source_data/effort_prediction_2026.rdata"))
 }
 
 # Load the ADFG statistical area shapefile.
@@ -66,7 +63,6 @@ stat_area_sf <- st_read(
   select(STAT_AREA) %>%
   st_transform(crs = 3467)
 
-#' [TODO: Move this to allocation_functions?]
 # Load the Alaska map sf objects
 load("source_data/ak_shp.rdata")      # shp_land, shp_nmfs, and shp_centroids added to global
 
@@ -75,6 +71,7 @@ load("source_data/ak_shp.rdata")      # shp_land, shp_nmfs, and shp_centroids ad
 #====================#
 
 # load allocation functions
+#' TODO Update allocation functions to contain only wrappers for the proximityallocation functions
 source("common_functions/allocation_functions.R")
 
 format_dollar <- function(x, digits) paste0("$", formatC(x, digits = digits, big.mark = ",", format = "f"))
