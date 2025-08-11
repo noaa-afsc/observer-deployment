@@ -10,7 +10,7 @@
 # Preparation ----
 #======================================================================================================================#
 
-adp_year <- 2025  #' This should come from get_data.R
+adp_year <- 2026  #' This should come from get_data.R
 
 #===================#
 ## Load Packages ----
@@ -25,8 +25,6 @@ library(odbc)               # For database connectivity
 ## Load Functions ----
 #===================#
 
-source("common_functions/open_channel.R")
-
 #===============#
 ## Load Data ----
 #===============#
@@ -37,23 +35,21 @@ source("common_functions/open_channel.R")
 #' Download from the shared Gdrive
 gdrive_download(
   local_path = paste0("source_data/pc_effort_st", "_", adp_year, ".Rdata"),
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output/"),
-  ver = 11
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output/")
 )
 #' Load the `pc_effort_data` object prepared by `selection_rates.R`
-(load(paste0("source_data/pc_effort_st", "_", adp_year, "_v011.Rdata")))
+(load(paste0("source_data/pc_effort_st", "_", adp_year, ".Rdata")))
 
 #====================#
 ### FMA Days Paid ----
 
-#' [2025ADP:] The new PC contract is planned to go into effect October 1st. We can incorporate the day costs for 
-#' the preliminary winning contract, but will use prior data from the `FMA Days Paid` spreadsheet to estimate travel 
-#' costs. When the contract is finalized, we can update this spreadsheet with new day costs instead of hard-code. 
-#' `This spreadsheet includes day rates for both at-sea and shoreside observers`
+#' This spreadsheet includes day rates for both at-sea and shoreside observers
 #' [https://docs.google.com/spreadsheets/d/1KGmZNo7uVuB6FCVRZd4UV2PROa4Jl7-J/edit?gid=355780110#gid=355780110]
 
-#' Download and save an updated instance of FMA Days Paid to analyses/monitoring_costs/ folder.
-#' TODO [Make a google spreadsheet that mirrors the FMA Days Paid data using IMPORTRANGE() function]
+#' Download and save an updated instance of FMA Days Paid to the `analyses/monitoring_costs/` folder in .xlsx format.
+#' [TODO: Make a google spreadsheet that mirrors the FMA Days Paid data using IMPORTRANGE() function.] Howver, we first 
+#' have to make the spreadsheet a native google spreadsheet, and not its current xlsx. We might as well have Lisa switch
+#' to updating a new version of days paid in our folder rather than creating a mirror in the first place!
 
 FMA_days_paid <- lapply(read_xl_allsheets("analyses/monitoring_costs/FMA Days Paid.xlsx"), setDT)
 
@@ -61,23 +57,23 @@ FMA_days_paid <- lapply(read_xl_allsheets("analyses/monitoring_costs/FMA Days Pa
 ### Rates from the 'current' year ----
 
 #' The 'current' year is the year before `adp_year`, i.e., the year we are currently in as we plan for the next year.
-
-gdrive_download("results/final_adp_2024_results.rdata", gdrive_set_dribble("Projects/ADP/Output/") )
-current_adp_items <- (load("results/final_adp_2024_results.rdata"))
+prior_adp_results.path <- paste0("results/", adp_year - 1, "_Final_ADP_results.rdata")
+gdrive_download(local_path = prior_adp_results.path , gdrive_set_dribble("Projects/ADP/Output/") )
+current_adp_items <- (load(prior_adp_results.path))
 # Remove everything aside from the rates
-rm(list = setdiff(current_adp_items, c("rates_adp_2024_final")))
+rm(list = setdiff(current_adp_items, c("rates_adp")))
 
 #=================#
 ### Data Pulls ----
 
-channel <- open_channel()
+channel_afsc  <- eval(parse(text = Sys.getenv('channel_afsc')))
 
 #### Trawl EM Plant Days ----
 
 # Enter vector of ports accepting GOA-only catch from EM Trawl Vessels.
 goa_plants <- c("Kodiak", "False Pass")
 
-trawl_em_plant_days <- setDT(dbGetQuery(channel, paste0(
+trawl_em_plant_days <- setDT(dbGetQuery(channel_afsc, paste0(
   "
   SELECT 
     a.*, b.name, b.port_code, d.name AS PORT_NAME, EXTRACT(YEAR FROM a.embark_date) AS YEAR,
@@ -110,25 +106,26 @@ gdrive_upload(
 #==================================================================================#
 #' *Remove this hard-coding once FMA Days Paid is updated for 2025 Fiscal Year* 
 #' As of the 2025 Final ADP, FMA Days Paid has not been updated with updated contract values.
-
+#' *Sea_Days_Costs tab was updated for 2026 ADP!*
+#' 
 #' Option Year 4 (the current contract) was extended to September 30. 
 #' The new contracts values are hard-coded below.
-FMA_days_paid$Sea_Day_Costs[Contract == "Aug23Aug24", Dates := "8/17/23 - 9/30/24"]
-#' Add values for the preliminary winner for the PC observer contract
-FMA_days_paid$Sea_Day_Costs <- rbind(
-  FMA_days_paid$Sea_Day_Costs,
-  data.table(
-    Contract = paste0(paste0("Oct", 24:28), paste0("Sep", 25:29)),
-    Dates = paste0(paste0("10/01/", 24:28), " - ", paste0("9/30/", 25:29)),
-    Option_Year = c("Base Period", paste0("Option Year ", 1:4)),
-    Base_Day_Cost = c(1695.58, 1754.93, 1807.58, 1857.29, 1899.08),
-    Optional_Day_Cost = c(877.73, 908.45, 935.70, 961.43, 983.06),
-    Quarantine_Day_Cost = rep(NA, 5),
-    Quarantine_Travel = rep(NA, 5),
-    Plant_Day_Cost = c(517.62, 535.74, 551.81, 566.98, 579.74),
-    Optional_Plant_Day_Cost = c(545.37, 564.46, 581.39, 597.38, 610.82)  #' TODO Add this column to FMA Days Paid spreadsheet
-  ), fill = T
-)
+#' FMA_days_paid$Sea_Day_Costs[Contract == "Aug23Aug24", Dates := "8/17/23 - 9/30/24"]
+#' #' Add values for the preliminary winner for the PC observer contract
+#' FMA_days_paid$Sea_Day_Costs <- rbind(
+#'   FMA_days_paid$Sea_Day_Costs,
+#'   data.table(
+#'     Contract = paste0(paste0("Oct", 24:28), paste0("Sep", 25:29)),
+#'     Dates = paste0(paste0("10/01/", 24:28), " - ", paste0("9/30/", 25:29)),
+#'     Option_Year = c("Base Period", paste0("Option Year ", 1:4)),
+#'     Base_Day_Cost = c(1695.58, 1754.93, 1807.58, 1857.29, 1899.08),
+#'     Optional_Day_Cost = c(877.73, 908.45, 935.70, 961.43, 983.06),
+#'     Quarantine_Day_Cost = rep(NA, 5),
+#'     Quarantine_Travel = rep(NA, 5),
+#'     Plant_Day_Cost = c(517.62, 535.74, 551.81, 566.98, 579.74),
+#'     Optional_Plant_Day_Cost = c(545.37, 564.46, 581.39, 597.38, 610.82)  #' TODO Add this column to FMA Days Paid spreadsheet
+#'   ), fill = T
+#' )
 #==================================================================================#
 
 #' Identify the contract years pertinent to the ADP year
