@@ -30,31 +30,38 @@ library(officer)            # For additional flextable formatting options such a
 ## Load data ----
 #===============#
 
-#' Load the outputs of `get_data.R`
+adp_data.path <- paste0("source_data/", adp_year, "_", adp_ver, "_ADP_data.rdata")
+cost_param.path <- paste0("source_data/cost_params_", adp_year, ".Rdata")
 
+#' Load the outputs of `get_data.R`
 gdrive_download(
-  local_path = "source_data/2026_Final_ADP_data.rdata",
+  local_path = adp_data.path,
   gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
 )
 (load("source_data/2026_Final_ADP_data.rdata"))
 
-#' Load `cost_params`, the output of `monitoring_costs.R`. 2025 Draft used ver = 3. 
-gdrive_download( 
-  local_path = "source_data/cost_params_2026.Rdata", 
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
-)
-(load("source_data/cost_params_2026.Rdata"))
-
-#' Using `fg_em`, add the number of fixed-gear EM vessels to the `cost_params` list
-cost_params$EMFG$emfg_v <- uniqueN(fg_em[FLAG %in% c("A", "NONE"), PERMIT])
+#' Load `cost_params`, the output of `analyses/monitoring_costs.R`.
+if(file.exists(cost_param.path)) {
+  gdrive_download( 
+    local_path = cost_param.path, 
+    gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
+  )
+  (load(cost_param.path))
+  
+  #' Using `fg_em` from `get_data.R`, add the number of fixed-gear EM vessels to the `cost_params` list
+  cost_params$EMFG$emfg_v <- uniqueN(fg_em[FLAG %in% c("A", "NONE"), PERMIT])
+} else {
+  message(paste0(cost_param.path, " does not yet exist.\nFirst, run this script through the `Data Prep section`, then run `analyses/monitoring_costs.R` to create ", cost_param.path, "."))
+}
 
 #' Load `effort_glm`, the output of `effort_prediction.R` This is done for the final draft only.
 if(adp_ver == "Final") {
+  effort_prediction.path <- paste0("source_data/effort_prediction_", adp_year, ".rdata")
   gdrive_download( 
-    local_path = "source_data/effort_prediction_2026.rdata", 
+    local_path = effort_prediction.path, 
     gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
   )
-  (load("source_data/effort_prediction_2026.rdata"))
+  (load(effort_prediction.path))
 }
 
 # Load the ADFG statistical area shapefile.
