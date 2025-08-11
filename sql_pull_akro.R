@@ -5,8 +5,8 @@
 #' FMA shared G-drive projects/ADP/source_data folder.
 
 # User inputs ----------------------------------------------------------------------------------------------------------
-ADPyear     <- 2025     # Enter numeric year you are doing the ADP for
-ADP_version <- "Final"  # Enter "Draft" or "Final"
+ADPyear     <- 2026     # Enter numeric year you are doing the ADP for
+ADP_version <- "Draft"  # Enter "Draft" or "Final"
 options(scipen = 9999)  # Avoid scientific notation
 
 # Get packages ---------------------------------------------------------------------------------------------------------
