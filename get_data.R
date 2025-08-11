@@ -1,8 +1,8 @@
 # User inputs -------------------------------------------------------------
 
-ADPyear     <- 2025     # Enter numeric year you are doing the ADP for
-ADP_version <- "Final"  # Enter "Draft" or "Final"
-EM_final    <- "Y"      # Is the final EM list approved? Y/N (caps)
+ADPyear     <- 2026     # Enter numeric year you are doing the ADP for
+ADP_version <- "Draft"  # Enter "Draft" or "Final"
+EM_final    <- "N"      # Is the final EM list approved? Y/N (caps)
 options(scipen = 9999)  # Avoid scientific notation
 
 # Get packages ------------------------------------------------------------
@@ -17,16 +17,13 @@ if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.
 
 # Establish channels ------------------------------------------------------
 
-source("common_functions/open_channel.R")
 source("common_functions/model_trip_duration.R")
-
-channel_afsc <- open_channel()
-
+channel_afsc  <- eval(parse(text = Sys.getenv('channel_afsc')))
 ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
 
 # Load AKRO pull ------------------------------------------------------
 
-# The pulls from AKRO were all moved to the sql_pull_akro.R
+#' The pulls from AKRO were all moved to the `sql_pull_akro.R`
 gdrive_download(
   local_path = paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", sep = "_")),
   gdrive_dribble = ADP_dribble
