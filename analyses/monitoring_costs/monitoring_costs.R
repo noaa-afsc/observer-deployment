@@ -346,9 +346,8 @@ fig.trawl_em_plant_deliveries <- ggplot(trawl_em_assignments, aes(y = as.factor(
   facet_grid(PORT_NAME + NAME ~ ., scales = "free_y", space = "free_y") + 
   geom_linerange(aes(xmin = EMBARK_DATE, xmax = DISEMBARK_DATE), linewidth = 1) + 
   scale_x_date(date_breaks = "1 month", date_labels = "%b-%y", minor_breaks = NULL) + 
-  geom_vline(xintercept = as.Date("2024-01-01")) + 
   labs(
-    x = "Month-Year", y = "Cruise", subtitle = "GOA plant assignments (black) and deliveries (blue) 2023-2024") +
+    x = "Month-Year", y = "Cruise", subtitle = paste0("GOA plant assignments (black) and deliveries (blue) 2023-", adp_year)) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
   geom_point(data = trawl_em_plant_days, aes(x = DELIVERY_END_DATE), color = "blue", na.rm = T)
 fig.trawl_em_plant_deliveries
