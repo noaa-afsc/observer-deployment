@@ -10,7 +10,7 @@
 # Preparation ----
 #======================================================================================================================#
 
-adp_year <- 2025  #' This should come from get_data.R
+adp_year <- 2026  #' This should come from get_data.R
 
 #===================#
 ## Load Packages ----
@@ -25,35 +25,20 @@ library(odbc)               # For database connectivity
 ## Load Functions ----
 #===================#
 
-source("common_functions/open_channel.R")
-
 #===============#
 ## Load Data ----
 #===============#
 
 #====================#
-### pc_effort_st ----
-
-#' Download from the shared Gdrive
-gdrive_download(
-  local_path = paste0("source_data/pc_effort_st", "_", adp_year, ".Rdata"),
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output/"),
-  ver = 11
-)
-#' Load the `pc_effort_data` object prepared by `selection_rates.R`
-(load(paste0("source_data/pc_effort_st", "_", adp_year, "_v011.Rdata")))
-
-#====================#
 ### FMA Days Paid ----
 
-#' [2025ADP:] The new PC contract is planned to go into effect October 1st. We can incorporate the day costs for 
-#' the preliminary winning contract, but will use prior data from the `FMA Days Paid` spreadsheet to estimate travel 
-#' costs. When the contract is finalized, we can update this spreadsheet with new day costs instead of hard-code. 
-#' `This spreadsheet includes day rates for both at-sea and shoreside observers`
+#' This spreadsheet includes day rates for both at-sea and shoreside observers
 #' [https://docs.google.com/spreadsheets/d/1KGmZNo7uVuB6FCVRZd4UV2PROa4Jl7-J/edit?gid=355780110#gid=355780110]
 
-#' Download and save an updated instance of FMA Days Paid to analyses/monitoring_costs/ folder.
-#' TODO [Make a google spreadsheet that mirrors the FMA Days Paid data using IMPORTRANGE() function]
+#' Download and save an updated instance of FMA Days Paid to the `analyses/monitoring_costs/` folder in .xlsx format.
+#' [TODO: Make a google spreadsheet that mirrors the FMA Days Paid data using IMPORTRANGE() function.] Howver, we first 
+#' have to make the spreadsheet a native google spreadsheet, and not its current xlsx. We might as well have Lisa switch
+#' to updating a new version of days paid in our folder rather than creating a mirror in the first place!
 
 FMA_days_paid <- lapply(read_xl_allsheets("analyses/monitoring_costs/FMA Days Paid.xlsx"), setDT)
 
@@ -61,23 +46,35 @@ FMA_days_paid <- lapply(read_xl_allsheets("analyses/monitoring_costs/FMA Days Pa
 ### Rates from the 'current' year ----
 
 #' The 'current' year is the year before `adp_year`, i.e., the year we are currently in as we plan for the next year.
-
-gdrive_download("results/final_adp_2024_results.rdata", gdrive_set_dribble("Projects/ADP/Output/") )
-current_adp_items <- (load("results/final_adp_2024_results.rdata"))
+prior_adp_results.path <- paste0("results/", adp_year - 1, "_Final_ADP_results.rdata")
+gdrive_download(local_path = prior_adp_results.path , gdrive_set_dribble("Projects/ADP/Output/") )
+current_adp_items <- (load(prior_adp_results.path))
 # Remove everything aside from the rates
-rm(list = setdiff(current_adp_items, c("rates_adp_2024_final")))
+rm(list = setdiff(current_adp_items, c("rates_adp")))
+
+#====================#
+### pc_effort_st ----
+
+#' Download from the shared Gdrive
+pc_effort_st.path <- paste0("source_data/pc_effort_st", "_", adp_year, ".Rdata")
+gdrive_download(
+  local_path = pc_effort_st.path,
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Output/")
+)
+#' Load the `pc_effort_data` object prepared by `selection_rates.R`
+(load(pc_effort_st.path))
 
 #=================#
 ### Data Pulls ----
 
-channel <- open_channel()
+channel_afsc  <- eval(parse(text = Sys.getenv('channel_afsc')))
 
 #### Trawl EM Plant Days ----
 
 # Enter vector of ports accepting GOA-only catch from EM Trawl Vessels.
 goa_plants <- c("Kodiak", "False Pass")
 
-trawl_em_plant_days <- setDT(dbGetQuery(channel, paste0(
+trawl_em_plant_days <- setDT(dbGetQuery(channel_afsc, paste0(
   "
   SELECT 
     a.*, b.name, b.port_code, d.name AS PORT_NAME, EXTRACT(YEAR FROM a.embark_date) AS YEAR,
@@ -110,25 +107,26 @@ gdrive_upload(
 #==================================================================================#
 #' *Remove this hard-coding once FMA Days Paid is updated for 2025 Fiscal Year* 
 #' As of the 2025 Final ADP, FMA Days Paid has not been updated with updated contract values.
-
+#' *Sea_Days_Costs tab was updated for 2026 ADP!*
+#' 
 #' Option Year 4 (the current contract) was extended to September 30. 
 #' The new contracts values are hard-coded below.
-FMA_days_paid$Sea_Day_Costs[Contract == "Aug23Aug24", Dates := "8/17/23 - 9/30/24"]
-#' Add values for the preliminary winner for the PC observer contract
-FMA_days_paid$Sea_Day_Costs <- rbind(
-  FMA_days_paid$Sea_Day_Costs,
-  data.table(
-    Contract = paste0(paste0("Oct", 24:28), paste0("Sep", 25:29)),
-    Dates = paste0(paste0("10/01/", 24:28), " - ", paste0("9/30/", 25:29)),
-    Option_Year = c("Base Period", paste0("Option Year ", 1:4)),
-    Base_Day_Cost = c(1695.58, 1754.93, 1807.58, 1857.29, 1899.08),
-    Optional_Day_Cost = c(877.73, 908.45, 935.70, 961.43, 983.06),
-    Quarantine_Day_Cost = rep(NA, 5),
-    Quarantine_Travel = rep(NA, 5),
-    Plant_Day_Cost = c(517.62, 535.74, 551.81, 566.98, 579.74),
-    Optional_Plant_Day_Cost = c(545.37, 564.46, 581.39, 597.38, 610.82)  #' TODO Add this column to FMA Days Paid spreadsheet
-  ), fill = T
-)
+#' FMA_days_paid$Sea_Day_Costs[Contract == "Aug23Aug24", Dates := "8/17/23 - 9/30/24"]
+#' #' Add values for the preliminary winner for the PC observer contract
+#' FMA_days_paid$Sea_Day_Costs <- rbind(
+#'   FMA_days_paid$Sea_Day_Costs,
+#'   data.table(
+#'     Contract = paste0(paste0("Oct", 24:28), paste0("Sep", 25:29)),
+#'     Dates = paste0(paste0("10/01/", 24:28), " - ", paste0("9/30/", 25:29)),
+#'     Option_Year = c("Base Period", paste0("Option Year ", 1:4)),
+#'     Base_Day_Cost = c(1695.58, 1754.93, 1807.58, 1857.29, 1899.08),
+#'     Optional_Day_Cost = c(877.73, 908.45, 935.70, 961.43, 983.06),
+#'     Quarantine_Day_Cost = rep(NA, 5),
+#'     Quarantine_Travel = rep(NA, 5),
+#'     Plant_Day_Cost = c(517.62, 535.74, 551.81, 566.98, 579.74),
+#'     Optional_Plant_Day_Cost = c(545.37, 564.46, 581.39, 597.38, 610.82)  #' TODO Add this column to FMA Days Paid spreadsheet
+#'   ), fill = T
+#' )
 #==================================================================================#
 
 #' Identify the contract years pertinent to the ADP year
@@ -155,7 +153,7 @@ travel_costs[, Travel_CPD := Travel_Dollars / Sea_Days]
 #' [https://www.statista.com/statistics/244983/projected-inflation-rate-in-the-united-states/] # for projection
 inflation_dt <- data.table(
   Calendar = 2017:adp_year,
-  Inflation_Pct = c(2.13, 2.44, 1.81, 1.23, 4.70, 8, 4.12, 2.9, 2.0)
+  Inflation_Pct = c(2.13, 2.44, 1.81, 1.23, 4.70, 8, 4.12, 2.9, 2.0, 2.1)
 )
 # Calculate the cumulative inflation percentages, then convert percentage to multiplication factor
 inflation_dt[
@@ -172,8 +170,8 @@ travel_costs
 #' can take an average of 2022 and 2023 costs to be safe?
 
 #' Calculate an estimate of the travel cost per day to apply to the ADP year.
-#' *For the 2025 Final ADP, I'm simply taking the average of the 3 full years post-COVID: years 2022-2024 to date*
-travel_cpd <- travel_costs[Calendar %in% 2022:2023, mean(Travel_CPD_infl)]
+#' *For the 2026 ADP, I'm simply taking the average of the last 3 years, including 2025 to date
+travel_cpd <- travel_costs[Calendar %in% 2023:2025, mean(Travel_CPD_infl)]
 
 #===================#
 ## Sea Day Costs ---- 
@@ -190,7 +188,7 @@ travel_cpd <- travel_costs[Calendar %in% 2022:2023, mean(Travel_CPD_infl)]
 adp_contract_day_rates[, .(PERIOD = 1:2, Base_Day_Cost, Optional_Day_Cost)]
 
 #' Identify the date where the contracts change, specifically, the day that the second contract starts.
-contract_change_date <- as.Date("2025-10-01")
+contract_change_date <- (contract_end + 1)
 
 ### Number of guaranteed days on contract  ----
 
@@ -209,7 +207,7 @@ current_contract_days.smry <- pc_effort_st |>
   ][yday(START) > yday(contract_end), .(OB_DAYS = sum(DAYS)), keyby = .(STRATA)]
   # Merge in 'current' ADP's monitoring rates and estimate observed days
 current_contract_days.smry |>
-  _[, SAMPLE_RATE := rates_adp_2024_final[current_contract_days.smry, SAMPLE_RATE, on = .(STRATA)]
+  _[, SAMPLE_RATE := rates_adp[current_contract_days.smry, SAMPLE_RATE, on = .(STRATA)]
   ][, OB_d := OB_DAYS * SAMPLE_RATE]
 current_contract_days <- round(sum(current_contract_days.smry$OB_d))
 
@@ -318,7 +316,9 @@ emfg_review_cpd           # The cost per review day, which will be multiplied by
 ## GOA Plant Day Costs ---- 
 #=========================#
 
-#' [2025Final:]
+#' *TODO* `UPDATE FOR THE 2026 ADP*`
+
+#' [2025Final:] 
 #' [JenMondragon: https://docs.google.com/document/d/1uH1HjjAKs9ROgInFkmSCK3QacINTw4aLwmixWbEjffY/edit?tab=t.0#heading=h.jctyds2qk09r],
 #' [LisaThompson: https://docs.google.com/document/d/124sC_W8cvyfH_2sJq1oHvOQxs04RNbwZ3H3tavAqxDI/edit?tab=t.0#heading=h.qu65okam02sc]
 #' Planning to have up to *6* total observers, *5* in Kodiak and *1* at False pass. Need to estimate the duration of
@@ -346,9 +346,8 @@ fig.trawl_em_plant_deliveries <- ggplot(trawl_em_assignments, aes(y = as.factor(
   facet_grid(PORT_NAME + NAME ~ ., scales = "free_y", space = "free_y") + 
   geom_linerange(aes(xmin = EMBARK_DATE, xmax = DISEMBARK_DATE), linewidth = 1) + 
   scale_x_date(date_breaks = "1 month", date_labels = "%b-%y", minor_breaks = NULL) + 
-  geom_vline(xintercept = as.Date("2024-01-01")) + 
   labs(
-    x = "Month-Year", y = "Cruise", subtitle = "GOA plant assignments (black) and deliveries (blue) 2023-2024") +
+    x = "Month-Year", y = "Cruise", subtitle = paste0("GOA plant assignments (black) and deliveries (blue) 2023-", adp_year)) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
   geom_point(data = trawl_em_plant_days, aes(x = DELIVERY_END_DATE), color = "blue", na.rm = T)
 fig.trawl_em_plant_deliveries
@@ -413,19 +412,22 @@ pollock_season_date_cruise_count_dt <- data.table(DATE = as.Date(goa_pollock_dat
 ggplot(pollock_season_date_cruise_count_dt, aes(x = DATE, y = CRUISE_COUNT)) + geom_col(width = 1) +
   scale_x_date(date_breaks = "1 month", date_labels = "%Y-%b", minor_breaks = NULL) + 
   theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)) + 
-  labs(x = "Date", y = "# Cruises assigned", subtitle = "Count of cruises assigned to Kodiak Plants each day for GOA EM pollock.")
+  labs(x = "Date", y = "# Cruises assigned", subtitle = "Count of cruises assigned to Kodiak Plants each day for GOA EM pollock.") + 
+  geom_vline(data = data.table(DATE = as.Date(paste0((2023:adp_year), "-01-01"))), aes(xintercept = DATE))
 
 #' [2025ADP: hardcoding the expected number of GOA plant days needed based on 2023 season duration, not 2024]
+#' *TODO* [2026ADP: Need to decide how many days. B season was short in 2024, 2025 A season was very similar to 2024 ]
 
 #' We will have 5 observers during A season (all in Kodiak) and 6 observers for for B season (5 in Kodiak, 1 in False Pass).
-goa_A_season_days <- sapply(pollock_season_ranges, diff)[1]
-goa_B_season_days <- sapply(pollock_season_ranges, diff)[2]
+goa_A_season_days <- sapply(pollock_season_ranges, diff)[1]  # Used 2023 A season
+goa_B_season_days <- sapply(pollock_season_ranges, diff)[2]  # Used 2023 B season
 
 goa_plant_ob_days <- (goa_A_season_days * goa_plant_obs.A) + (goa_B_season_days * goa_plant_obs.B)
 
 #' 143 days during 2023 A and B season, which is a better guess than what happened in 2024
 goa_season_days <- goa_A_season_days + goa_B_season_days
 
+#' *TODO* [2026ADP: Estimate/Count number of days on contract heading into the next year]
 #' [2025 ADP ONLY]
 #' The Trawl EM EFP will run through Dec 31 of 2024, so the partial coverage fee will not be used to fund Trawl EM until
 #' Jan 1 2025. Therefore, there will not be any days already on the contract like there will be for at-sea observers.
@@ -441,11 +443,12 @@ contract_days <- rbindlist(assign_dates, idcol = "CRUISE") |>
     # Calculate the proportion of sea days on the first contract and second contract years
   ][, PROP := DAYS / sum(DAYS), keyby = .(YEAR)][]
 # Apply the estimated length of the season to the proportions before and after the contract change date
-contract_days[YEAR == adp_year - 2,] 
+contract_days[YEAR == adp_year - 3,]   #' *TODO* [2026ADP: Using 2023 to make it run, but update this!]
+#' `Also, proportion might not be calculated correctly with the different numbers of observers in A and B season currently`
 
 plant_sea_day_costs <- adp_contract_day_rates[
 ][, .(CONTRACT_HALF = 1:2, Plant_Day_Cost, Optional_Plant_Day_Cost)
-][contract_days[YEAR == adp_year - 2,], on = .(CONTRACT_HALF)]
+][contract_days[YEAR == adp_year - 3,], on = .(CONTRACT_HALF)]
 plant_sea_day_costs[, EST_DAYS := PROP * goa_plant_ob_days]
 # The PC contract has 150 guaranteed plant days. These will all occur before the contract  year changes
 plant_sea_day_costs[, GUA_COST := 150 * Plant_Day_Cost]
@@ -678,10 +681,10 @@ cost_params <- list(
 )
 
 #' Save cost_params locally 
-save(cost_params, file = paste0("source_data/cost_params_", adp_year, ".Rdata"))
-
+cost.params.path <- paste0("source_data/cost_params_", adp_year, ".Rdata")
+save(cost_params, file = cost.params.path)
 #' Upload cost_params to shared google drive
 gdrive_upload(
-  local_path = paste0("source_data/cost_params_", adp_year, ".Rdata"),
+  local_path = cost.params.path,
   gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
 )

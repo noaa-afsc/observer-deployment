@@ -1,8 +1,8 @@
 # User inputs -------------------------------------------------------------
 
-ADPyear     <- 2025     # Enter numeric year you are doing the ADP for
-ADP_version <- "Final"  # Enter "Draft" or "Final"
-EM_final    <- "Y"      # Is the final EM list approved? Y/N (caps)
+ADPyear     <- 2026     # Enter numeric year you are doing the ADP for
+ADP_version <- "Draft"  # Enter "Draft" or "Final"
+EM_final    <- "N"      # Is the final EM list approved? Y/N (caps)
 options(scipen = 9999)  # Avoid scientific notation
 
 # Get packages ------------------------------------------------------------
@@ -17,16 +17,14 @@ if(!require("tidyverse"))   install.packages("tidyverse", repos='http://cran.us.
 
 # Establish channels ------------------------------------------------------
 
-source("common_functions/open_channel.R")
 source("common_functions/model_trip_duration.R")
-
-channel_afsc <- open_channel()
-
+channel_afsc <- eval(parse(text = Sys.getenv('channel_afsc')))
 ADP_dribble <- gdrive_set_dribble("Projects/ADP/source_data")
+valhalla_dribble <- gdrive_set_dribble("Data/")
 
 # Load AKRO pull ------------------------------------------------------
 
-# The pulls from AKRO were all moved to the sql_pull_akro.R
+#' The pulls from AKRO were all moved to the `sql_pull_akro.R`
 gdrive_download(
   local_path = paste0("source_data/", paste(ADPyear, ADP_version, "ADP_akro_pull.rdata", sep = "_")),
   gdrive_dribble = ADP_dribble
@@ -50,19 +48,20 @@ PartialCPs <- data.frame(VESSEL_ID = c(662, 4581, 6039))
 
 fgem_research <- dbGetQuery(channel_afsc, paste(
   "
-    SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
+    SELECT DISTINCT adp, vessel_id, vessel_name, em_request_status
     FROM loki.em_vessels_by_adp
     WHERE sample_plan_seq_desc = 'Electronic Monitoring -  research not logged '
       AND adp =", if(ADP_version == "Draft" | EM_final == "N") (ADPyear - 1) else (ADPyear), "
     ORDER BY adp, vessel_id
   "
 ))
+if(nrow(fgem_research)) warning("Make sure these are actually fixed-gear vessels, and not trawl EM!")
 
 # * Fixed-gear EM approvals ---- 
 
 fgem_base <- dbGetQuery(channel_afsc, paste(
   "
-    SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
+    SELECT DISTINCT adp, vessel_id, vessel_name, em_request_status
     FROM loki.em_vessels_by_adp
     WHERE adp = ", if(ADP_version == "Draft" | EM_final == "N") (ADPyear - 1) else (ADPyear), "
       AND em_request_status = 'A'
@@ -81,7 +80,7 @@ fgem_base <- fgem_base %>% anti_join(select(fgem_research, ADP, VESSEL_ID), by =
 # Vessels have until November 1st to request. Approvals are typically made shortly thereafter by FMA Director.
 fgem_requests <- dbGetQuery(channel_afsc, paste(
   "
-    SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status
+    SELECT DISTINCT adp, vessel_id, vessel_name, em_request_status
     FROM loki.em_vessels_by_adp
     WHERE adp = ", ADPyear, "
       AND", if(ADP_version == "Draft" | EM_final == "N") {
@@ -98,7 +97,6 @@ fgem_requests <- dbGetQuery(channel_afsc, paste(
 # Remove any vessels that request that were already approved (existing in fgem_base)
 fgem_base <- fgem_base %>% anti_join(select(fgem_requests, ADP, VESSEL_ID), by = c("ADP", "VESSEL_ID"))
 
-
 # * Trawl EM ----
 
 # trawl_em <- read.csv("source_data/efp_list_2023-09-05.csv")
@@ -107,7 +105,7 @@ fgem_base <- fgem_base %>% anti_join(select(fgem_requests, ADP, VESSEL_ID), by =
 
 trw_em <- setDT(dbGetQuery(channel_afsc, paste0(
   "
-    SELECT DISTINCT adp, vessel_id, vessel_name, sample_plan_seq_desc, em_request_status 
+    SELECT DISTINCT adp, vessel_id, vessel_name, em_request_status 
     FROM loki.em_vessels_by_adp 
     WHERE adp = ", if(ADP_version == "Draft") (ADPyear - 1) else (ADPyear), "
       AND SAMPLE_PLAN_SEQ_DESC = 'EM Pelagic Trawl'
@@ -122,9 +120,6 @@ AKROVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT ID AS vessel_id, length_over
 
 FMAVL <- dbGetQuery(channel_afsc, "SELECT DISTINCT PERMIT AS vessel_id, length AS fmavl 
                     FROM norpac.atl_lov_vessel")
-
-
-# * VALHALLA ----
 
 # * GOA Trawl EM Tender Offloads ----
 
@@ -258,13 +253,23 @@ ggplot(combo, aes(x = PROCESSOR_NAME, fill = type)) +
 #' Download full loki.valhalla data set (2013 to ADPyear - 2). If the locally saved version is behind, re-pull Vahalla.
 
 gdrive_download(local_path = "source_data/loki.valhalla.rdata", gdrive_dribble = ADP_dribble)
-(load("source_data/loki.valhalla.rdata"))
+(load("source_data/loki.valhalla.rdata")) # aka work.data
+ 
+#' gdrive_download(local_path = "source_data/valhalla.rdata", gdrive_dribble = valhalla_dribble)
+#' (load("source_data/valhalla.rdata")) #' *new*, has only `valhalla` object
+#'    [TODO: *old* What was here before, called work.data]
+#'   (load("source_data/loki.valhalla.rdata"))  
+#' gdrive_versions("valhalla.RData", gdrive_dribble = valhalla_dribble)
 
 # Check to make sure the Gdrive has the latest version of VALHALLA. It should have a run date of ADPyear - 1
 if( year(Sys.Date()) == (ADPyear - 1) & year(max(work.data$RUN_DATE, na.rm = T)) != (ADPyear - 1) ) {
-  message("Local copy of Valhalla has not been updated with more recent data. Performing SQL query to loki.valhalla.")
-  # Pull a full copy of VALHALLA
-  work.data <- setDT(dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla")))
+  message("Local copy of Valhalla has not been updated with more recent data. Performing SQL query to loki.valhalla. This will take a few minutes!")
+  
+  # Append the latest full ADP year to the loki.valhalla rdata file
+  work.data.add <- setDT(dbGetQuery(channel_afsc, paste0("select * from loki.akr_valhalla WHERE extract(YEAR FROM run_date) = ", ADPyear - 1)))
+  work.data <- rbind(work.data, work.data.add, fill = T)[order(ADP)]
+  rm(work.data.add)
+
   # Save it and upload to the Gdrive
   save(work.data, file = "source_data/loki.valhalla.rdata")
   gdrive_upload(local_path = "source_data/loki.valhalla.rdata", gdrive_dribble = ADP_dribble)
@@ -272,10 +277,10 @@ if( year(Sys.Date()) == (ADPyear - 1) & year(max(work.data$RUN_DATE, na.rm = T))
 gc()
 
 # Load data from current year. The AKRO Region will re-run VALHALLA for the current year to date (ADPyear - 1).
-gdrive_download("source_data/2024-11-05cas_valhalla.Rdata", ADP_dribble)
-load("source_data/2024-11-05cas_valhalla.Rdata")
+gdrive_download("source_data/valhalla.Rdata", valhalla_dribble)
+(load("source_data/valhalla.Rdata"))   # work.data so far is 2013 through ADPyear-2, valhalla is ADPyear-1
 
-# Append data from current year to data from prior year. Ensure data types match between the old and new datasets.
+# Append data from current year to data from prior years. Ensure data types match between the old and new datasets.
 date_cols <- c("TRIP_TARGET_DATE", "LANDING_DATE")
 work.data[, (date_cols) := lapply(.SD, as.Date), .SDcols = date_cols]
 work.data <- rbind(work.data, valhalla, fill = T)
@@ -426,7 +431,12 @@ work.data <- work.data[fmp_bsai_goa, on = .(TRIP_ID)]
 work.data |>
   #'[TODO: Change recode to case_match]
   # Base STRATA_NEW on AGENCY_GEAR_CODE
-  _[, STRATA_NEW := recode(AGENCY_GEAR_CODE, "PTR" = "TRW", "NPT" = "TRW", "JIG" = "ZERO")
+  #_[, STRATA_NEW := recode(AGENCY_GEAR_CODE, "PTR" = "TRW", "NPT" = "TRW", "JIG" = "ZERO")
+    
+  _[, STRATA_NEW := fcase(AGENCY_GEAR_CODE == "PTR", "TRW", 
+                          AGENCY_GEAR_CODE == "NPT", "TRW", 
+                          AGENCY_GEAR_CODE == "JIG", "ZERO",
+                          default = AGENCY_GEAR_CODE)
     # Full coverage
   ][CVG_NEW == "FULL", STRATA_NEW := "FULL"
     # Zero coverage
@@ -541,6 +551,8 @@ unique(work.data[, .(TRIP_ID, STRATA_NEW)])[, .N, by = .(TRIP_ID)][N > 1]
 
 # Trips Melt ------------------------------------------------------------------------------------------------------
 
+#' *Do we use these any more? Any reason to keep this? -GMM*
+ 
 # * Get TRIP_IDs for PSC ----
 
 # Metrics:
@@ -856,145 +868,9 @@ if(nrow(work.data.recent[CVG_NEW == "PARTIAL" & is.na(DAYS)])) stop("Some record
 
 
 #' *===================================================================================================================*
-#' [2025FinalADP:]
-
-# <2025 ADP ONLY> Adjust for CGOA Pollock Closure in 2024  ----
-
-#' In 2024, CGOA Pollock was shut down in the B season due to salmon bycatch on Sep 25th, 2024 (NMFS Areas 620 and 630)
-#' [https://www.fisheries.noaa.gov/bulletin/ib-24-41-nmfs-prohibits-directed-fishing-pollock-vessels-using-trawl-gear-central]
-#' We want the 2024 Final ADP to operate as if the closure did not happen, so we will have to:
-#' - `Hard-code [effort_strata] to adjust the expected fishing effort prediction for 2024, and therefore 2025's effort`
-#' - `Hard-code [work.data] to replace 2024 CGOA B season trips with 2023 CGOA B season trips for allocation`
-
-if(ADPyear == 2025) {
-  
-  #' Subset all partial coverage trawl trips from 2023-2024. First, we just want to visualize what will be modified.
-  trw_sub <- work.data.recent[
-    ADP >= 2023 & CVG_NEW == "PARTIAL" & STRATA %like% "TRW",
-    .(
-      ADP, VESSEL_ID, TRIP_ID, REPORTING_AREA_CODE, AGENCY_GEAR_CODE, TRIP_TARGET_CODE, BSAI_GOA,
-      TRIP_TARGET_DATE, LANDING_DATE, CVG_NEW, STRATA, STRATA_NEW, PORT_CODE, TENDER
-    )] |> unique() |>
-    # Get each trips's start and end date
-    _[, START := min(TRIP_TARGET_DATE, LANDING_DATE, na.rm = T), by = .(TRIP_ID)
-    ][, END := max(TRIP_TARGET_DATE, LANDING_DATE, na.rm = T), by = .(TRIP_ID)
-    ][, c("TRIP_TARGET_DATE", "LANDING_DATE") := NULL
-    ][, MONTH := month(START)
-      # Label the pollock seasons as A or B
-    ][, SEASON := fcase(MONTH < 5, "A", MONTH > 5, "B")
-    ][, MONTH := factor(MONTH, levels = as.character(1:12))] |> 
-    unique() |>
-    # Recode old strata so it's easier to compare between ADP years
-    _[, STRATA := fcase(
-      STRATA == "EM_TRW_EFP", "EM_TRW-GOA",
-      STRATA == "TRW", paste0("OB_TRW-", BSAI_GOA),
-      STRATA == "OB_TRW_BSAI", "OB_TRW-BSAI",
-      STRATA == "OB_TRW_GOA", "OB_TRW-GOA",
-      STRATA == "EM_TRW_GOA", "EM_TRW-GOA",
-      rep(TRUE, .N), STRATA)
-      # Code new TARGET column with just P for pollock (no bottom pollock)
-    ][, TARGET:= TRIP_TARGET_CODE
-    ][TARGET== "B", TARGET := "P"
-    ][, TRIP_TARGET_CODE := NULL
-      # Label all vessels in trawl EM, even if they opted out of the stratum for their trips in 2023/2024
-    ][, TRW_EM := VESSEL_ID %in% trw_em$VESSEL_ID
-      # Label the GOA region
-    ][, REGION := fcase(
-      REPORTING_AREA_CODE %in% c(610), "WGOA", 
-      REPORTING_AREA_CODE %in% c(620, 630), "CGOA", 
-      REPORTING_AREA_CODE > 630, "EGOA",
-      REPORTING_AREA_CODE < 600, "BSAI")
-    ][, REGION := factor(REGION, levels = c("BSAI", "WGOA", "CGOA", "EGOA"))][]
-
-  ## Estimate number of CGOA trips that would have occurred ----
-  
-  # Plot a summary to compare years
-  library(ggh4x)
-  trw_sub.smry <- trw_sub[, .(N = uniqueN(TRIP_ID)), keyby = .(STRATA_NEW, REGION, ADP, SEASON, MONTH, TARGET)] 
-  ggplot(trw_sub.smry, aes(x = MONTH, y = STRATA_NEW, fill = N)) +
-    facet_nested(REGION + TARGET ~ ADP, scales = "free_y", space = "free_y") +
-    geom_tile() + geom_text(color = "gray", aes(label = N)) +
-    scale_x_discrete(drop = F) + 
-    labs(subtitle = "Trawl gear trip counts by stratum, month, region, and target, 2023-2024. CGOA Pollock closed for salmon Sep-25-2024.")
-  #' We can see that in 2023, the CGOA pollock B season fished though September and October. 
-  #' In 2024, after B season closed Sep-25th, we don't see any more pollock trips. However, some of the trawl fleet
-  #' instead began fishing non-pelagic gear for P cod (C) and flatfish (W). Pollock fishing was not closed in the WGOA.
-  #' It should be noted that for both the OB and EM strata in the CGOA, the amount of fishing for pollock changed 
-  #' considerably between 2023 and 2024. Effort in September in EM increased in 2024, but it halved in OB. 
-
-  #' In order to estimate the number of pollock trips that would have occurred in 2024 CGOA B season if the fishery
-  #' had not closed, we will calculate the proportion of trips that occurred in 2023 before and after Sep-25 and then
-  #' use the proportion to calculate the number of trips that would have occurred after Sep-25 in 2024.
-  cgoa_prop.2023 <- trw_sub[
-    ADP == 2023 & SEASON == "B" & TARGET == "P" & REGION == "CGOA", 
-    .(TOTAL_N = uniqueN(TRIP_ID),
-      BEFORE_SEP_25 = uniqueN(TRIP_ID[END <= as.Date("2023-09-25")])), 
-    keyby = .(STRATA_NEW)
-  ][, PROP_REMAINING := (TOTAL_N - BEFORE_SEP_25) / TOTAL_N][]
-  cgoa_prop.2023 
-  #' For both strata, around 57-59% of trips were remaining to be fished before the closure.
-  #' Now, calculate the expected number of CGOA pollock trips in 2024.
-  cgoa_prop.2024 <- trw_sub[
-    ADP == 2024 & SEASON == "B" & TARGET == "P" & REGION == "CGOA", 
-    .(TOTAL_N = uniqueN(TRIP_ID),
-      BEFORE_SEP_25 = uniqueN(TRIP_ID[END <= as.Date("2024-09-25")])), 
-    keyby = .(STRATA_NEW)][]
-  #' Merge the 2023 proportions in and then calculate the additional number of pollock trips expected
-  cgoa_prop.2024 |>
-    _[, PROP_REMAINING := cgoa_prop.2023[cgoa_prop.2024, PROP_REMAINING, on = .(STRATA_NEW)]
-    ][, ADD_TRIPs := round(TOTAL_N * PROP_REMAINING)]
-  cgoa_prop.2024
-  #' `We estimate that EM_TRW-GOA would have fished +82 pollock trips and OB_TRW-GOA would have fished +12 more.`
-  #' However, as noted before, after the CGOA pollock fishery closed, the trawl fleet (most of which were in the EM 
-  #' trawl pool), logged trips in the OB_TRW-GOA stratum to target cod and flatfish in the CGOA.
-  trw_sub[
-    MONTH %in% 9:10 & REGION == "CGOA" & TARGET %in% c("C", "W", "H"), 
-    .(N = uniqueN(TRIP_ID)),
-    keyby = .(ADP, TRW_EM, STRATA_NEW)] |>
-    dcast(TRW_EM + STRATA_NEW ~ ADP, value.var = "N", fill = 0)
-  #' In 2023 B season in the CGOA, trawl vessels fished 7 non-pelagic gear for cod/flatfish.
-  #' In 2024, 62 cod/flatfish trips were fished. We will assume 62 - 7 = 55 trips wouldn't have occurred.
-  #' `We will also subtract 55 cod/flatfish trips from the OB_TRW-GOA stratum that likely would not have occurred`
-
-  #' In `effort_strata`, MAX_DATE_TRIPS was originally 850 for EM_TRW and 219 for OB_TRW-GOA.
-  effort_strata[ADP == 2024 & STRATA %like% "TRW-GOA"]
-  #' `EM_TRW-GOA will have (850) + (82 CGOA B season pollock trips) =` *932 trips*
-  #' `OB_TRW-GOA will have (219) + (12 CGOA B season pollock trips) - 55 cod/flatfish trips = ` *176 trips*
-  effort_strata[ADP == 2024 & STRATA == "EM_TRW-GOA", MAX_DATE_TRIPS := 932]    # changed from 850 to 932
-  effort_strata[ADP == 2024 & STRATA == "OB_TRW-GOA", MAX_DATE_TRIPS := 176]    # changed from 219 to 176
-  
-  # Replacing 2024 CGOA trawl effort with 2023 CGOA trawl effort ----
-  
-  #' Because the 2024 B season in the CGOA was shortened, even if we adjust the expected number of trips we think would
-  #' have occurred in the stratum, during resampling, there wouldn't be any trips to populate that time/space from 2024
-  #' trips. Therefore, we will assume that the CGOA trawl trips fished in 2023 will be a decent representation of the 
-  #' kinds of trips we would have seen had in 2024 had the fishery not closed.
-  #' `In work.data, the 2024 CGOA trawl trips will be deleted and replaced with those from 2023, with dates adjusted`
-  trw_sub.cgoa_2023_B <- trw_sub[ADP == 2023 & SEASON == "B" & REGION == "CGOA"]
-  trw_sub.cgoa_2024_B <- trw_sub[ADP == 2024 & SEASON == "B" & REGION == "CGOA"]
-  # Make sure these trips only occurred in CGOA, areas 620 and 630 only
-  work.data.recent[TRIP_ID %in% trw_sub.cgoa_2023_B$TRIP_ID, unique(REPORTING_AREA_CODE)]
-  work.data.recent[TRIP_ID %in% trw_sub.cgoa_2024_B$TRIP_ID, unique(REPORTING_AREA_CODE)]
-  
-  #' Prepare the 2023 dataset, coding it to 2024
-  trw_cgoa_2024_new <- work.data.recent |>
-    # Grab all 2023 B season CGOA trawl trips
-    _[TRIP_ID %in% trw_sub.cgoa_2023_B$TRIP_ID
-      # Adjust trip dates and ADP year to 2024
-    ][, TRIP_TARGET_DATE := make_date(year = 2024, month = month(TRIP_TARGET_DATE), day = day(TRIP_TARGET_DATE))
-    ][, LANDING_DATE := make_date(year = 2024, month = month(LANDING_DATE), day = day(LANDING_DATE))
-    ][, ADP := 2024
-      # To be safe, re-assign TRIP_ID 
-    ][, TRIP_ID := paste0(TRIP_ID, ".2024")][]
-  
-  # Remove the 2024 B season CGOA trips and replace with the 2023 trips
-  work.data.recent <- rbind(
-    work.data.recent[!(TRIP_ID %in% trw_sub.cgoa_2024_B$TRIP_ID)],
-    trw_cgoa_2024_new
-  )
-} #' [2025FinalADP:]
+#' [2026FinalADP:]
+#' Note any closures that may have occurred in the last year that may affect fishing effort predictions for the ADP year
 #' *===================================================================================================================*
-
 
 # Final outputs ----
 
@@ -1004,7 +880,7 @@ out_save <- readline(prompt = message(paste0("Would you like to save off a new v
 if(out_save == "Y"){  
   #' For posterity, we will save the full `work.data` object.
   save(work.data, file = "source_data/work.data.rdata")
-  #' Upload to shared Gdrive source_data folder
+   #' Upload to shared Gdrive source_data folder
   gdrive_upload(local_path = "source_data/work.data.rdata", gdrive_dribble = ADP_dribble)
 
   #' For the data to be used by the rest of our scripts, we trim work.data to contain only the most recent 3 full 
@@ -1015,4 +891,5 @@ if(out_save == "Y"){
   )
   #' Upload to shared Gdrive source_data folder
   gdrive_upload(local_path = paste0("source_data/", out_name), gdrive_dribble = ADP_dribble)
+  rm(out_save)
 }

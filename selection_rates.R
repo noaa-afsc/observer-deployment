@@ -7,8 +7,8 @@
 # Preparation ----
 #======================================================================================================================#
 
-adp_year <- 2025
-adp_ver  <- "Final"  #' `Draft` or `Final`, which is case-sensitive!
+adp_year <- 2026
+adp_ver  <- "Draft"  #' `Draft` or `Final`, which is case-sensitive!
 
 #===================#
 ## Load Packages ----
@@ -30,34 +30,38 @@ library(officer)            # For additional flextable formatting options such a
 ## Load data ----
 #===============#
 
+
 #' Load the outputs of `get_data.R`
-
+adp_data.path <- paste0("source_data/", adp_year, "_", adp_ver, "_ADP_data.rdata")
 gdrive_download(
-  local_path = "source_data/2025_Final_ADP_data.rdata",
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/"),
-  ver = 12
+  local_path = adp_data.path,
+  gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
 )
-(load("source_data/2025_Final_ADP_data_v012.rdata"))
+(load(adp_data.path))
 
-#' Load `cost_params`, the output of `monitoring_costs.R`. 2025 Draft used ver = 3. 
-gdrive_download( 
-  local_path = "source_data/cost_params_2025.Rdata", 
-  gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/"),
-  ver = 7
-)
-(load("source_data/cost_params_2025_v007.Rdata"))
-
-#' Using `fg_em`, add the number of fixed-gear EM vessels to the `cost_params` list
-cost_params$EMFG$emfg_v <- uniqueN(fg_em[FLAG %in% c("A", "NONE"), PERMIT])
+#' Load `cost_params`, the output of `analyses/monitoring_costs.R`.
+cost_param.path <- paste0("source_data/cost_params_", adp_year, ".Rdata")
+if(file.exists(cost_param.path)) {
+  gdrive_download( 
+    local_path = cost_param.path, 
+    gdrive_dribble = gdrive_set_dribble("Projects/ADP/Monitoring Costs - CONFIDENTIAL/")
+  )
+  (load(cost_param.path))
+  
+  #' Using `fg_em` from `get_data.R`, add the number of fixed-gear EM vessels to the `cost_params` list
+  cost_params$EMFG$emfg_v <- uniqueN(fg_em[FLAG %in% c("A", "NONE"), PERMIT])
+} else {
+  message(paste0(cost_param.path, " does not yet exist.\nFirst, run this script through the `Data Prep section`, then run `analyses/monitoring_costs.R` to create ", cost_param.path, "."))
+}
 
 #' Load `effort_glm`, the output of `effort_prediction.R` This is done for the final draft only.
 if(adp_ver == "Final") {
+  effort_prediction.path <- paste0("source_data/effort_prediction_", adp_year, ".rdata")
   gdrive_download( 
-    local_path = "source_data/effort_prediction_2025.rdata", 
-    gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/"),
-    ver = 8
+    local_path = effort_prediction.path, 
+    gdrive_dribble = gdrive_set_dribble("Projects/ADP/source_data/")
   )
-  (load("source_data/effort_prediction_2025_v008.rdata"))
+  (load(effort_prediction.path))
 }
 
 # Load the ADFG statistical area shapefile.
@@ -66,7 +70,6 @@ stat_area_sf <- st_read(
   select(STAT_AREA) %>%
   st_transform(crs = 3467)
 
-#' [TODO: Move this to allocation_functions?]
 # Load the Alaska map sf objects
 load("source_data/ak_shp.rdata")      # shp_land, shp_nmfs, and shp_centroids added to global
 
@@ -75,6 +78,7 @@ load("source_data/ak_shp.rdata")      # shp_land, shp_nmfs, and shp_centroids ad
 #====================#
 
 # load allocation functions
+#' TODO Update allocation functions to contain only wrappers for the proximityallocation functions
 source("common_functions/allocation_functions.R")
 
 format_dollar <- function(x, digits) paste0("$", formatC(x, digits = digits, big.mark = ",", format = "f"))
@@ -348,7 +352,7 @@ if( adp_ver == "Draft") {
   
 }
 
- if(adp_ver == "Final"){
+if(adp_ver == "Final"){
   # Are the costs normally distributed and centered on the budget?
   ggplot(cost_dt, aes(x = TOTAL_COST)) + geom_histogram() + geom_vline(xintercept = mean(cost_dt$TOTAL_COST))
   
@@ -367,7 +371,7 @@ if( adp_ver == "Draft") {
 ## Figure B-2. Cost Distribution  ----
 #====================================#
 
-label_y_pos <- 7500
+label_y_pos <- 1500
 figure_b2 <- ggplot(cost_dt, aes(x = OB_TOTAL + EMFG_TOTAL + EMTRW_TOTAL)) + 
   geom_histogram(fill = "gray65", bins = 30) + 
   geom_vline(aes(xintercept = budget_lst[[1]]), color = "purple", linetype = 2, linewidth = 1.1) +
@@ -452,7 +456,7 @@ table_b1 <- rbind(cost_totals.pc, vessel_totals.pc, vessel_totals.fc)
 if(adp_ver == "Draft") {
   table_b1.flex <- table_b1 %>% 
     flextable() %>%
-    compose(i = ~ !is.na(value), value = as_paragraph("\t", .), use_dot = T) %>%
+    flextable::compose(i = ~ !is.na(value), value = as_paragraph("\t", .), use_dot = T) %>%
     set_header_labels(values = c("", paste0("Draft ", adp_year, " ADP"))) %>%
     align(j = 2, align = "right", part = "all") %>%
     bold(i = ~ is.na(value)) %>%
@@ -522,8 +526,8 @@ setorder(table_b2, STRATA)
 setnames(table_b2, new = c("Stratum", "N", "r", "n", "T", "F", "D"))
 table_b2.flex <- table_b2 %>% 
   flextable() %>%
-  compose(i = 1, j = 1, part = "header", value = as_paragraph(., " (", as_i("h"), ")" ), use_dot = T) %>%
-  compose(i = 1, j = c(2, 3:7), part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
+  flextable::compose(i = 1, j = 1, part = "header", value = as_paragraph(., " (", as_i("h"), ")" ), use_dot = T) %>%
+  flextable::compose(i = 1, j = c(2, 3:7), part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
   mk_par(i = 1, j = 5, part = "header", value = as_paragraph(as_i("T\U0302"), as_sub(as_i("h")))) %>%
   mk_par(i = 1, j = 7, part = "header", value = as_paragraph(as_i("D\U0302"), as_sub(as_i("h")))) %>%
   colformat_double(j = 2:4, digits = 2, big.mark = ",") %>%
@@ -625,13 +629,13 @@ if(adp_ver == "Draft") {
   table_b3.flex <- table_b3[, -"Pool"] %>% 
     flextable() %>%
     autofit() %>%
-    compose(i = 1, j = 1, part = "header", value = as_paragraph(., " (", as_i("h"), ")" ), use_dot = T) %>%
-    compose(i = 1, j = 2:4, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
-    compose(i = 1, j = 5, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") ), " (%)"), use_dot = T) %>%
+    flextable::compose(i = 1, j = 1, part = "header", value = as_paragraph(., " (", as_i("h"), ")" ), use_dot = T) %>%
+    flextable::compose(i = 1, j = 2:4, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") )), use_dot = T) %>%
+    flextable::compose(i = 1, j = 5, part = "header", value = as_paragraph(as_i(.), as_sub(as_i("h") ), " (%)"), use_dot = T) %>%
     bold(i = ~ Stratum == "Total", part = "body") %>%
     bold(i = c(9,10), j = 2:5, part = "body") %>%
     hline(i = ~ Stratum %in% c("Total", "EM Trawl GOA", "No-selection")) %>%
-    compose(i = ~ Stratum == "Total", j = 1, value = as_paragraph("\t", .), use_dot = T) %>%
+    flextable::compose(i = ~ Stratum == "Total", j = 1, value = as_paragraph("\t", .), use_dot = T) %>%
     add_header_row(top = F, values = c(paste0("Draft ", adp_year, " ADP"), ""), colwidths = c(1, 4)) %>%
     bold(i = 2, j = 1, part = "header") %>%
     fix_border_issues()
@@ -690,6 +694,7 @@ if(adp_ver == "Draft") {
 #======================================================================================================================#
 
 #' [TODO: Do I still need this? This was used for the 2025 Draft.]
+#' [GMM: Will probably move this to a new script]
 
 #' Here we will summarize the monitoring of the entire AK. Used in the PCFMAC presentation of the 2025 Draft ADP.
 
@@ -799,6 +804,9 @@ mon_catch.long[SECTOR == "PARTIAL", .(PERC_MON = 100 * sum(value[variable == "MO
 #======================================================================================================================#
 # Outputs ----
 #======================================================================================================================#
+
+#' *TODO* [2026ADP:] All outputs in this section are meant for the final ADP, so we can either switch this off for the 
+#' draft or switch parts off
 
 #' List off some of the values that are reported in the paper that may not be reported in figures and tables
 prior_adp_budget <- 5.819e6
